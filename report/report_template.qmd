@@ -1,0 +1,263 @@
+---
+title: "Auto Z-Curve Report"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: false
+    smooth-scroll: true
+    embed-resources: true
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(jsonlite)
+library(knitr)
+library(readr)
+library(zcurve)
+
+project_dir <- Sys.getenv("AUTO_ZCURVE_PROJECT_DIR")
+output_dir <- Sys.getenv("AUTO_ZCURVE_OUTPUT_DIR", file.path(project_dir, "output"))
+repo_dir <- Sys.getenv("AUTO_ZCURVE_REPO_DIR")
+schema_path <- Sys.getenv("AUTO_ZCURVE_SCHEMA_PATH", file.path(project_dir, "extraction_schema.yml"))
+instruction_path <- Sys.getenv("AUTO_ZCURVE_INSTRUCTIONS_PATH", file.path(repo_dir, "config", "statistic_extraction_instructions.md"))
+model_name <- Sys.getenv("AUTO_ZCURVE_MODEL_NAME")
+effect_definition <- Sys.getenv("AUTO_ZCURVE_EFFECT_DEFINITION")
+
+source(file.path(repo_dir, "R", "utils.R"))
+source(file.path(repo_dir, "R", "schema.R"))
+source(file.path(repo_dir, "R", "report.R"))
+
+config <- read_extraction_config(schema_path)
+results_path <- file.path(output_dir, "extractions.json")
+run_log_path <- file.path(output_dir, "run_log.json")
+
+results <- if (file.exists(results_path)) {
+  jsonlite::read_json(results_path, simplifyVector = FALSE)
+} else {
+  list()
+}
+
+run_log_raw <- if (file.exists(run_log_path)) {
+  jsonlite::read_json(run_log_path, simplifyVector = TRUE)
+} else {
+  data.frame()
+}
+
+run_log <- tibble::as_tibble(run_log_raw)
+effect_table <- flatten_results(results, config)
+zcurve_bundle <- run_zcurve_analysis(effect_table, config)
+disclosure_table <- zcurve_bundle$disclosure_table %||% effect_table
+
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+readr::write_csv(disclosure_table, file.path(output_dir, "disclosure_table.csv"))
+
+zcurve_summary_text <- if (!identical(zcurve_bundle$status, "ok")) {
+  message <- zcurve_bundle$message
+  if (is.null(message) || !nzchar(message)) {
+    "Z-curve could not be estimated."
+  } else {
+    as.character(message)
+  }
+} else {
+  paste(capture.output(summary(zcurve_bundle$fit, all = TRUE)), collapse = "\n")
+}
+writeLines(zcurve_summary_text, file.path(output_dir, "zcurve_summary.txt"), useBytes = TRUE)
+
+generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
+instructions_text <- build_system_prompt(config, instruction_path, effect_definition)
+
+truncate_report_text <- function(x, max_chars = 180) {
+  if (is.null(x)) {
+    return(NA_character_)
+  }
+
+  x <- as.character(x)
+  x <- gsub("\\s+", " ", x)
+  too_long <- !is.na(x) & nchar(x) > max_chars
+  x[too_long] <- paste0(substr(x[too_long], 1, max_chars - 1), "…")
+  x
+}
+
+successful_pdfs <- sum(vapply(results, function(item) identical(item$status, "ok"), logical(1)))
+failed_pdfs <- sum(vapply(results, function(item) !identical(item$status, "ok"), logical(1)))
+total_pdfs <- successful_pdfs + failed_pdfs
+extracted_effects <- nrow(effect_table)
+sum_result_number <- function(field) {
+  values <- vapply(results, function(item) {
+    value <- item[[field]]
+    if (is.null(value) || length(value) == 0 || is.na(value)) {
+      return(0)
+    }
+    as.numeric(value)
+  }, numeric(1))
+  sum(values, na.rm = TRUE)
+}
+input_tokens <- sum_result_number("input_tokens")
+output_tokens <- sum_result_number("output_tokens")
+total_tokens <- sum_result_number("total_tokens")
+usable_inputs <- if (nrow(disclosure_table) && "usable_for_zcurve" %in% names(disclosure_table)) {
+  sum(disclosure_table$usable_for_zcurve %in% TRUE, na.rm = TRUE)
+} else {
+  0
+}
+articles_with_effects <- if (nrow(effect_table) && "source_name" %in% names(effect_table)) {
+  dplyr::n_distinct(effect_table$source_name)
+} else {
+  0
+}
+failed_results <- purrr::keep(results, function(item) !identical(item$status, "ok"))
+disclosure_csv_path <- file.path(output_dir, "disclosure_table.csv")
+
+rel_to_project <- function(path) {
+  proj <- normalizePath(project_dir, mustWork = FALSE)
+  p    <- normalizePath(path, mustWork = FALSE)
+  if (startsWith(p, paste0(proj, "/"))) substring(p, nchar(proj) + 2L) else path
+}
+```
+
+<style>
+body {
+  line-height: 1.45;
+}
+
+.quarto-title-block .title {
+  margin-bottom: 0.25rem;
+}
+
+.setup-list {
+  margin: 0 0 1rem;
+  padding-left: 1.1rem;
+}
+
+.setup-list li {
+  margin: 0.25rem 0;
+}
+
+details {
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  background: #fbfcfe;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+</style>
+
+## Overview
+
+This report was generated from `r total_pdfs` PDF article`r if (total_pdfs == 1) "" else "s"`.
+Extraction succeeded for `r successful_pdfs` article`r if (successful_pdfs == 1) "" else "s"` and failed for `r failed_pdfs`.
+
+The successful extractions produced `r extracted_effects` effect`r if (extracted_effects == 1) "" else "s"` from `r articles_with_effects` article`r if (articles_with_effects == 1) "" else "s"`.
+Of those effects, `r usable_inputs` had statistics usable as z-curve inputs.
+
+Gemini usage recorded `r input_tokens` input tokens and `r output_tokens` output tokens (`r total_tokens` total).
+
+The full disclosure table is available as a separate CSV at:
+
+```{r results='asis'}
+cat("`", rel_to_project(disclosure_csv_path), "`", sep = "")
+```
+
+## Z-Curve
+
+### Full Output
+
+The complete z-curve summary is shown below.
+
+```{r results='asis'}
+bundle <- zcurve_bundle
+
+if (!identical(bundle$status, "ok")) {
+  cat(if (is.null(bundle$message) || !nzchar(bundle$message)) "Z-curve could not be estimated." else bundle$message)
+} else {
+  cat("```text\n")
+  cat(zcurve_summary_text)
+  cat("\n```\n")
+}
+```
+
+### Metrics
+
+```{r}
+bundle <- zcurve_bundle
+
+if (!identical(bundle$status, "ok")) {
+  cat(if (is.null(bundle$message) || !nzchar(bundle$message)) "Z-curve could not be estimated." else bundle$message)
+} else {
+  kable(bundle$metrics)
+}
+```
+
+### Plot
+
+```{r fig.width=10, fig.height=7}
+bundle <- zcurve_bundle
+
+if (identical(bundle$status, "ok")) {
+  plot(bundle$fit, annotation = TRUE, CI = TRUE)
+}
+```
+
+## Disclosure Table
+
+The disclosure table is not embedded in this HTML report to keep the report readable.
+Use the separate CSV file for inspection, filtering, and audit work: `r rel_to_project(disclosure_csv_path)`.
+
+## Batch Summary
+
+### Failed Articles
+
+```{r results='asis'}
+if (length(failed_results)) {
+  for (item in failed_results) {
+    source_name <- item$source_name %||% item$file_name %||% item$source_file %||% "Unknown source"
+    reason <- item$error %||% "No failure reason was recorded."
+    reason <- truncate_report_text(reason, max_chars = 500)
+    cat("- **", source_name, "**: ", reason, "\n", sep = "")
+  }
+} else {
+  cat("No articles failed during extraction.")
+}
+```
+
+## Setup
+
+<ul class="setup-list">
+  <li><strong>Generated:</strong> `r generated_at`</li>
+  <li><strong>Gemini model:</strong> `r model_name`</li>
+  <li><strong>Schema:</strong> `r config$name`</li>
+  <li><strong>Schema file:</strong> `r rel_to_project(schema_path)`</li>
+  <li><strong>Instruction file:</strong> `r rel_to_project(instruction_path)`</li>
+</ul>
+
+<details>
+<summary>Configured extraction instructions</summary>
+
+```{r results='asis'}
+cat("```text\n")
+cat(instructions_text)
+cat("\n```\n")
+```
+
+</details>

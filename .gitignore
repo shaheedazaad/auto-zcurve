@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.venv/
+
+# R
+*.Rhistory
+*.RData
+.Rproj.user/
+renv/
+
+# Quarto
+.quarto/
+*_files/
+
+# Project run outputs
+# (created inside whatever folder you point auto-zcurve at;
+#  listed here in case you run from the repo root)
+output/
+sources/
+.auto_zcurve/
+extraction_schema.yml

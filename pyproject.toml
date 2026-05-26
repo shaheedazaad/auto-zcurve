@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-zcurve"
+version = "0.10.0"
+description = "Interactive CLI for extracting statistics from PDFs and generating z-curve reports."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "google-genai>=1.0.0",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0.0",
+  "questionary>=2.0.0",
+  "rich>=13.0.0",
+  "textual>=0.80.0",
+]
+
+[project.scripts]
+auto-zcurve = "auto_zcurve.cli:main"
+
+[tool.setuptools]
+packages = ["auto_zcurve"]
