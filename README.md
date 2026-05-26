@@ -44,7 +44,7 @@ In your terminal, navigate to where you want to install it (e.g. your Documents 
 
 ```
 cd ~/Documents
-git clone https://github.com/YOUR-USERNAME/auto-zcurve.git
+git clone https://github.com/shaheedazaad/auto-zcurve.git
 ```
 
 This creates an `auto-zcurve` folder there.
