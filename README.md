@@ -4,7 +4,11 @@ Auto Z-Curve reads a folder of PDF articles, uses Google's Gemini AI to extract 
 
 You interact with it through a simple terminal interface: point it at your PDFs, enter your API key, and click Run.
 
+In the below screenshot, I z-curved 45 articles on cognitive dissonance in under 4 minutes, costing under 2 USD in tokens.
+
 ![](assets/example.svg)
+
+**Note:** this tool has not yet been peer-reviewed, although a validation study is in the works.
 
 ---
 
