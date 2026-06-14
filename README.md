@@ -8,7 +8,9 @@ In the below screenshot, I z-curved 45 articles on cognitive dissonance in under
 
 ![](assets/example.svg)
 
-**Note:** this tool has not yet been peer-reviewed, although a validation study is in the works.
+**Note:** I have validated statistic extraction as part of a study, which is currently under peer review. The preprint citation is below, and details of the validation are in the supplemental material.
+
+Azaad, S. (2026). Empirically derived effect size guidelines for social, individual differences, and cognitive psychology. *PsyArXiv*. https://doi.org/10.31234/osf.io/r4xwb_v1
 
 ---
 
