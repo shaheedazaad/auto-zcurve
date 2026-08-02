@@ -4,12 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-zcurve"
-version = "0.10.0"
-description = "Interactive CLI for extracting statistics from PDFs and generating z-curve reports."
+version = "0.11.0"
+description = "Local browser app and CLI for extracting statistics from PDFs and generating z-curve reports."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "google-genai>=1.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "Jinja2>=3.1.0",
+  "python-multipart>=0.0.12",
+  "keyring>=25.0.0",
   "PyYAML>=6.0",
   "python-dotenv>=1.0.0",
   "questionary>=2.0.0",
@@ -21,4 +26,14 @@ dependencies = [
 auto-zcurve = "auto_zcurve.cli:main"
 
 [tool.setuptools]
-packages = ["auto_zcurve"]
+packages = ["auto_zcurve", "auto_zcurve.static", "auto_zcurve.templates"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+auto_zcurve = ["templates/*.html", "static/*.css", "static/*.js"]
+
+[tool.setuptools.data-files]
+"share/auto-zcurve/config" = ["config/extraction_schema.yml", "config/statistic_extraction_instructions.md"]
+"share/auto-zcurve/report" = ["report/report_template.qmd", "report/reproducible_report.qmd"]
+"share/auto-zcurve/R" = ["R/report.R", "R/schema.R", "R/utils.R"]
+"share/auto-zcurve/scripts" = ["scripts/preflight.R"]

@@ -10,6 +10,10 @@ KEY_NAME = "gemini_api_key"
 LAST_PROJECT_KEY = "last_project_dir"
 
 
+class CredentialStoreUnavailable(RuntimeError):
+    """Raised when the operating system has no usable credential backend."""
+
+
 def credentials_dir() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
     if xdg:
@@ -23,26 +27,76 @@ def credentials_dir() -> Path:
 
 
 def credentials_path() -> Path:
-    return credentials_dir() / "credentials.json"
+    """Path for non-secret preferences.
+
+    Kept as a public helper for compatibility. Gemini keys are never written
+    here; they live in the operating-system credential store.
+    """
+
+    return credentials_dir() / "preferences.json"
+
+
+def _keyring_module():
+    try:
+        import keyring
+    except ImportError as exc:
+        raise CredentialStoreUnavailable(
+            "No operating-system credential store is available. "
+            "The key can still be used for this app session."
+        ) from exc
+
+    try:
+        backend = keyring.get_keyring()
+        priority = float(getattr(backend, "priority", 0))
+    except Exception as exc:
+        raise CredentialStoreUnavailable(
+            "The operating-system credential store could not be opened. "
+            "The key can still be used for this app session."
+        ) from exc
+    if priority <= 0:
+        raise CredentialStoreUnavailable(
+            "No usable operating-system credential store was found. "
+            "The key can still be used for this app session."
+        )
+    return keyring
+
+
+def credential_store_available() -> bool:
+    try:
+        _keyring_module()
+    except CredentialStoreUnavailable:
+        return False
+    return True
 
 
 def load_saved_api_key() -> str | None:
-    api_key = str(_load_credentials().get(KEY_NAME) or "").strip()
+    try:
+        value = _keyring_module().get_password(SERVICE_NAME, KEY_NAME)
+    except CredentialStoreUnavailable:
+        return None
+    except Exception:
+        return None
+    api_key = str(value or "").strip()
     return api_key or None
 
 
-def save_api_key(api_key: str) -> Path:
+def save_api_key(api_key: str) -> str:
     api_key = api_key.strip()
     if not api_key:
         raise ValueError("Cannot save an empty Gemini API key.")
+    try:
+        _keyring_module().set_password(SERVICE_NAME, KEY_NAME, api_key)
+    except CredentialStoreUnavailable:
+        raise
+    except Exception as exc:
+        raise CredentialStoreUnavailable(
+            "The operating-system credential store rejected the key. "
+            "The key can still be used for this app session."
+        ) from exc
+    return "operating-system credential store"
 
-    data = _load_credentials()
-    data[KEY_NAME] = api_key
-    _save_credentials(data)
-    return credentials_path()
 
-
-def _load_credentials() -> dict:
+def _load_preferences() -> dict:
     path = credentials_path()
     if not path.exists():
         return {}
@@ -54,7 +108,7 @@ def _load_credentials() -> dict:
         return {}
 
 
-def _save_credentials(data: dict) -> None:
+def _save_preferences(data: dict) -> None:
     path = credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -67,7 +121,7 @@ def _save_credentials(data: dict) -> None:
 
 
 def load_last_project_dir() -> Path | None:
-    value = str(_load_credentials().get(LAST_PROJECT_KEY) or "").strip()
+    value = str(_load_preferences().get(LAST_PROJECT_KEY) or "").strip()
     if not value:
         return None
     path = Path(value).expanduser()
@@ -75,15 +129,17 @@ def load_last_project_dir() -> Path | None:
 
 
 def save_last_project_dir(project_dir: Path) -> None:
-    data = _load_credentials()
+    data = _load_preferences()
     data[LAST_PROJECT_KEY] = str(project_dir.expanduser().resolve())
-    _save_credentials(data)
+    _save_preferences(data)
 
 
 def delete_saved_api_key() -> bool:
-    data = _load_credentials()
-    if KEY_NAME not in data:
+    existing = load_saved_api_key()
+    if existing is None:
         return False
-    del data[KEY_NAME]
-    _save_credentials(data)
+    try:
+        _keyring_module().delete_password(SERVICE_NAME, KEY_NAME)
+    except Exception:
+        return False
     return True

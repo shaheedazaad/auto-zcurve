@@ -13,6 +13,7 @@ build/
 .eggs/
 .pytest_cache/
 .venv/
+.pixi/
 
 # R
 *.Rhistory

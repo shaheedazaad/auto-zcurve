@@ -1,207 +1,174 @@
 # Auto Z-Curve
 
-Auto Z-Curve reads a folder of PDF articles, uses Google's Gemini AI to extract focal statistical results from each one, and produces a z-curve analysis report — including a plot, summary statistics, and a full disclosure table.
+Auto Z-Curve reads PDF articles, uses Google Gemini to extract focal
+statistical results, and creates a z-curve analysis report with a plot, summary
+statistics, and full disclosure table.
 
-You interact with it through a simple terminal interface: point it at your PDFs, enter your API key, and click Run.
+The default interface is a private browser app running only on your computer.
+Your PDFs, projects, and results stay local; only PDF extraction requests are
+sent to Gemini.
 
-In the below screenshot, I z-curved 45 articles on cognitive dissonance in under 4 minutes, costing under 2 USD in tokens.
+**Note:** I have validated statistic extraction as part of a study, which is currently under peer review. The preprint citation is below, and details of the validation are in the supplemental material.
 
-![](assets/example.svg)
+Azaad, S. (2026). Empirically derived effect size guidelines for social, individual differences, and cognitive psychology. PsyArXiv. https://doi.org/10.31234/osf.io/r4xwb_v1
 
-**Note:** this tool has not yet been peer-reviewed, although a validation study is in the works.
 
----
+## Install
 
-## What you'll need
+The supported installer uses [Pixi](https://pixi.sh/) to provide a locked
+environment containing Python, R, Quarto, all required R packages, and the
+Auto Z-Curve Python dependencies. You do not need to install those tools
+separately.
 
-Install these before starting:
+### macOS and Linux
 
-| Tool | Where to get it |
-|------|-----------------|
-| Python 3.9 or later | [python.org/downloads](https://www.python.org/downloads/) |
-| R | [cran.r-project.org](https://cran.r-project.org) |
-| Quarto | [quarto.org](https://quarto.org/docs/get-started/) |
-| A Gemini API key | [aistudio.google.com](https://aistudio.google.com/app/apikey) — free, but you will likely need to upgrade to the paid tier for extensive use |
+Open Terminal and paste:
 
-You'll also need these R packages. Run this once in R:
-
-```r
-install.packages(c("zcurve", "dplyr", "jsonlite", "knitr",
-                   "readr", "purrr", "tibble", "yaml"))
+```sh
+curl -fsSL https://raw.githubusercontent.com/shaheedazaad/auto-zcurve/main/install.sh | sh
 ```
 
----
+### Windows
 
-## Installation
+Open PowerShell and paste:
 
-**Step 1 — Open a terminal**
-
-On **Mac**, this is the Terminal app (iTerm2 is a nicer alternative: [iterm2.com](https://iterm2.com)). On **Windows**, use Command Prompt or PowerShell. Note: Auto Z-Curve has not yet been tested on Windows or Linux.
-
-**Step 2 — Download Auto Z-Curve**
-
-In your terminal, navigate to where you want to install it (e.g. your Documents folder) and run:
-
-```
-cd ~/Documents
-git clone https://github.com/shaheedazaad/auto-zcurve.git
+```powershell
+irm https://raw.githubusercontent.com/shaheedazaad/auto-zcurve/main/install.ps1 | iex
 ```
 
-This creates an `auto-zcurve` folder there.
+The installer supports Apple Silicon and Intel macOS, Windows x64, and
+mainstream glibc-based Linux x64. It downloads the latest versioned release
+bundle and installs its committed `pixi.lock`. To update, run the same command
+again.
 
-**Step 3 — Install**
+## Use the browser app
 
-```
-cd auto-zcurve
-pip install -e .
-```
+Run:
 
-This installs the `auto-zcurve` command. You only need to do this once.
-
-> **Getting updates:** when a new version is released, run `git pull` from the `auto-zcurve` folder, then re-run `pip install -e .`.
-
----
-
-## Getting a Gemini API key
-
-1. Go to [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) and sign in with a Google account
-2. Click **Create API key**
-3. Copy the key — you'll paste it into Auto Z-Curve when you first run it
-
-Your key is saved locally on your computer only. It is never stored in your project folder or shared anywhere.
-
----
-
-## Setting up your project folder
-
-Create a folder for your project and put all your PDFs inside a subfolder called `sources`:
-
-```
-my-project/
-  sources/
-    smith-2019.pdf
-    jones-2021.pdf
-    chen-2023.pdf
-```
-
-The folder and PDF names can be anything you like.
-
----
-
-## Running Auto Z-Curve
-
-Open a terminal and run:
-
-```
+```sh
 auto-zcurve
 ```
 
-The interface will open in your terminal window.
+Auto Z-Curve chooses a free local port, generates a one-time random URL token,
+and opens your browser. The server binds only to `127.0.0.1` and stops when you
+press <kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal.
 
-**First time:**
+In the app:
 
-1. Click **Pick** to choose your project folder, or type its path in the Folder box
-2. Paste your Gemini API key into the API key field and click **Save** — this stores it permanently so you won't need to enter it again
-3. Choose a model from the dropdown (see [Choosing a model](#choosing-a-model) below)
-4. Click **Run**
+1. Create a named project.
+2. Add several PDF articles by dragging or choosing files.
+3. Review or customize the project’s extraction instructions and extraction schema.
+4. Paste a Gemini API key and choose whether to remember it securely.
+5. Run the analysis and follow its live progress.
+6. Review the summary, view or regenerate the report, retry failed articles, open the project
+   folder, or download a ZIP of the result files.
 
-The right-hand panel shows live progress as each PDF is processed. When finished, click **Open Report** to view your results in a browser.
+The model field accepts an exact Gemini API model ID. Its listed models are
+suggestions rather than a restriction, so you can enter another model ID.
 
-**Next time**, just open the app, confirm the folder, and click Run — the app remembers your last project.
+Projects are stored in the normal per-user application-data directory:
 
----
+- macOS: `~/Library/Application Support/Auto Z-Curve/projects`
+- Windows: `%LOCALAPPDATA%\Auto Z-Curve\projects`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/auto-zcurve/projects`
 
-## Choosing a model
+Duplicate filenames are preserved with a numbered suffix.
 
-| Model | Best for |
-|-------|----------|
-| **Gemini Flash** | Most articles — faster and cheaper |
-| **Gemini Pro** | Complex or ambiguous papers — slower but more accurate |
+## Gemini API key privacy
 
-Your model choice is saved per project, so Retry runs automatically use the same model.
+Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+When “Remember securely” is selected, Auto Z-Curve uses the operating system’s
+credential store through Python Keyring. If Linux has no usable secret-service
+backend, the app clearly marks the key as session-only. It never falls back to
+a plaintext file.
 
----
+API keys are not included in project files, logs, URLs, result downloads, or
+reports.
 
-## Understanding your outputs
+## Results
 
-After a run, a new `output/` folder appears inside your project:
+Each managed project has an `output/` folder containing:
 
-| File | What it contains |
-|------|-----------------|
-| `report.html` | Your z-curve report — open in any browser |
-| `disclosure_table.csv` | Every extracted effect with quotes, metadata, and z-curve inputs |
-| `extractions.json` | Full Gemini output for each PDF |
-| `run_log.csv` | A record of every processing attempt |
+| File | Contents |
+|---|---|
+| `report.html` | Z-curve plot, estimates, disclosure table, and failures |
+| `report.qmd` | Standalone Quarto source that reproduces the fit from the disclosure CSV |
+| `disclosure_table.csv` | Every extracted effect and supporting metadata |
+| `zcurve_reproduction_settings.csv` | Seed, bootstrap, parallel, and package settings used by the reproducible QMD |
+| `extractions.json` | Full structured Gemini output for each PDF |
+| `run_log.csv` | Processing attempts, timing, status, and token usage |
+| `raw/*.json` | Per-article extraction artifacts |
 
-The HTML report includes:
-- **Z-curve plot** — the distribution of z-values and estimated replication rates
-- **Summary statistics** — ERR, EDR, and confidence intervals
-- **Disclosure table** — every extracted statistic with the text that supports it
-- **Failed articles** — any PDFs that could not be processed
+## Legacy interfaces
 
----
+The CLI, TUI, arbitrary-folder workflow, and Python-only installation route
+are deprecated. Their documentation has moved to [LEGACY.md](LEGACY.md).
 
-## What gets extracted
+## Development
 
-By default, Auto Z-Curve looks for **focal statistics** — the main result reported in support of each paper's primary claim. These are typically the statistics mentioned in the abstract or highlighted in the results.
+For full local development, use Pixi so Python, R, Quarto, and the required
+packages match the locked release environment. Install Pixi if needed:
 
-On your first run, Auto Z-Curve will offer to copy in a default extraction schema. You can customise this schema later (see [Customising extraction](#customising-extraction)).
+```sh
+# macOS and Linux
+curl -fsSL https://pixi.sh/install.sh | sh
+```
 
----
+```powershell
+# Windows PowerShell
+irm https://pixi.sh/install.ps1 | iex
+```
 
-## If some PDFs fail
+Restart the terminal after installing Pixi. Then, from the repository root:
 
-Failed articles do not stop the run — they are recorded and shown in the report. Common reasons:
+```sh
+pixi install --locked
+pixi run auto-zcurve
+```
 
-- The PDF is a scanned image (no selectable text)
-- The file is very large
-- A temporary error from the Gemini API
+The Python package is installed in editable mode, so source changes take
+effect after restarting Auto Z-Curve. On Apple Silicon, the first launch may
+briefly compile the bundled R `zcurve` package.
 
-Once the run finishes, click **Retry** to reprocess only the failed PDFs. You can retry as many times as needed.
+Run the test suite and the real R/Quarto release smoke test with:
 
----
+```sh
+pixi run test
+pixi run release-smoke
+```
 
-## Customising extraction
+For Python-only development without managed R or Quarto:
 
-What gets extracted is controlled by a file called `extraction_schema.yml` in your project folder. This file tells Gemini what to look for in each article.
+```sh
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -e .
+auto-zcurve
+```
 
-The default schema extracts focal statistics plus supporting metadata (DOI, study description, quotes). You can edit this file to:
+Use the Pixi route when testing complete report generation.
 
-- Change which statistics count as focal (e.g. restrict to specific hypotheses)
-- Add or remove metadata fields
-- Include or exclude specific effect types
+Build release bundles:
 
-Each field in the schema has a `description` that is sent directly to Gemini as an instruction, so plain English descriptions work well.
+```sh
+python scripts/build_release.py
+```
 
----
+This creates `dist/auto-zcurve-bundle.tar.gz` for macOS/Linux and
+`dist/auto-zcurve-bundle.zip` for Windows. Publish both assets with a versioned
+GitHub release before advertising the installer commands.
 
-## Configuration
+## Security model
 
-The settings panel inside the app lets you adjust:
+The local service uses:
 
-| Setting | What it does | Default |
-|---------|--------------|---------|
-| **Parallel PDFs** | How many PDFs are sent to Gemini at the same time | 10 |
-| **Timeout (sec)** | How long to wait for a response before marking a PDF as failed | 600 |
-| **Max upload (MB)** | PDFs larger than this are skipped rather than uploaded | 128 |
+- a cryptographically random token in every app URL;
+- strict localhost `Host` validation and cross-origin request rejection;
+- a fixed `127.0.0.1` bind with no novice-facing network option;
+- streaming file limits, PDF signature checks, filename sanitization, and
+  project-root containment;
+- result-only ZIP downloads that exclude credentials and source PDFs.
 
-The defaults work well for most projects. Increasing **Parallel PDFs** speeds up large batches if your Gemini API quota allows it.
-
----
-
-## Troubleshooting
-
-**"auto-zcurve: command not found"**
-The installation didn't complete, or your terminal session needs to be restarted. Try closing and reopening the terminal, then run `pip install -e .` again from the Auto Z-Curve folder.
-
-**"Quarto is missing"**
-Download and install Quarto from [quarto.org](https://quarto.org/docs/get-started/), then restart the app.
-
-**"Missing R packages"**
-Run the `install.packages(...)` command from the [What you'll need](#what-youll-need) section in R, then try again.
-
-**Gemini API key errors**
-Double-check the key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey). Keys can be regenerated there if needed.
-
-**The report shows no z-curve**
-Z-curve requires a minimum number of usable statistics. If the disclosure table shows extractions but no z-curve, there may not be enough statistics that could be converted to z-values, or the statistics may all be non-significant. Check the disclosure table and consider adjusting your extraction schema.
+The browser app is local software, not a hosted service. Anyone with access to
+your operating-system account and managed project directory can read the local
+project files.

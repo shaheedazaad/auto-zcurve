@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Extraction schema · {{ project.name }} · Auto Z-Curve</title>
+  <link rel="stylesheet" href="/{{ token }}/static/app.css">
+</head>
+<body data-project-id="{{ project.id }}" data-token="{{ token }}" data-schema-page="true">
+  <header class="topbar">
+    <a class="brand" href="/{{ token }}/">
+      <span class="brand-mark">Z</span>
+      <span>Auto Z-Curve</span>
+    </a>
+    <span class="privacy-pill"><span class="status-dot"></span> Private on this computer</span>
+  </header>
+
+  <main class="project-shell schema-shell">
+    {% if update_version %}
+    <p class="notice update-notice"><strong>Auto Z-Curve {{ update_version }} is available.</strong> Rerun the installer command to update.</p>
+    {% endif %}
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/{{ token }}/">Projects</a><span>/</span>
+      <a href="/{{ token }}/projects/{{ project.id }}">{{ project.name }}</a><span>/</span>
+      <span>Extraction schema</span>
+    </nav>
+
+    <header class="schema-header">
+      <div>
+        <p class="eyebrow">Project extraction setup</p>
+        <h1>Extraction schema</h1>
+        <p>The schema defines the information Gemini returns for each article and each statistical effect.</p>
+      </div>
+      <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}">← Back to project</a>
+    </header>
+
+    <div class="schema-layout">
+      <section class="card schema-editor-card">
+        <div class="section-heading schema-editor-heading">
+          <div>
+            <p class="step-label">YAML editor</p>
+            <h2>Project schema</h2>
+          </div>
+          <span class="badge neutral">extraction_schema.yml</span>
+        </div>
+
+        {% if project.has_analysis_results %}
+        <p class="notice warning schema-reset-warning">Saving a changed schema will delete the current report, extracted results, and processing logs. Your PDFs will remain, but every article will need to be processed again.</p>
+        {% endif %}
+        {% if job_running %}
+        <p class="notice warning">The schema cannot be changed while this project is running.</p>
+        {% endif %}
+
+        <form class="js-schema-form" action="/{{ token }}/projects/{{ project.id }}/schema" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
+          <label for="schema-text">Schema YAML</label>
+          <div class="yaml-editor" data-yaml-editor>
+            <pre class="yaml-highlight" aria-hidden="true"><code></code></pre>
+            <textarea id="schema-text" class="yaml-input" name="schema_text" wrap="off" spellcheck="false" autocomplete="off" maxlength="200000" required>{{ schema_text }}</textarea>
+          </div>
+          <div class="schema-form-actions">
+            <button class="button primary js-save-schema" type="submit" {% if job_running %}disabled{% endif %}>Validate and save</button>
+            <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}">Cancel</a>
+            <p class="form-message schema-message" role="status"></p>
+          </div>
+        </form>
+      </section>
+
+      <aside class="schema-guide">
+        <section class="card guide-card">
+          <p class="step-label">How it works</p>
+          <h2>What the schema controls</h2>
+          <p>Think of the schema as a blank data table. Each named field becomes a column, and its description tells Gemini what belongs in that column.</p>
+          <dl class="schema-terms">
+            <div><dt><code>meta_data</code></dt><dd>Information recorded once per article, such as its DOI or study description.</dd></div>
+            <div><dt><code>effects</code></dt><dd>Information repeated for every focal statistical result found in the article.</dd></div>
+            <div><dt><code>type</code></dt><dd>The kind of answer allowed: <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, or <code>array</code>.</dd></div>
+            <div><dt><code>description</code></dt><dd>A plain-language instruction explaining what Gemini should extract.</dd></div>
+            <div><dt><code>required</code></dt><dd>Use <code>true</code> only when every response must contain this field.</dd></div>
+          </dl>
+        </section>
+
+        <section class="card guide-card">
+          <p class="step-label">Needed for z-curve</p>
+          <h2>Keep a reported statistic</h2>
+          <p>The analysis needs a field containing a statistic such as <code>t(38)=2.14</code>, <code>F(1,98)=4.10</code>, <code>z=2.41</code>, or <code>p=0.012</code>.</p>
+          <p>Name that field <code>reported_statistic</code>, or mark a differently named field with:</p>
+          <pre class="schema-example">role: reported_statistic</pre>
+          <p class="guide-note">Without a usable reported statistic, extraction can succeed but there may be nothing to include in the z-curve.</p>
+        </section>
+
+        <section class="card guide-card">
+          <p class="step-label">Before saving</p>
+          <h2>Validation checks</h2>
+          <p>Auto Z-Curve checks the YAML structure, field definitions, supported types, array item types, duplicate roles, and that <code>effects</code> contains at least one field.</p>
+          <p>Validation happens before any existing output is deleted.</p>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="local-footer">
+      <span>Auto Z-Curve {{ version }}</span>
+      <span>Schema changes apply only to this project.</span>
+    </footer>
+  </main>
+  <script src="/{{ token }}/static/app.js" defer></script>
+</body>
+</html>

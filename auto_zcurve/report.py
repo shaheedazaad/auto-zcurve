@@ -3,20 +3,35 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
-from .paths import DEFAULT_INSTRUCTIONS, REPORT_TEMPLATE, REPO_ROOT
+from .paths import (
+    DEFAULT_INSTRUCTIONS,
+    REPORT_TEMPLATE,
+    REPO_ROOT,
+    REPRODUCIBLE_REPORT_TEMPLATE,
+)
 
 
 def _current_r_libs() -> str | None:
     rscript = shutil.which("Rscript")
     if rscript is None:
         return None
+    env = os.environ.copy()
+    conda_prefix = os.environ.get("CONDA_PREFIX", "").strip()
+    if conda_prefix:
+        managed_library = Path(conda_prefix) / "lib" / "R" / "library"
+        if sys.platform == "win32":
+            managed_library = Path(conda_prefix) / "Lib" / "R" / "library"
+        env["R_LIBS_USER"] = str(managed_library)
+        env["R_LIBS_SITE"] = str(managed_library)
     completed = subprocess.run(
         [rscript, "-e", "cat(paste(.libPaths(), collapse=.Platform$path.sep))"],
         check=False,
         text=True,
         capture_output=True,
+        env=env,
     )
     if completed.returncode != 0:
         return None
@@ -37,7 +52,7 @@ def render_report(
 
     out_dir = project_dir / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
-    render_template = out_dir / "_auto_zcurve_report.qmd"
+    render_template = out_dir / "report.qmd"
     shutil.copyfile(REPORT_TEMPLATE, render_template)
     expected = out_dir / "report.html"
     expected.unlink(missing_ok=True)
@@ -62,6 +77,9 @@ def render_report(
             "USERPROFILE": str(cache_dir / "home"),
         }
     )
+    rscript = shutil.which("Rscript")
+    if rscript:
+        env["QUARTO_R"] = str(Path(rscript).resolve().parent)
     if r_libs:
         env["R_LIBS"] = r_libs
     completed = subprocess.run(
@@ -87,7 +105,7 @@ def render_report(
             + (completed.stderr or "")
         )
     if expected.exists():
-        render_template.unlink(missing_ok=True)
+        shutil.copyfile(REPRODUCIBLE_REPORT_TEMPLATE, render_template)
         return expected
 
     raise RuntimeError(f"Quarto completed but did not create {expected}.")

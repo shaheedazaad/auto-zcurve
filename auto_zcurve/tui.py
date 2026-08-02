@@ -713,11 +713,11 @@ def run_tui() -> int:
         def save_key(self) -> None:
             api_key = self.query_one("#api_key", Input).value.strip()
             try:
-                path = save_api_key(api_key)
-            except ValueError as exc:
+                location = save_api_key(api_key)
+            except (ValueError, RuntimeError) as exc:
                 self.feedback(str(exc), severity="error")
                 return
-            self.feedback(f"Saved API key to {display_path(path)}.", severity="information")
+            self.feedback(f"Saved API key to the {location}.", severity="information")
             self.refresh_readiness()
 
         def delete_key(self) -> None:

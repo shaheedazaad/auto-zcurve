@@ -45,12 +45,16 @@ def _field_spec(field_name: str, spec: object, section_name: str) -> FieldSpec:
         if items_type == "ARRAY":
             raise ValueError(f"{section_name}.{field_name} cannot be an array of arrays.")
 
+    required = spec.get("required", False)
+    if not isinstance(required, bool):
+        raise ValueError(f"{section_name}.{field_name}.required must be true or false.")
+
     role = str(spec.get("role") or "").strip() or None
     description = spec.get("description")
     return FieldSpec(
         type=field_type,
         description=str(description) if description is not None else None,
-        required=bool(spec.get("required")),
+        required=required,
         role=role,
         items_type=items_type,
     )
@@ -72,20 +76,35 @@ def _section(fields: object, section_name: str, allow_empty: bool = False) -> di
         if not field_name:
             raise ValueError(f"Every field in `{section_name}` must be named.")
         out[field_name] = _field_spec(field_name, spec, section_name)
+
+    roles: dict[str, str] = {}
+    for field_name, spec in out.items():
+        if spec.role and spec.role in roles:
+            raise ValueError(
+                f"{section_name}.{field_name} repeats role `{spec.role}` already used by "
+                f"{section_name}.{roles[spec.role]}."
+            )
+        if spec.role:
+            roles[spec.role] = field_name
     return out
 
 
-def read_extraction_schema(path: Path) -> ExtractionSchema:
+def parse_extraction_schema(text: str, *, path: Path | None = None) -> ExtractionSchema:
     try:
         import yaml
     except ImportError as exc:  # pragma: no cover - preflight catches this
         raise RuntimeError("PyYAML is required to read extraction schemas.") from exc
 
-    if not path.exists():
-        raise FileNotFoundError(f"Schema file not found: {path}")
-
-    with path.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle) or {}
+    try:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        problem = str(getattr(exc, "problem", "") or "The YAML could not be parsed.")
+        if mark is not None:
+            raise ValueError(
+                f"Invalid YAML at line {mark.line + 1}, column {mark.column + 1}: {problem}"
+            ) from exc
+        raise ValueError(f"Invalid YAML: {problem}") from exc
 
     if not isinstance(raw, dict):
         raise ValueError("Schema file must contain a top-level mapping.")
@@ -97,8 +116,14 @@ def read_extraction_schema(path: Path) -> ExtractionSchema:
         description=str(description) if description is not None else None,
         meta_data=_section(raw.get("meta_data"), "meta_data", allow_empty=True),
         effects=_section(raw.get("effects"), "effects", allow_empty=False),
-        path=path.resolve(),
+        path=(path or Path("extraction_schema.yml")).resolve(),
     )
+
+
+def read_extraction_schema(path: Path) -> ExtractionSchema:
+    if not path.exists():
+        raise FileNotFoundError(f"Schema file not found: {path}")
+    return parse_extraction_schema(path.read_text(encoding="utf-8"), path=path)
 
 
 def _schema_field(spec: FieldSpec) -> dict[str, Any]:

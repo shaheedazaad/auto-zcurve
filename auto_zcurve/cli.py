@@ -95,7 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
     retry.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     retry.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
 
-    subparsers.add_parser("gui", help="Launch the Textual terminal GUI.")
+    web = subparsers.add_parser("web", help="Launch the local browser app.")
+    web.add_argument("--no-browser", action="store_true", help="Print the local URL without opening a browser.")
+    web.add_argument("--port", type=int, help=argparse.SUPPRESS)
+
+    subparsers.add_parser("tui", help="Launch the legacy Textual terminal interface.")
+    subparsers.add_parser("gui", help=argparse.SUPPRESS)
     return parser
 
 
@@ -286,18 +291,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command is None:
-            try:
-                from .tui import run_tui
+            from .web import launch_web
 
-                return run_tui()
-            except RuntimeError as exc:
-                console.warn(str(exc))
-                return guided(console)
+            return launch_web()
+        if args.command == "web":
+            from .web import launch_web
+
+            return launch_web(open_browser=not args.no_browser, port=args.port)
         if args.command == "run":
             return run_command(args, args.project_dir, interactive=False, console=console)
         if args.command == "retry":
             return retry_command(args, console)
-        if args.command == "gui":
+        if args.command in {"tui", "gui"}:
             from .tui import run_tui
 
             return run_tui()

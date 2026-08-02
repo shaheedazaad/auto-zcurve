@@ -99,7 +99,6 @@ def _generate(
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
-            temperature=0,
         ),
     )
     raw_text = _response_text(response)

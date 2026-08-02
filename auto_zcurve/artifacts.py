@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -166,3 +167,53 @@ def read_zcurve_summary(project_dir: Path) -> str | None:
         return None
     text = path.read_text(encoding="utf-8").strip()
     return text or None
+
+
+def parse_zcurve_summary(text: str | None) -> dict[str, Any]:
+    if not text:
+        return {"execution": None, "metrics": []}
+
+    execution = next(
+        (line.strip() for line in text.splitlines() if line.strip().startswith("Bootstrap execution:")),
+        None,
+    )
+    metrics = []
+    labels = {
+        "ERR": "Expected replication rate",
+        "EDR": "Expected discovery rate",
+    }
+    number = r"(-?(?:\d+(?:\.\d*)?|\.\d+))"
+    for code, label in labels.items():
+        match = re.search(
+            rf"^\s*{re.escape(code)}\s+{number}\s+{number}\s+{number}\s*$",
+            text,
+            flags=re.MULTILINE,
+        )
+        if match:
+            metrics.append(
+                {
+                    "code": code,
+                    "label": label,
+                    "estimate": match.group(1),
+                    "lower_ci": match.group(2),
+                    "upper_ci": match.group(3),
+                }
+            )
+
+    odr = re.search(
+        rf"ODR\s*=\s*{number}.*?95% CI\s*\[\s*{number}\s*,\s*{number}\s*\]",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if odr:
+        metrics.append(
+            {
+                "code": "ODR",
+                "label": "Observed discovery rate",
+                "estimate": odr.group(1),
+                "lower_ci": odr.group(2),
+                "upper_ci": odr.group(3),
+            }
+        )
+
+    return {"execution": execution, "metrics": metrics}

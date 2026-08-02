@@ -1,0 +1,48 @@
+[workspace]
+name = "auto-zcurve"
+version = "0.11.0"
+description = "Local browser app for extracting PDF statistics and generating z-curve reports"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "win-64", "linux-64"]
+
+[dependencies]
+python = ">=3.11,<3.13"
+quarto = ">=1.6,<2"
+r-base = ">=4.3,<4.6"
+r-dplyr = ">=1.1"
+r-jsonlite = ">=1.8"
+r-knitr = ">=1.45"
+r-readr = ">=2.1"
+r-rmarkdown = ">=2.29"
+r-purrr = ">=1.0"
+r-tibble = ">=3.2"
+r-yaml = ">=2.3"
+
+[target.linux-64.dependencies]
+r-zcurve = "2.4.6.*"
+
+[target.win-64.dependencies]
+r-zcurve = "2.4.6.*"
+
+[target.osx-64.dependencies]
+r-zcurve = "2.4.6.*"
+
+# conda-forge does not currently publish zcurve for Apple Silicon. The exact
+# CRAN source archive is bundled and compiled inside the locked environment.
+[target.osx-arm64.dependencies]
+cxx-compiler = ">=1.9"
+r-rcpp = ">=1.0"
+r-nleqslv = "*"
+r-evmix = "*"
+r-ggplot2 = "*"
+r-rdpack = "*"
+r-rlang = "*"
+
+[pypi-dependencies]
+auto-zcurve = { path = ".", editable = true }
+
+[tasks]
+install-bundled-r = "python scripts/install_r_package.py"
+auto-zcurve = { cmd = "auto-zcurve", depends-on = ["install-bundled-r"] }
+test = "python -m unittest discover -s tests"
+release-smoke = { cmd = "python -m unittest tests.test_release_smoke -v", depends-on = ["install-bundled-r"], env = { AUTO_ZCURVE_RELEASE_SMOKE = "1" } }

@@ -2,7 +2,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from auto_zcurve.schema import build_response_schema, read_extraction_schema, validate_extracted_json
+from auto_zcurve.schema import (
+    build_response_schema,
+    parse_extraction_schema,
+    read_extraction_schema,
+    validate_extracted_json,
+)
 
 
 class SchemaTests(unittest.TestCase):
@@ -46,6 +51,23 @@ class SchemaTests(unittest.TestCase):
             path.write_text("effects:\n  bad:\n    type: object\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 read_extraction_schema(path)
+
+    def test_schema_text_reports_yaml_location_and_invalid_required_value(self):
+        with self.assertRaisesRegex(ValueError, r"Invalid YAML at line 3, column"):
+            parse_extraction_schema("effects:\n  result: [\n")
+
+        with self.assertRaisesRegex(ValueError, "required must be true or false"):
+            parse_extraction_schema(
+                "effects:\n  result:\n    type: string\n    required: sometimes\n"
+            )
+
+    def test_schema_rejects_duplicate_roles(self):
+        with self.assertRaisesRegex(ValueError, "repeats role `reported_statistic`"):
+            parse_extraction_schema(
+                "effects:\n"
+                "  first:\n    type: string\n    role: reported_statistic\n"
+                "  second:\n    type: string\n    role: reported_statistic\n"
+            )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{ project.name }} · Auto Z-Curve</title>
+  <link rel="stylesheet" href="/{{ token }}/static/app.css">
+</head>
+<body data-project-id="{{ project.id }}" data-token="{{ token }}">
+  <header class="topbar">
+    <a class="brand" href="/{{ token }}/">
+      <span class="brand-mark">Z</span>
+      <span>Auto Z-Curve</span>
+    </a>
+    <span class="privacy-pill"><span class="status-dot"></span> Private on this computer</span>
+  </header>
+
+  <main class="project-shell">
+    {% if update_version %}
+    <p class="notice update-notice"><strong>Auto Z-Curve {{ update_version }} is available.</strong> Rerun the installer command to update.</p>
+    {% endif %}
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/{{ token }}/">Projects</a><span>/</span><span>{{ project.name }}</span>
+    </nav>
+
+    <header class="project-header">
+      <div>
+        <p class="eyebrow">Managed project</p>
+        <h1>{{ project.name }}</h1>
+        <p class="project-meta">{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.successful_count }} processed · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
+      </div>
+      <div class="header-actions">
+        <button class="button ghost js-open-folder" type="button">Open project folder</button>
+        <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/results.zip">Download results</a>
+        {% if project.has_report %}
+        <a class="button primary" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">View report ↗</a>
+        {% endif %}
+      </div>
+    </header>
+
+    {% if project.report_summary %}
+    <section class="card report-summary-card report-summary-top">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">Report ready</p>
+          <h2>Analysis summary</h2>
+        </div>
+        <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">Open full report ↗</a>
+      </div>
+      <div class="summary-stats">
+        <div><strong>{{ project.successful_count }}</strong><span>Articles processed</span></div>
+        <div><strong>{{ project.report_summary.extracted_effects }}</strong><span>Extracted effects</span></div>
+        <div><strong>{{ project.report_summary.usable_zcurve_inputs }}</strong><span>Usable z-curve inputs</span></div>
+        <div><strong>{{ project.total_tokens }}</strong><span>Total Gemini tokens</span></div>
+      </div>
+      {% if project.report_summary.metrics %}
+      <div class="zcurve-metrics">
+        {% for metric in project.report_summary.metrics %}
+        <div class="zcurve-metric">
+          <span>{{ metric.label }} ({{ metric.code }})</span>
+          <strong>{{ metric.estimate }}</strong>
+          <small>95% CI {{ metric.lower_ci }}–{{ metric.upper_ci }}</small>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if project.report_summary.execution %}
+      <p class="execution-note">{{ project.report_summary.execution }}</p>
+      {% endif %}
+      {% if project.report_summary.text %}
+      <details class="summary-details">
+        <summary>Show complete z-curve summary</summary>
+        <pre>{{ project.report_summary.text }}</pre>
+      </details>
+      {% endif %}
+    </section>
+    {% else %}
+    <section class="card report-summary-card report-summary-top empty-report-summary">
+      <span class="empty-report-icon" aria-hidden="true">Z</span>
+      <div>
+        <p class="step-label">Analysis summary</p>
+        <h2>No report yet</h2>
+        <p>Process some articles to generate a report and see its key results here.</p>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if not has_api_key %}
+    <section class="notice key-notice">
+      <div>
+        <strong>Add a Gemini API key before you run</strong>
+        <p>Your key is used only for PDF extraction and never appears in project files or results.</p>
+      </div>
+      <form class="inline-key-form js-credentials" action="/{{ token }}/credentials">
+        <input name="api_key" type="password" autocomplete="off" placeholder="Paste Gemini API key" required>
+        <label class="check-row compact">
+          <input name="remember" value="yes" type="checkbox" {% if keyring_available %}checked{% endif %}>
+          <span>Remember securely</span>
+        </label>
+        <button class="button secondary" type="submit">Use key</button>
+        <p class="form-message" role="status"></p>
+      </form>
+      {% if not keyring_available %}
+      <p class="notice-detail">No usable system credential store was found, so the key will be session-only.</p>
+      {% endif %}
+    </section>
+    {% elif key_warning %}
+    <p class="notice warning">{{ key_warning }}</p>
+    {% endif %}
+
+    <section class="workspace-grid">
+      <div class="workspace-main">
+        <section class="card upload-card">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">1 · Source material</p>
+              <h2>Add PDF articles</h2>
+            </div>
+            <span class="badge neutral" data-pdf-count>{{ project.pdf_count }} PDFs</span>
+          </div>
+          <form class="dropzone js-upload" action="/{{ token }}/projects/{{ project.id }}/uploads">
+            <input id="pdf-files" name="files" type="file" accept="application/pdf,.pdf" multiple>
+            <label for="pdf-files">
+              <span class="upload-symbol" aria-hidden="true">＋</span>
+              <span class="dropzone-copy">
+                <strong>Drop PDFs here or choose files</strong>
+                <span>Select several articles at once · up to 128 MB each</span>
+              </span>
+            </label>
+          </form>
+          <p class="upload-message form-message" role="status"></p>
+        </section>
+
+        <details class="card instructions-card">
+          <summary class="instructions-summary">
+            <span>
+              <p class="step-label">2 · Extraction setup</p>
+              <h2>Extraction instructions</h2>
+            </span>
+            <span class="instructions-toggle">Edit <i aria-hidden="true">⌄</i></span>
+          </summary>
+          <div class="instructions-body">
+            <p>These project-specific instructions tell Gemini how to identify and extract eligible statistics.</p>
+            <div class="schema-link-row">
+              <div>
+                <strong>Extraction schema</strong>
+                <span>Choose which article-level and effect-level fields Gemini returns.</span>
+              </div>
+              <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/schema">Edit schema →</a>
+            </div>
+            <form class="stack js-instructions" action="/{{ token }}/projects/{{ project.id }}/instructions" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
+              <label for="extraction-instructions">Instructions</label>
+              <textarea id="extraction-instructions" name="instructions" rows="12" maxlength="100000" required>{{ project.instructions }}</textarea>
+              {% if project.has_analysis_results %}
+              <p class="notice warning instruction-warning">Changing these instructions will delete the current report, extraction results, and processing logs. Every PDF will need to be processed again.</p>
+              {% endif %}
+              <button class="button secondary js-save-instructions" type="submit">Save instructions</button>
+              <p class="form-message instruction-message" role="status"></p>
+            </form>
+          </div>
+        </details>
+
+        <section class="card articles-card">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">3 · Review</p>
+              <h2>Articles</h2>
+            </div>
+            <div class="status-legend"><span><i class="legend-dot ready"></i>Ready</span><span><i class="legend-dot ok"></i>Done</span><span><i class="legend-dot error"></i>Failed</span></div>
+          </div>
+          <div class="article-table-wrap">
+            <table class="article-table">
+              <thead><tr><th>Article</th><th>Status</th><th>Effects</th><th>Tokens</th></tr></thead>
+              <tbody data-article-body>
+                {% for article in project.articles[:10] %}
+                <tr>
+                  <td><span class="pdf-icon">PDF</span><span><strong>{{ article.name }}</strong>{% if article.error %}<small>{{ article.error }}</small>{% endif %}</span></td>
+                  <td><span class="status-label {{ article.status }}"><i></i>{{ article.status|capitalize }}</span></td>
+                  <td>{{ article.effects or "—" }}</td>
+                  <td>{{ article.total_tokens or "—" }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="4">No articles yet. Add PDFs above to begin.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <nav class="table-pagination" data-article-pagination aria-label="Article pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
+            <button class="button ghost pagination-button js-page-previous" type="button" disabled>Previous</button>
+            <span data-page-status>Page 1 of {{ ((project.pdf_count - 1) // 10) + 1 }}</span>
+            <button class="button ghost pagination-button js-page-next" type="button" {% if project.pdf_count <= 10 %}disabled{% endif %}>Next</button>
+          </nav>
+        </section>
+      </div>
+
+      <aside class="run-panel card">
+        <p class="step-label">4 · Analyze</p>
+        <h2>Run extraction</h2>
+        <p>Gemini processes each PDF according to the project instructions; R and Quarto then generate the z-curve report.</p>
+        <form class="stack js-run-settings">
+          <label for="model">Gemini model</label>
+          <input id="model" name="model" list="gemini-model-options" value="{{ project.model }}" autocomplete="off" spellcheck="false" required>
+          <datalist id="gemini-model-options">
+            {% for model in models %}
+            <option value="{{ model.name }}"></option>
+            {% endfor %}
+          </datalist>
+          <p class="field-hint">Enter an exact Gemini API model ID or select a suggested model.</p>
+          <label for="parallel">Parallel PDFs</label>
+          <input id="parallel" name="parallel_requests" type="number" min="1" max="32" value="{{ project.parallel_requests }}">
+        </form>
+        <button class="button primary wide js-run" type="button" {% if not project.pdf_count or not has_api_key %}disabled{% endif %}>Run analysis <span>→</span></button>
+        <button class="button secondary wide js-retry" type="button" {% if not project.failed_count or not has_api_key %}disabled{% endif %}>Retry failed</button>
+        <button class="button secondary wide js-regenerate-report" type="button" {% if not project.has_extractions %}disabled{% endif %}>Regenerate report</button>
+        <button class="button danger-text wide js-cancel" type="button" hidden>Cancel run</button>
+
+        <div class="progress-area" {% if not job or job.status not in ["queued", "running"] %}hidden{% endif %}>
+          <div class="progress-heading"><strong data-progress-title>Processing articles</strong><span data-progress-count>0 / {{ project.pdf_count }}</span></div>
+          <div class="progress-track"><span data-progress-bar style="width:0%"></span></div>
+          <p data-progress-message>Preparing…</p>
+        </div>
+
+        <div class="run-result" data-run-result {% if not project.has_report %}hidden{% endif %}>
+          <span class="result-check">✓</span>
+          <div><strong>Report ready</strong><p>Your extraction and z-curve results are available.</p></div>
+        </div>
+        <p class="form-message run-message" role="status"></p>
+
+        <div class="privacy-note">
+          <span aria-hidden="true">⌂</span>
+          <p><strong>Data handling</strong>PDFs and outputs remain local. PDF content is sent to Gemini only during extraction.</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+  <script src="/{{ token }}/static/app.js" defer></script>
+</body>
+</html>

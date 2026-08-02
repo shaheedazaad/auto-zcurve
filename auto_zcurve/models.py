@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 
 MAIN_MODELS = [
+    "gemini-3.6-flash",
     "gemini-3.1-pro-preview",
-    "gemini-3.5-flash",
+    "gemini-3-flash-preview",
 ]
 
 MAIN_MODEL_SET = set(MAIN_MODELS)
+DEFAULT_MODEL = MAIN_MODELS[0]
 
 
 @dataclass

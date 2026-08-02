@@ -2,7 +2,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from auto_zcurve.artifacts import append_run_log, load_run_log, read_zcurve_summary, upsert_extraction
+from auto_zcurve.artifacts import (
+    append_run_log,
+    load_run_log,
+    parse_zcurve_summary,
+    read_zcurve_summary,
+    upsert_extraction,
+)
 from auto_zcurve.gemini import ExtractionResult
 
 
@@ -41,6 +47,21 @@ class ArtifactTests(unittest.TestCase):
             summary_path.write_text("EDR 0.310\nODR 0.890\n", encoding="utf-8")
 
             self.assertEqual(read_zcurve_summary(project), "EDR 0.310\nODR 0.890")
+
+    def test_parse_zcurve_summary_extracts_execution_and_core_metrics(self):
+        parsed = parse_zcurve_summary(
+            """Bootstrap execution: parallel with 7 workers.
+
+              Estimate  l.CI  u.CI
+ERR              0.434 0.184 0.680
+EDR              0.225 0.050 0.642
+
+Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
+"""
+        )
+        self.assertEqual(parsed["execution"], "Bootstrap execution: parallel with 7 workers.")
+        self.assertEqual([item["code"] for item in parsed["metrics"]], ["ERR", "EDR", "ODR"])
+        self.assertEqual(parsed["metrics"][0]["lower_ci"], "0.184")
 
 
 if __name__ == "__main__":

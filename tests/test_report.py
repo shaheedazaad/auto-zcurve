@@ -35,9 +35,17 @@ class ReportRenderTests(unittest.TestCase):
 
             self.assertEqual(report_path, project / "output" / "report.html")
             self.assertTrue(report_path.exists())
+            self.assertTrue((project / "output" / "report.qmd").exists())
+            reproducible_qmd = (project / "output" / "report.qmd").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn('read_csv("disclosure_table.csv"', reproducible_qmd)
+            self.assertIn("zcurve_clustered(", reproducible_qmd)
+            self.assertIn("is.finite(analysis_z)", reproducible_qmd)
             self.assertFalse((project / "report.html").exists())
             self.assertEqual(Path(calls[0][1]["cwd"]), project / "output")
             self.assertNotIn("--output-dir", calls[0][0])
+            self.assertIn("report.qmd", calls[0][0])
 
 
 if __name__ == "__main__":

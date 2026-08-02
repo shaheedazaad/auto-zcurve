@@ -60,8 +60,21 @@ if (!dir.exists(output_dir)) {
 }
 
 readr::write_csv(disclosure_table, file.path(output_dir, "disclosure_table.csv"))
+execution <- zcurve_bundle$execution %||% list()
+reproduction_settings <- tibble::tibble(
+  bootstrap_seed = as.integer(execution$bootstrap_seed %||% ZCURVE_BOOTSTRAP_SEED),
+  bootstrap_iterations = as.integer(execution$bootstrap_iterations %||% ZCURVE_BOOTSTRAP_ITERATIONS),
+  parallel = identical(execution$mode, "parallel"),
+  workers = as.integer(execution$workers %||% 1L),
+  clustering_method = "b",
+  zcurve_version = as.character(utils::packageVersion("zcurve"))
+)
+readr::write_csv(
+  reproduction_settings,
+  file.path(output_dir, "zcurve_reproduction_settings.csv")
+)
 
-zcurve_summary_text <- if (!identical(zcurve_bundle$status, "ok")) {
+zcurve_result_text <- if (!identical(zcurve_bundle$status, "ok")) {
   message <- zcurve_bundle$message
   if (is.null(message) || !nzchar(message)) {
     "Z-curve could not be estimated."
@@ -71,6 +84,15 @@ zcurve_summary_text <- if (!identical(zcurve_bundle$status, "ok")) {
 } else {
   paste(capture.output(summary(zcurve_bundle$fit, all = TRUE)), collapse = "\n")
 }
+zcurve_execution_text <- zcurve_bundle$execution$message %||% ""
+zcurve_warnings <- zcurve_bundle$warnings %||% character(0)
+zcurve_warning_text <- paste(zcurve_warnings, collapse = "\n")
+zcurve_summary_text <- paste(
+  c(zcurve_warning_text, zcurve_execution_text, zcurve_result_text)[
+    nzchar(c(zcurve_warning_text, zcurve_execution_text, zcurve_result_text))
+  ],
+  collapse = "\n\n"
+)
 writeLines(zcurve_summary_text, file.path(output_dir, "zcurve_summary.txt"), useBytes = TRUE)
 
 generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
@@ -172,6 +194,15 @@ The successful extractions produced `r extracted_effects` effect`r if (extracted
 Of those effects, `r usable_inputs` had statistics usable as z-curve inputs.
 
 Gemini usage recorded `r input_tokens` input tokens and `r output_tokens` output tokens (`r total_tokens` total).
+
+```{r results='asis'}
+if (length(zcurve_warnings)) {
+  cat("::: {.callout-warning}\n")
+  cat("## Z-curve input warning\n\n")
+  cat(paste0("- ", zcurve_warnings, collapse = "\n"))
+  cat("\n:::\n")
+}
+```
 
 The full disclosure table is available as a separate CSV at:
 

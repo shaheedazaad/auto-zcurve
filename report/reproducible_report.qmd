@@ -1,0 +1,101 @@
+---
+title: "Reproduce the Auto Z-Curve Analysis"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: true
+  message: false
+---
+
+This report reproduces the fitted z-curve from the disclosed analysis inputs.
+Keep this file in the same directory as `disclosure_table.csv` and
+`zcurve_reproduction_settings.csv`, then render it with Quarto.
+
+## Load and filter the disclosed results
+
+The filter is the same one used for the generated analysis: an effect must be
+marked as usable, have a non-empty decoded input, and have a finite z-value.
+Excluded effects remain in the CSV for audit purposes.
+
+```{r}
+library(dplyr)
+library(readr)
+library(zcurve)
+
+disclosure <- read_csv("disclosure_table.csv", show_col_types = FALSE)
+settings <- read_csv("zcurve_reproduction_settings.csv", show_col_types = FALSE)
+
+analysis_rows <- disclosure |>
+  filter(
+    usable_for_zcurve %in% TRUE,
+    !is.na(analysis_input),
+    nzchar(trimws(analysis_input)),
+    !is.na(analysis_z),
+    is.finite(analysis_z)
+  )
+
+if (nrow(analysis_rows) == 0) {
+  stop("No usable finite z-curve inputs remain after filtering.")
+}
+
+analysis_rows |>
+  select(source_name, analysis_input, zcurve_cluster_id, analysis_p, analysis_z)
+```
+
+## Fit the clustered z-curve
+
+The saved seed, bootstrap count, parallel mode, worker count, clustering
+method, and package version document the original fit. Using the same package
+version and execution settings reproduces its bootstrap estimates.
+
+```{r}
+recorded_version <- as.character(settings$zcurve_version[[1]])
+installed_version <- as.character(packageVersion("zcurve"))
+if (!identical(installed_version, recorded_version)) {
+  warning(
+    "This analysis used zcurve ", recorded_version,
+    "; the installed version is ", installed_version, "."
+  )
+}
+
+zcurve_data_for_fit <- zcurve_data(
+  analysis_rows$analysis_input,
+  id = analysis_rows$zcurve_cluster_id
+)
+
+bootstrap_seed <- as.integer(settings$bootstrap_seed[[1]])
+bootstrap_iterations <- as.integer(settings$bootstrap_iterations[[1]])
+workers <- as.integer(settings$workers[[1]])
+use_parallel <- isTRUE(settings$parallel[[1]]) && workers > 1L
+
+old_workers <- zcurve.get_option("max_cores")
+zcurve.options(max_cores = workers)
+set.seed(bootstrap_seed)
+
+reproduced_fit <- zcurve_clustered(
+  data = zcurve_data_for_fit,
+  method = as.character(settings$clustering_method[[1]]),
+  bootstrap = bootstrap_iterations,
+  parallel = use_parallel
+)
+
+zcurve.options(max_cores = old_workers)
+summary(reproduced_fit, all = TRUE)
+```
+
+## Plot
+
+```{r fig.width=10, fig.height=7}
+plot(reproduced_fit, annotation = TRUE, CI = TRUE)
+```
+
+## Excluded effects
+
+```{r}
+disclosure |>
+  filter(!is.na(zcurve_exclusion_reason), nzchar(zcurve_exclusion_reason)) |>
+  select(source_name, analysis_input, analysis_p, analysis_z, zcurve_exclusion_reason)
+```

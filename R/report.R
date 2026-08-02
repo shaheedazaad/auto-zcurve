@@ -1,3 +1,6 @@
+ZCURVE_BOOTSTRAP_ITERATIONS <- 1000L
+ZCURVE_BOOTSTRAP_SEED <- 20260802L
+
 flatten_results <- function(results, config) {
   successful <- purrr::keep(results, ~ identical(.x$status, "ok"))
 
@@ -135,10 +138,11 @@ build_zcurve_cluster_id <- function(effect_table, config) {
 
 normalize_zcurve_input_for_match <- function(x) {
   normalized <- tolower(trimws(as.character(x)))
-  normalized <- gsub("\u03c7", "chi", normalized, fixed = TRUE)
   normalized <- gsub("\u03c7²", "chi", normalized, fixed = TRUE)
+  normalized <- gsub("\u03c7", "chi", normalized, fixed = TRUE)
   normalized <- gsub("chi-square", "chisquare", normalized, fixed = TRUE)
-  gsub("\\s+", "", normalized)
+  normalized <- gsub("\\s+", "", normalized)
+  sub("^(c|chisq|chisquare|x2)\\(", "chi(", normalized)
 }
 
 map_parsed_inputs_to_rows <- function(precise_inputs, censored_inputs, analysis_input, valid_ids) {
@@ -147,7 +151,12 @@ map_parsed_inputs_to_rows <- function(precise_inputs, censored_inputs, analysis_
   parsed_inputs <- c(precise_inputs, censored_inputs)
 
   if (!length(parsed_inputs)) {
-    return(list(precise = integer(0), censored = integer(0)))
+    return(list(
+      precise = integer(0),
+      precise_positions = integer(0),
+      censored = integer(0),
+      censored_positions = integer(0)
+    ))
   }
 
   used <- rep(FALSE, length(valid_ids))
@@ -171,10 +180,14 @@ map_parsed_inputs_to_rows <- function(precise_inputs, censored_inputs, analysis_
   precise_count <- length(precise_inputs)
   precise_rows <- if (precise_count) rows[seq_len(precise_count)] else integer(0)
   censored_rows <- if (length(rows) > precise_count) rows[(precise_count + 1):length(rows)] else integer(0)
+  precise_matched <- !is.na(precise_rows)
+  censored_matched <- !is.na(censored_rows)
 
   list(
-    precise = precise_rows[!is.na(precise_rows)],
-    censored = censored_rows[!is.na(censored_rows)]
+    precise = precise_rows[precise_matched],
+    precise_positions = which(precise_matched),
+    censored = censored_rows[censored_matched],
+    censored_positions = which(censored_matched)
   )
 }
 
@@ -186,8 +199,8 @@ parse_reported_statistic <- function(x) {
   }
 
   normalized <- tolower(trimws(stat))
-  normalized <- gsub("\u03c7", "chi", normalized, fixed = TRUE)
   normalized <- gsub("\u03c7²", "chi", normalized, fixed = TRUE)
+  normalized <- gsub("\u03c7", "chi", normalized, fixed = TRUE)
   normalized <- gsub("chi-square", "chisquare", normalized, fixed = TRUE)
   normalized <- gsub("\\s+", "", normalized)
 
@@ -482,6 +495,326 @@ validate_extracted_statistics <- function(effect_table, config) {
   dplyr::bind_cols(effect_table, validations)
 }
 
+positive_integer <- function(value) {
+  if (is.null(value) || !length(value)) {
+    return(NA_integer_)
+  }
+  parsed <- suppressWarnings(as.integer(value[[1]]))
+  if (length(parsed) == 1 && !is.na(parsed) && is.finite(parsed) && parsed > 0) {
+    parsed
+  } else {
+    NA_integer_
+  }
+}
+
+detect_zcurve_workers <- function(
+  detect_cores = parallel::detectCores,
+  system_command = system2,
+  environment = Sys.getenv
+) {
+  requested <- positive_integer(environment("AUTO_ZCURVE_ZCURVE_CORES", ""))
+  if (!is.na(requested)) {
+    return(list(
+      workers = requested,
+      detected_cores = requested,
+      source = "AUTO_ZCURVE_ZCURVE_CORES"
+    ))
+  }
+
+  detected <- tryCatch(
+    positive_integer(detect_cores(logical = TRUE)),
+    error = function(e) NA_integer_
+  )
+  source <- "parallel::detectCores()"
+
+  if (is.na(detected)) {
+    detected <- tryCatch(
+      positive_integer(system_command(
+        "getconf",
+        "_NPROCESSORS_ONLN",
+        stdout = TRUE,
+        stderr = FALSE
+      )),
+      error = function(e) NA_integer_
+    )
+    source <- "getconf _NPROCESSORS_ONLN"
+  }
+
+  if (is.na(detected)) {
+    detected <- positive_integer(environment("NUMBER_OF_PROCESSORS", ""))
+    source <- "NUMBER_OF_PROCESSORS"
+  }
+
+  if (is.na(detected)) {
+    detected <- 1L
+    source <- "safe default"
+  }
+
+  list(
+    workers = max(1L, detected - 1L),
+    detected_cores = detected,
+    source = source
+  )
+}
+
+probe_zcurve_workers <- function(
+  workers,
+  make_cluster = parallel::makePSOCKcluster,
+  validate_cluster = function(cluster) {
+    parallel::clusterEvalQ(cluster, {
+      library("zcurve")
+      TRUE
+    })
+  },
+  stop_cluster = parallel::stopCluster
+) {
+  if (workers <= 1L) {
+    return(list(available = FALSE, message = "Only one worker is available."))
+  }
+
+  cluster <- NULL
+  failure <- NULL
+  tryCatch(
+    {
+      cluster <- make_cluster(workers)
+      validate_cluster(cluster)
+    },
+    error = function(e) {
+      failure <<- conditionMessage(e)
+    },
+    finally = {
+      if (!is.null(cluster)) {
+        try(stop_cluster(cluster), silent = TRUE)
+      }
+    }
+  )
+
+  list(
+    available = is.null(failure),
+    message = failure
+  )
+}
+
+is_parallel_worker_error <- function(error) {
+  if (!inherits(error, "error")) {
+    return(FALSE)
+  }
+  message <- tolower(conditionMessage(error))
+  patterns <- c(
+    "server socket",
+    "socket connection",
+    "cannot open connection",
+    "cannot be opened",
+    "all connections are in use",
+    "error reading from connection",
+    "error in unserialize",
+    "node produced errors",
+    "na/nan argument"
+  )
+  any(vapply(patterns, grepl, logical(1), x = message, fixed = TRUE))
+}
+
+zcurve_execution_message <- function(mode, workers, core_info, reason = NULL) {
+  if (identical(mode, "parallel")) {
+    return(sprintf(
+      "Bootstrap execution: parallel with %d workers (%d logical CPUs detected via %s).",
+      workers,
+      core_info$detected_cores,
+      core_info$source
+    ))
+  }
+
+  if (identical(mode, "sequential_fallback")) {
+    return(paste0(
+      "Bootstrap execution: sequential fallback. Parallel workers were unavailable",
+      if (!is.null(reason) && nzchar(reason)) paste0(": ", reason) else "."
+    ))
+  }
+
+  sprintf(
+    "Bootstrap execution: sequential (%d logical CPU detected via %s).",
+    core_info$detected_cores,
+    core_info$source
+  )
+}
+
+fit_zcurve_with_parallel_fallback <- function(
+  parsed,
+  bootstrap = ZCURVE_BOOTSTRAP_ITERATIONS,
+  seed = ZCURVE_BOOTSTRAP_SEED,
+  core_info = detect_zcurve_workers(),
+  worker_probe = probe_zcurve_workers,
+  fit_function = zcurve::zcurve_clustered,
+  get_option = zcurve::zcurve.get_option,
+  set_option = zcurve::zcurve.options
+) {
+  workers <- positive_integer(core_info$workers)
+  if (is.na(workers)) {
+    workers <- 1L
+  }
+  workers <- max(1L, min(workers, as.integer(bootstrap)))
+  old_max_cores <- tryCatch(get_option("max_cores"), error = function(e) NULL)
+  option_error <- tryCatch(
+    {
+      set_option(max_cores = workers)
+      NULL
+    },
+    error = function(e) conditionMessage(e)
+  )
+  if (!is.null(old_max_cores)) {
+    on.exit(try(set_option(max_cores = old_max_cores), silent = TRUE), add = TRUE)
+  }
+
+  use_parallel <- workers > 1L && is.null(option_error)
+  fallback_reason <- option_error
+  if (use_parallel) {
+    probe <- worker_probe(workers)
+    use_parallel <- isTRUE(probe$available)
+    fallback_reason <- probe$message %||% NULL
+  }
+
+  set.seed(seed)
+  fit <- tryCatch(
+    fit_function(data = parsed, bootstrap = bootstrap, parallel = use_parallel),
+    error = function(e) e
+  )
+
+  mode <- if (use_parallel) "parallel" else if (workers > 1L) "sequential_fallback" else "sequential"
+  if (use_parallel && is_parallel_worker_error(fit)) {
+    fallback_reason <- conditionMessage(fit)
+    set.seed(seed)
+    fit <- tryCatch(
+      fit_function(data = parsed, bootstrap = bootstrap, parallel = FALSE),
+      error = function(e) e
+    )
+    mode <- "sequential_fallback"
+  }
+
+  execution <- list(
+    mode = mode,
+    workers = if (identical(mode, "parallel")) workers else 1L,
+    requested_workers = workers,
+    detected_cores = core_info$detected_cores,
+    core_source = core_info$source,
+    bootstrap_iterations = as.integer(bootstrap),
+    bootstrap_seed = as.integer(seed),
+    message = zcurve_execution_message(mode, workers, core_info, fallback_reason)
+  )
+
+  list(fit = fit, execution = execution)
+}
+
+finite_z_from_p <- function(p) {
+  p <- suppressWarnings(as.numeric(p))
+  out <- rep(NA_real_, length(p))
+  valid <- !is.na(p) & is.finite(p) & p > 0 & p <= 1
+  out[valid] <- stats::qnorm(p[valid] / 2, lower.tail = FALSE)
+  out
+}
+
+prepare_zcurve_results <- function(parsed, row_map, disclosure_table) {
+  precise_rows <- row_map$precise %||% integer(0)
+  precise_positions <- row_map$precise_positions %||% integer(0)
+  censored_rows <- row_map$censored %||% integer(0)
+  censored_positions <- row_map$censored_positions %||% integer(0)
+
+  precise_p <- parsed$precise$p[precise_positions]
+  precise_z <- finite_z_from_p(precise_p)
+  precise_finite <- !is.na(precise_z) & is.finite(precise_z)
+
+  censored_p <- parsed$censored$p.rep[censored_positions]
+  censored_z <- finite_z_from_p(censored_p)
+  censored_lb <- parsed$censored$p.lb[censored_positions]
+  censored_ub <- parsed$censored$p.ub[censored_positions]
+  censored_bounds_valid <-
+    !is.na(censored_lb) & is.finite(censored_lb) & censored_lb >= 0 & censored_lb <= 1 &
+    !is.na(censored_ub) & is.finite(censored_ub) & censored_ub >= 0 & censored_ub <= 1 &
+    censored_lb <= censored_ub
+  censored_finite <- !is.na(censored_z) & is.finite(censored_z)
+  censored_usable <- censored_finite & censored_bounds_valid
+
+  if (length(precise_rows)) {
+    disclosure_table$analysis_p[precise_rows] <- precise_p
+    disclosure_table$analysis_z[precise_rows[precise_finite]] <- precise_z[precise_finite]
+    disclosure_table$usable_for_zcurve[precise_rows[precise_finite]] <- TRUE
+    disclosure_table$zcurve_exclusion_reason[precise_rows[!precise_finite]] <-
+      "Excluded because the p-value produced a non-finite z-value."
+  }
+
+  if (length(censored_rows)) {
+    disclosure_table$analysis_p[censored_rows] <- censored_p
+    disclosure_table$analysis_z[censored_rows[censored_finite]] <- censored_z[censored_finite]
+    disclosure_table$usable_for_zcurve[censored_rows[censored_usable]] <- TRUE
+    disclosure_table$zcurve_exclusion_reason[censored_rows[!censored_finite]] <-
+      "Excluded because the representative p-value produced a non-finite z-value."
+    disclosure_table$zcurve_exclusion_reason[censored_rows[censored_finite & !censored_bounds_valid]] <-
+      "Excluded because the decoded p-value bounds were outside [0, 1] or not finite."
+  }
+
+  keep_precise <- rep(FALSE, nrow(parsed$precise))
+  keep_censored <- rep(FALSE, nrow(parsed$censored))
+  keep_precise[precise_positions[precise_finite]] <- TRUE
+  keep_censored[censored_positions[censored_usable]] <- TRUE
+
+  unmatched_count <-
+    (nrow(parsed$precise) - length(precise_positions)) +
+    (nrow(parsed$censored) - length(censored_positions))
+  non_finite_count <- sum(!precise_finite) + sum(!censored_finite)
+  invalid_bounds_count <- sum(!censored_bounds_valid)
+  warnings <- character(0)
+
+  if (non_finite_count > 0) {
+    warnings <- c(
+      warnings,
+      paste0(
+        non_finite_count,
+        " effect",
+        if (non_finite_count == 1) " was" else "s were",
+        " excluded because ",
+        if (non_finite_count == 1) "its p-value was" else "their p-values were",
+        " zero or otherwise produced non-finite z-values. ",
+        "See `zcurve_exclusion_reason` in the disclosure table."
+      )
+    )
+  }
+
+  if (invalid_bounds_count > 0) {
+    warnings <- c(
+      warnings,
+      paste0(
+        invalid_bounds_count,
+        " censored effect",
+        if (invalid_bounds_count == 1) " was" else "s were",
+        " excluded because decoded p-value bounds were outside [0, 1] or not finite. ",
+        "See `zcurve_exclusion_reason` in the disclosure table."
+      )
+    )
+  }
+
+  if (unmatched_count > 0) {
+    warnings <- c(
+      warnings,
+      paste0(
+        unmatched_count,
+        " decoded z-curve input",
+        if (unmatched_count == 1) " could" else "s could",
+        " not be linked back to its disclosure row and ",
+        if (unmatched_count == 1) "was" else "were",
+        " excluded."
+      )
+    )
+  }
+
+  parsed$precise <- parsed$precise[keep_precise, , drop = FALSE]
+  parsed$censored <- parsed$censored[keep_censored, , drop = FALSE]
+
+  list(
+    parsed = parsed,
+    disclosure_table = disclosure_table,
+    warnings = warnings
+  )
+}
+
 run_zcurve_analysis <- function(effect_table, config) {
   if (!nrow(effect_table)) {
     return(list(status = "error", message = "No extracted effects are available yet."))
@@ -498,7 +831,8 @@ run_zcurve_analysis <- function(effect_table, config) {
     zcurve_cluster_id = cluster_id,
     usable_for_zcurve = FALSE,
     analysis_p = NA_real_,
-    analysis_z = NA_real_
+    analysis_z = NA_real_,
+    zcurve_exclusion_reason = NA_character_
   )
 
   if (!any(valid)) {
@@ -529,31 +863,28 @@ run_zcurve_analysis <- function(effect_table, config) {
     analysis_input,
     valid_ids
   )
-  precise_rows <- row_map$precise
-  censored_rows <- row_map$censored
-  usable_rows <- unique(c(precise_rows, censored_rows))
+  prepared <- prepare_zcurve_results(parsed, row_map, disclosure_table)
+  parsed <- prepared$parsed
+  disclosure_table <- prepared$disclosure_table
 
-  disclosure_table$usable_for_zcurve[usable_rows] <- TRUE
-
-  if (length(precise_rows)) {
-    disclosure_table$analysis_p[precise_rows] <- parsed$precise$p
-    disclosure_table$analysis_z[precise_rows] <- stats::qnorm(parsed$precise$p / 2, lower.tail = FALSE)
+  if (!nrow(parsed$precise) && !nrow(parsed$censored)) {
+    return(list(
+      status = "error",
+      message = "No finite z-values remain after validating the decoded statistics.",
+      warnings = prepared$warnings,
+      disclosure_table = disclosure_table
+    ))
   }
 
-  if (length(censored_rows)) {
-    disclosure_table$analysis_p[censored_rows] <- parsed$censored$p.rep
-    disclosure_table$analysis_z[censored_rows] <- stats::qnorm(parsed$censored$p.rep / 2, lower.tail = FALSE)
-  }
-
-  fit <- tryCatch(
-    zcurve::zcurve_clustered(data = parsed, bootstrap = 1000, parallel = TRUE),
-    error = function(e) e
-  )
+  fit_result <- fit_zcurve_with_parallel_fallback(parsed)
+  fit <- fit_result$fit
 
   if (inherits(fit, "error")) {
     return(list(
       status = "error",
       message = fit$message,
+      warnings = prepared$warnings,
+      execution = fit_result$execution,
       disclosure_table = disclosure_table
     ))
   }
@@ -568,6 +899,8 @@ run_zcurve_analysis <- function(effect_table, config) {
     fit = fit,
     fit_summary = fit_summary,
     metrics = dplyr::select(coefficients, metric, Estimate),
+    execution = fit_result$execution,
+    warnings = prepared$warnings,
     disclosure_table = disclosure_table,
     message = NULL
   )

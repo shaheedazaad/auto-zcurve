@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,10 @@ PYTHON_DEPS = {
     "yaml": "PyYAML",
     "rich": "rich",
     "questionary": "questionary",
+    "fastapi": "fastapi",
+    "uvicorn": "uvicorn",
+    "jinja2": "Jinja2",
+    "multipart": "python-multipart",
 }
 
 
@@ -80,11 +85,20 @@ def check_system_tools() -> list[str]:
 def check_r_packages() -> list[str]:
     if shutil.which("Rscript") is None:
         return ["Rscript"]
+    env = os.environ.copy()
+    conda_prefix = os.environ.get("CONDA_PREFIX", "").strip()
+    if conda_prefix:
+        managed_library = Path(conda_prefix) / "lib" / "R" / "library"
+        if sys.platform == "win32":
+            managed_library = Path(conda_prefix) / "Lib" / "R" / "library"
+        env["R_LIBS_USER"] = str(managed_library)
+        env["R_LIBS_SITE"] = str(managed_library)
     completed = subprocess.run(
         ["Rscript", str(R_PREFLIGHT_SCRIPT)],
         check=False,
         text=True,
         capture_output=True,
+        env=env,
     )
     if completed.returncode != 0:
         try:

@@ -21,12 +21,18 @@ from .artifacts import (
 from .config import RunSettings, save_run_settings
 from .console import CliConsole
 from .gemini import ExtractionResult, extract_pdf
-from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
+from .paths import DEFAULT_SCHEMA
+from .projects import project_instruction_path
 from .report import render_report
 from .schema import build_response_schema, read_extraction_schema
+from .security import redact_secrets
 
 
 _ARTIFACT_LOCK = threading.Lock()
+
+
+class RunCancelled(RuntimeError):
+    pass
 
 
 @dataclass
@@ -166,7 +172,7 @@ def _process_one(
             primary_model=settings.primary_model,
             response_schema=response_schema,
             schema_config=config,
-            instruction_path=DEFAULT_INSTRUCTIONS,
+            instruction_path=project_instruction_path(project_dir),
             effect_definition=settings.effect_definition,
         )
     except Exception as exc:
@@ -174,7 +180,7 @@ def _process_one(
             source_path=source_path,
             source_name=source_name(project_dir, source_path),
             status="error",
-            error=str(exc),
+            error=redact_secrets(exc, [api_key]),
         )
     with _ARTIFACT_LOCK:
         upsert_extraction(project_dir, result)
@@ -199,6 +205,7 @@ def run_project(
     skip_report: bool,
     console: CliConsole,
     api_key: str,
+    cancellation_event: threading.Event | None = None,
 ) -> RunSummary | None:
     if not ensure_project_layout(project_dir, assume_yes, interactive, console):
         return None
@@ -241,14 +248,21 @@ def run_project(
                     result = future.result()
                     label = f"{result.status}: {result.source_name}"
                     progress.advance(label)
+                    if cancellation_event is not None and cancellation_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        raise RunCancelled("Run cancelled.")
 
     report_path = None
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RunCancelled("Run cancelled.")
     if not skip_report:
         report_path = render_report(
             project_dir=project_dir,
             schema_path=project_dir / "extraction_schema.yml",
             model_name=settings.primary_model,
             effect_definition=settings.effect_definition,
+            instruction_path=project_instruction_path(project_dir),
         )
         try:
             rel = report_path.relative_to(project_dir)
@@ -268,6 +282,7 @@ def retry_project(
     skip_report: bool,
     console: CliConsole,
     api_key: str,
+    cancellation_event: threading.Event | None = None,
 ) -> RunSummary | None:
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
@@ -300,20 +315,53 @@ def retry_project(
             for future in as_completed(futures):
                 result = future.result()
                 progress.advance(f"{result.status}: {result.source_name}")
+                if cancellation_event is not None and cancellation_event.is_set():
+                    for pending in futures:
+                        pending.cancel()
+                    raise RunCancelled("Run cancelled.")
 
     report_path = None
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RunCancelled("Run cancelled.")
     if not skip_report:
         report_path = render_report(
             project_dir=project_dir,
             schema_path=project_dir / "extraction_schema.yml",
             model_name=settings.primary_model,
             effect_definition=settings.effect_definition,
+            instruction_path=project_instruction_path(project_dir),
         )
         try:
             rel = report_path.relative_to(project_dir)
         except ValueError:
             rel = report_path
         console.success(f"R/Quarto report created: {rel}")
+    return summarize(project_dir, report_path)
+
+
+def regenerate_report(
+    *,
+    project_dir: Path,
+    settings: RunSettings,
+    console: CliConsole,
+    cancellation_event: threading.Event | None = None,
+) -> RunSummary:
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RunCancelled("Report regeneration cancelled.")
+
+    with console.progress(1, "Rendering report") as progress:
+        report_path = render_report(
+            project_dir=project_dir,
+            schema_path=project_dir / "extraction_schema.yml",
+            model_name=settings.primary_model,
+            effect_definition=settings.effect_definition,
+            instruction_path=project_instruction_path(project_dir),
+        )
+        progress.advance("Report rendered")
+
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RunCancelled("Report regeneration cancelled.")
+    console.success("R/Quarto report regenerated: output/report.html")
     return summarize(project_dir, report_path)
 
 

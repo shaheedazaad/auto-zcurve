@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Auto Z-Curve</title>
+  <link rel="stylesheet" href="/{{ token }}/static/app.css">
+</head>
+<body data-token="{{ token }}">
+  <header class="topbar">
+    <a class="brand" href="/{{ token }}/">
+      <span class="brand-mark">Z</span>
+      <span>Auto Z-Curve</span>
+    </a>
+    <span class="privacy-pill"><span class="status-dot"></span> Private on this computer</span>
+  </header>
+
+  <main class="home-shell">
+    {% if update_version %}
+    <p class="notice update-notice"><strong>Auto Z-Curve {{ update_version }} is available.</strong> Rerun the installer command to update.</p>
+    {% endif %}
+    <section class="home-intro">
+      <p class="eyebrow">Local analysis workspace</p>
+      <h1>Auto Z-Curve projects</h1>
+      <p>Manage PDF extraction and z-curve analyses stored on this computer.</p>
+    </section>
+
+    <section class="projects-section projects-primary">
+      <div class="projects-heading">
+        <div>
+          <h2>Your projects</h2>
+          <p class="muted" data-project-count>{{ projects|length }} project{% if projects|length != 1 %}s{% endif %}</p>
+        </div>
+        <label class="project-search">
+          <span>Search projects</span>
+          <input type="search" class="js-project-search" placeholder="Search by name" autocomplete="off">
+        </label>
+      </div>
+
+      <form method="post" action="/{{ token }}/projects" class="compact-create-form">
+        <label for="project-name">New project</label>
+        <input id="project-name" name="name" maxlength="100" placeholder="Project name" required>
+        <button class="button primary" type="submit">Create project</button>
+      </form>
+
+      <div class="project-list" data-project-list>
+        {% for project in projects[:10] %}
+        <a class="project-row" href="/{{ token }}/projects/{{ project.id }}">
+          <span class="project-icon">{{ project.name[:1]|upper }}</span>
+          <span class="project-main">
+            <strong>{{ project.name }}</strong>
+            <span>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.total_tokens }} tokens</span>
+          </span>
+          {% if project.has_report %}
+            <span class="badge success">Report ready</span>
+          {% elif project.failed_count %}
+            <span class="badge danger">{{ project.failed_count }} failed</span>
+          {% else %}
+            <span class="badge neutral">In progress</span>
+          {% endif %}
+          <span class="row-arrow" aria-hidden="true">→</span>
+        </a>
+        {% else %}
+        <div class="project-list-empty">No projects yet. Create a project to begin.</div>
+        {% endfor %}
+      </div>
+      <nav class="home-pagination" data-project-pagination aria-label="Project pages" {% if projects|length <= 10 %}hidden{% endif %}>
+        <button class="button ghost pagination-button js-project-previous" type="button" disabled>Previous</button>
+        <span data-project-page>Page 1 of {% if projects %}{{ ((projects|length - 1) // 10) + 1 }}{% else %}1{% endif %}</span>
+        <button class="button ghost pagination-button js-project-next" type="button" {% if projects|length <= 10 %}disabled{% endif %}>Next</button>
+      </nav>
+    </section>
+
+    <details class="card configuration-panel">
+      <summary>
+        <span><strong>Configuration</strong><small>Gemini API credentials</small></span>
+        {% if has_api_key %}
+          <span class="badge success">API key ready</span>
+        {% else %}
+          <span class="badge neutral">API key required</span>
+        {% endif %}
+      </summary>
+      <div class="configuration-body">
+        <p>Gemini is used only for structured extraction from PDFs. Credentials are not written to project or result files.</p>
+        <form class="configuration-form js-credentials" action="/{{ token }}/credentials">
+          <label for="api-key">Gemini API key</label>
+          <input id="api-key" name="api_key" type="password" autocomplete="off" placeholder="{% if has_saved_api_key %}••••••••••••{% else %}Paste API key{% endif %}">
+          <label class="check-row compact-config">
+            <input name="remember" value="yes" type="checkbox" {% if keyring_available %}checked{% endif %}>
+            <span>Store in the operating-system credential store</span>
+          </label>
+          <button class="button secondary" type="submit">Save key</button>
+          <p class="form-message" role="status"></p>
+        </form>
+        {% if has_saved_api_key %}
+          <p class="saved-key-hint">The dots indicate a stored key. Enter a different key to replace it.</p>
+        {% endif %}
+        {% if not keyring_available %}
+          <p class="notice warning">No secure credential store is available. The key will remain in memory only for this application session.</p>
+        {% endif %}
+      </div>
+    </details>
+
+    <footer class="local-footer">
+      <span>Auto Z-Curve {{ version }}</span>
+      <span>To update, rerun the installer command from the release page.</span>
+    </footer>
+  </main>
+  <script src="/{{ token }}/static/app.js" defer></script>
+</body>
+</html>
