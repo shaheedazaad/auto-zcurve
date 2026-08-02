@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -116,9 +117,11 @@ class ReleaseSmokeTests(unittest.TestCase):
             reproduction_r_libs = _current_r_libs()
             if reproduction_r_libs:
                 reproduction_env["R_LIBS"] = reproduction_r_libs
+            quarto = shutil.which("quarto")
+            self.assertIsNotNone(quarto, "Quarto is missing from the locked environment.")
             reproduction = subprocess.run(
                 [
-                    "quarto",
+                    quarto,
                     "render",
                     "report.qmd",
                     "--to",
