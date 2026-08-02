@@ -12,7 +12,6 @@ sent to Gemini.
 
 Azaad, S. (2026). Empirically derived effect size guidelines for social, individual differences, and cognitive psychology. PsyArXiv. https://doi.org/10.31234/osf.io/r4xwb_v1
 
-
 ## Install
 
 The supported installer uses [Pixi](https://pixi.sh/) to provide a locked
@@ -39,7 +38,8 @@ irm https://raw.githubusercontent.com/shaheedazaad/auto-zcurve/main/install.ps1 
 The installer supports Apple Silicon and Intel macOS, Windows x64, and
 mainstream glibc-based Linux x64. It downloads the latest versioned release
 bundle and installs its committed `pixi.lock`. To update, run the same command
-again.
+again. It also adds the Auto Z-Curve launcher directory to your user `PATH` if
+needed; open a new terminal after the first installation.
 
 ## Use the browser app
 
@@ -89,15 +89,15 @@ reports.
 
 Each managed project has an `output/` folder containing:
 
-| File | Contents |
-|---|---|
-| `report.html` | Z-curve plot, estimates, disclosure table, and failures |
-| `report.qmd` | Standalone Quarto source that reproduces the fit from the disclosure CSV |
-| `disclosure_table.csv` | Every extracted effect and supporting metadata |
+| File                               | Contents                                                                     |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `report.html`                      | Z-curve plot, estimates, disclosure table, and failures                      |
+| `report.qmd`                       | Standalone Quarto source that reproduces the fit from the disclosure CSV     |
+| `disclosure_table.csv`             | Every extracted effect and supporting metadata                               |
 | `zcurve_reproduction_settings.csv` | Seed, bootstrap, parallel, and package settings used by the reproducible QMD |
-| `extractions.json` | Full structured Gemini output for each PDF |
-| `run_log.csv` | Processing attempts, timing, status, and token usage |
-| `raw/*.json` | Per-article extraction artifacts |
+| `extractions.json`                 | Full structured Gemini output for each PDF                                   |
+| `run_log.csv`                      | Processing attempts, timing, status, and token usage                         |
+| `raw/*.json`                       | Per-article extraction artifacts                                             |
 
 ## Legacy interfaces
 

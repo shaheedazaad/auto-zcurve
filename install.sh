@@ -4,6 +4,62 @@ set -eu
 REPOSITORY="${AUTO_ZCURVE_REPOSITORY:-shaheedazaad/auto-zcurve}"
 VERSION="${AUTO_ZCURVE_VERSION:-latest}"
 
+add_path_line() {
+  config_file="$1"
+  escaped_bin_dir="$(printf '%s' "$BIN_DIR" | sed "s/'/'\\\\''/g")"
+  path_line="AUTO_ZCURVE_BIN_DIR='$escaped_bin_dir'; case \":\$PATH:\" in *\":\$AUTO_ZCURVE_BIN_DIR:\"*) ;; *) export PATH=\"\$AUTO_ZCURVE_BIN_DIR:\$PATH\" ;; esac; unset AUTO_ZCURVE_BIN_DIR"
+
+  if ! grep -Fqx "$path_line" "$config_file" 2>/dev/null; then
+    printf '\n# Added by the Auto Z-Curve installer.\n%s\n' "$path_line" >> "$config_file"
+  fi
+}
+
+ensure_launcher_on_path() {
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) return ;;
+  esac
+
+  shell_name="$(basename "${SHELL:-sh}")"
+  case "$shell_name" in
+    zsh)
+      ZSH_CONFIG_DIR="${ZDOTDIR:-$HOME}"
+      mkdir -p "$ZSH_CONFIG_DIR"
+      add_path_line "$ZSH_CONFIG_DIR/.zshrc"
+      PATH_CONFIG="$ZSH_CONFIG_DIR/.zshrc"
+      ;;
+    bash)
+      # Bash uses .bashrc for interactive shells and .bash_profile for login
+      # shells. Update the login file Bash already prefers so that creating a
+      # new file does not prevent an existing .profile from being loaded.
+      add_path_line "$HOME/.bashrc"
+      if [ -f "$HOME/.bash_profile" ]; then
+        BASH_LOGIN_CONFIG="$HOME/.bash_profile"
+      elif [ -f "$HOME/.bash_login" ]; then
+        BASH_LOGIN_CONFIG="$HOME/.bash_login"
+      else
+        BASH_LOGIN_CONFIG="$HOME/.profile"
+      fi
+      add_path_line "$BASH_LOGIN_CONFIG"
+      PATH_CONFIG="$HOME/.bashrc and $BASH_LOGIN_CONFIG"
+      ;;
+    fish)
+      if "$SHELL" -c 'fish_add_path -- $argv[1]' "$BIN_DIR"; then
+        PATH_CONFIG="the fish user path"
+      else
+        echo "Could not add $BIN_DIR to the fish user path." >&2
+        echo "Run: fish_add_path $BIN_DIR" >&2
+        return
+      fi
+      ;;
+    *)
+      add_path_line "$HOME/.profile"
+      PATH_CONFIG="$HOME/.profile"
+      ;;
+  esac
+
+  echo "Added $BIN_DIR to PATH via $PATH_CONFIG."
+}
+
 if command -v pixi >/dev/null 2>&1; then
   PIXI_BIN="$(command -v pixi)"
 else
@@ -55,6 +111,8 @@ cat > "$BIN_DIR/auto-zcurve" <<EOF
 exec "$PIXI_BIN" run --manifest-path "$APP_DIR/pixi.toml" --frozen auto-zcurve "\$@"
 EOF
 chmod +x "$BIN_DIR/auto-zcurve"
+
+ensure_launcher_on_path
 
 echo
 echo "Auto Z-Curve is installed."
