@@ -1,0 +1,63 @@
+name: default_zcurve_schema
+description: >
+  This schema defines the data you will receive from Gemini. Add/remove fields as needed.
+
+meta_data:
+  doi:
+    type: string
+    description: The DOI of the article from which the effect was extracted.
+  study_description:
+    type: string
+    description: A brief description of the study, including its main research question, design, and conclusions.
+
+effects:
+  claim:
+    type: string
+    description: Short description of the substantive claim tied to the effect.
+  claim_quote:
+    type: string
+    description: A quote/multiple quotes (with page number) indicating the claim. (Separate multiple quotes with |)
+  test_description:
+    type: string
+    description: >
+      A description of the test (e.g., what are the IVs/DVs? what kind of test was it? 
+      How does it relate to the claim?).
+  test_description_quote:
+    type: string
+    description: A quote/multiple quotes (with page number) supporting your test description. (Separate multiple quotes with |)
+  reported_statistic:
+    type: string
+    role: reported_statistic
+    description: >
+      Statistical result in z-curve-readable form such as t(38)=2.14,
+      F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.
+  reported_statistic_quote:
+    type: string
+    description: > 
+      A quote/multiple quotes (with page number) showing where the statistic came from. (Separate multiple quotes with |). 
+      If the statistic came from tables/figures, instead explain in as much detail how you extracted the 
+      statistic and what information you used to calculate it.
+  significant:
+    type: boolean
+    description: Whether this effect was reported as statistically significant.
+  one_sided:
+    type: boolean
+    description: Whether the test was one-sided.
+  pre_registration:
+    type: boolean
+    description: Whether this statistical test was pre-registered
+  power_analysis:
+    type: boolean
+    description: Whether a power analysis was conducted for this effect.
+  sanity_check:
+    type: string
+    description: >
+      Check whether the reported statistic might be incorrect.
+      For example, if the p value does not match the t statistic and degrees of freedom.
+      Explain any issues here if they arise.
+  sample_id:
+    type: string
+    description: An identifier for the unique sub(sample) within the article on which this test was conducted.
+  notes:
+    type: string
+    description: Extraction notes, assumptions, or caveats for the effect.
