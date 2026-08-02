@@ -99,14 +99,15 @@ class TuiHelperTests(unittest.TestCase):
 
     def test_display_path_falls_back_to_cwd_relative_path(self):
         previous_cwd = Path.cwd()
-        self.addCleanup(os.chdir, previous_cwd)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             nested = root / "example" / "sources"
             nested.mkdir(parents=True)
-            os.chdir(root)
-
-            self.assertEqual(display_path(nested), "example/sources")
+            try:
+                os.chdir(root)
+                self.assertEqual(display_path(nested), "example/sources")
+            finally:
+                os.chdir(previous_cwd)
 
     @patch("auto_zcurve.user_facing.load_saved_api_key", return_value=None)
     def test_readiness_reports_missing_sources(self, _saved_key):

@@ -50,21 +50,21 @@ def display_path(path: Path | str, base: Path | str | None = None) -> str:
 
     if base is not None:
         try:
-            return str(resolved.relative_to(Path(base).expanduser().resolve()))
+            return resolved.relative_to(Path(base).expanduser().resolve()).as_posix()
         except ValueError:
             pass
 
     try:
-        return str(resolved.relative_to(Path.cwd().resolve()))
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
     except ValueError:
         pass
 
     try:
         home = Path.home().resolve()
         relative_to_home = resolved.relative_to(home)
-        return str(Path("~") / relative_to_home)
+        return (Path("~") / relative_to_home).as_posix()
     except ValueError:
-        return str(resolved)
+        return resolved.as_posix()
 
 
 def terminal_resize_sequence(columns: int, rows: int) -> str:

@@ -300,9 +300,9 @@ def format_run_result(summary: RunSummary, project_dir: Path) -> str:
     report = "not rendered"
     if summary.report_path:
         try:
-            report = str(summary.report_path.resolve().relative_to(project_dir.resolve()))
+            report = summary.report_path.resolve().relative_to(project_dir.resolve()).as_posix()
         except ValueError:
-            report = str(summary.report_path)
+            report = summary.report_path.as_posix()
     lines = [
         f"Report: {report}",
         f"Successful PDFs: {summary.successful_pdfs}",
