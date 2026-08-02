@@ -43,7 +43,7 @@ again.
 
 ## Use the browser app
 
-Run:
+Run the following from your terminal:
 
 ```sh
 auto-zcurve
