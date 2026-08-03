@@ -68,10 +68,19 @@ else
 fi
 
 case "$(uname -s)" in
-  Darwin) DATA_ROOT="$HOME/Library/Application Support/Auto Z-Curve" ;;
-  Linux) DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/auto-zcurve" ;;
+  Darwin) INSTALL_ROOT="${AUTO_ZCURVE_INSTALL_ROOT:-$HOME/.local/share/auto-zcurve}" ;;
+  Linux) INSTALL_ROOT="${AUTO_ZCURVE_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/auto-zcurve}" ;;
   *) echo "Auto Z-Curve supports macOS and glibc-based Linux with this installer." >&2; exit 1 ;;
 esac
+
+# Conda's R package generates shell launchers containing unquoted copies of its
+# environment prefix. Keep the managed runtime out of paths containing spaces;
+# user projects still use the platform-native application data directory.
+if printf '%s' "$INSTALL_ROOT" | grep -q '[[:space:]]'; then
+  echo "Auto Z-Curve's managed runtime requires a path without spaces." >&2
+  echo "Set AUTO_ZCURVE_INSTALL_ROOT to a space-free directory and rerun the installer." >&2
+  exit 1
+fi
 
 if [ "$VERSION" = "latest" ]; then
   BUNDLE_URL="https://github.com/$REPOSITORY/releases/latest/download/auto-zcurve-bundle.tar.gz"
@@ -85,9 +94,9 @@ curl -fL "$BUNDLE_URL" -o "$TEMP_DIR/bundle.tar.gz"
 mkdir -p "$TEMP_DIR/unpacked"
 tar -xzf "$TEMP_DIR/bundle.tar.gz" -C "$TEMP_DIR/unpacked"
 
-APP_DIR="$DATA_ROOT/app"
-BACKUP_DIR="$DATA_ROOT/app.previous"
-mkdir -p "$DATA_ROOT"
+APP_DIR="$INSTALL_ROOT/app"
+BACKUP_DIR="$INSTALL_ROOT/app.previous"
+mkdir -p "$INSTALL_ROOT"
 rm -rf "$BACKUP_DIR"
 if [ -d "$APP_DIR" ]; then
   mv "$APP_DIR" "$BACKUP_DIR"

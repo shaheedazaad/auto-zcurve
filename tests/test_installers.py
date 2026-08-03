@@ -52,6 +52,7 @@ class UnixInstallerTests(unittest.TestCase):
                     "PATH": f"{fake_bin}:/usr/bin:/bin",
                     "PIXI_HOME": str(pixi_home),
                     "SHELL": "/bin/zsh",
+                    "XDG_DATA_HOME": str(home / ".local" / "share"),
                     "ZDOTDIR": str(zdotdir),
                 }
             )
@@ -68,6 +69,9 @@ class UnixInstallerTests(unittest.TestCase):
             launcher = pixi_home / "bin" / "auto-zcurve"
             self.assertTrue(launcher.is_file())
             self.assertTrue(os.access(launcher, os.X_OK))
+            launcher_text = launcher.read_text(encoding="utf-8")
+            self.assertIn(str(home / ".local" / "share" / "auto-zcurve" / "app"), launcher_text)
+            self.assertNotIn("Application Support", launcher_text)
 
             zshrc_path = zdotdir / ".zshrc"
             zshrc = zshrc_path.read_text(encoding="utf-8")
@@ -105,6 +109,18 @@ class UnixInstallerTests(unittest.TestCase):
             self.assertIn("Existing profile", (home / ".profile").read_text(encoding="utf-8"))
             self.assertIn("AUTO_ZCURVE_BIN_DIR=", (home / ".profile").read_text(encoding="utf-8"))
             self.assertIn("AUTO_ZCURVE_BIN_DIR=", (home / ".bashrc").read_text(encoding="utf-8"))
+
+            invalid_env = env.copy()
+            invalid_env["AUTO_ZCURVE_INSTALL_ROOT"] = str(home / "runtime with spaces")
+            rejected = subprocess.run(
+                ["/bin/sh", str(ROOT / "install.sh")],
+                check=False,
+                env=invalid_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("requires a path without spaces", rejected.stderr)
 
 
 class WindowsInstallerTests(unittest.TestCase):

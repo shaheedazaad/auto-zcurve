@@ -148,15 +148,21 @@ auto-zcurve
 
 Use the Pixi route when testing complete report generation.
 
-Build release bundles:
+Before publishing, update the version in `pyproject.toml`, `pixi.toml`, and
+`auto_zcurve/__init__.py`, then commit and push the change. Build, test, and
+publish both release bundles with:
 
 ```sh
-python scripts/build_release.py
+python scripts/publish_release.py
 ```
 
-This creates `dist/auto-zcurve-bundle.tar.gz` for macOS/Linux and
-`dist/auto-zcurve-bundle.zip` for Windows. Publish both assets with a versioned
-GitHub release before advertising the installer commands.
+The publisher requires an authenticated [GitHub CLI](https://cli.github.com/),
+a clean checkout whose current commit is pushed, and matching project versions.
+It runs the locked tests and release smoke test, creates
+`dist/auto-zcurve-bundle.tar.gz` and `dist/auto-zcurve-bundle.zip`, and publishes
+them in a new versioned GitHub release. Pass `--draft` to review the release
+before publishing or `--dry-run` to perform every local step without creating
+the GitHub release.
 
 ## Security model
 
