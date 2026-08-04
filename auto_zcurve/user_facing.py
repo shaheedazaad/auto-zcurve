@@ -59,7 +59,10 @@ def _has_api_key(project_dir: Path, explicit_key: str | None) -> bool:
     if os.environ.get("GEMINI_API_KEY", "").strip():
         return True
 
-    return load_saved_api_key() is not None
+    # Saved credentials are deliberately not read by passive readiness checks.
+    # Loading a key may open an operating-system authorization dialog and must
+    # follow an explicit user action.
+    return False
 
 
 def check_project_readiness(

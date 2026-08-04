@@ -8,6 +8,7 @@ from pathlib import Path
 SERVICE_NAME = "auto-zcurve"
 KEY_NAME = "gemini_api_key"
 LAST_PROJECT_KEY = "last_project_dir"
+SAVED_API_KEY_KEY = "saved_api_key_configured"
 
 
 class CredentialStoreUnavailable(RuntimeError):
@@ -93,6 +94,7 @@ def save_api_key(api_key: str) -> str:
             "The operating-system credential store rejected the key. "
             "The key can still be used for this app session."
         ) from exc
+    _set_saved_api_key_configured(True)
     return "operating-system credential store"
 
 
@@ -120,6 +122,21 @@ def _save_preferences(data: dict) -> None:
         pass
 
 
+def saved_api_key_configured() -> bool:
+    """Report saved-key intent without opening the credential store."""
+
+    return _load_preferences().get(SAVED_API_KEY_KEY) is True
+
+
+def _set_saved_api_key_configured(configured: bool) -> None:
+    data = _load_preferences()
+    if configured:
+        data[SAVED_API_KEY_KEY] = True
+    else:
+        data.pop(SAVED_API_KEY_KEY, None)
+    _save_preferences(data)
+
+
 def load_last_project_dir() -> Path | None:
     value = str(_load_preferences().get(LAST_PROJECT_KEY) or "").strip()
     if not value:
@@ -135,11 +152,10 @@ def save_last_project_dir(project_dir: Path) -> None:
 
 
 def delete_saved_api_key() -> bool:
-    existing = load_saved_api_key()
-    if existing is None:
-        return False
     try:
         _keyring_module().delete_password(SERVICE_NAME, KEY_NAME)
     except Exception:
+        _set_saved_api_key_configured(False)
         return False
+    _set_saved_api_key_configured(False)
     return True

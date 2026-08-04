@@ -80,7 +80,10 @@ Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey).
 When “Remember securely” is selected, Auto Z-Curve uses the operating system’s
 credential store through Python Keyring. If Linux has no usable secret-service
 backend, the app clearly marks the key as session-only. It never falls back to
-a plaintext file.
+a plaintext file. Saved keys are not read automatically when the app starts;
+choose “Unlock saved key” when you want to use one. On macOS, the authorization
+dialog may identify Auto Z-Curve's bundled runtime as “Python,” sometimes with
+a version number.
 
 API keys are not included in project files, logs, URLs, result downloads, or
 reports.

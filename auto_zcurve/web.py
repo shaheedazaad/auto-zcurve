@@ -29,6 +29,7 @@ from .credentials import (
     CredentialStoreUnavailable,
     credential_store_available,
     load_saved_api_key,
+    saved_api_key_configured,
     save_api_key,
 )
 from .models import DEFAULT_MODEL, fallback_models, normalize_model_name
@@ -182,7 +183,7 @@ class WebRuntime:
         return get_project(project_id, root=self.projects_root)
 
     def api_key(self) -> str | None:
-        return self.session_api_key or load_saved_api_key()
+        return self.session_api_key
 
     def check_for_update(self) -> None:
         request = urllib.request.Request(
@@ -292,7 +293,9 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
         "job": job.snapshot() if job else None,
         "models": fallback_models(),
         "has_api_key": runtime.api_key() is not None,
+        "has_saved_api_key": saved_api_key_configured(),
         "keyring_available": credential_store_available(),
+        "is_macos": platform.system() == "Darwin",
         "key_warning": runtime.key_warning,
         "update_version": runtime.update_version,
     }
@@ -332,7 +335,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     @app.get(f"/{token}/", response_class=HTMLResponse)
     async def home(request: Request):
         projects = [_project_index_snapshot(item) for item in list_projects(root=projects_root)]
-        saved_api_key = load_saved_api_key()
         return TEMPLATES.TemplateResponse(
             request,
             "home.html",
@@ -340,9 +342,10 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 "token": token,
                 "version": __version__,
                 "projects": projects,
-                "has_api_key": runtime.session_api_key is not None or saved_api_key is not None,
-                "has_saved_api_key": saved_api_key is not None,
+                "has_api_key": runtime.session_api_key is not None,
+                "has_saved_api_key": saved_api_key_configured(),
                 "keyring_available": credential_store_available(),
+                "is_macos": platform.system() == "Darwin",
                 "key_warning": runtime.key_warning,
                 "update_version": runtime.update_version,
             },
@@ -516,6 +519,15 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "session_only": not remember or runtime.key_warning is not None,
             "warning": runtime.key_warning,
         }
+
+    @app.post(f"/{token}/credentials/load")
+    async def load_credentials():
+        key = load_saved_api_key()
+        if not key:
+            raise HTTPException(status_code=404, detail="No saved API key was found in the credential store.")
+        runtime.session_api_key = key
+        runtime.key_warning = None
+        return {"loaded": True}
 
     @app.post(f"/{token}/projects/{{project_id}}/run")
     async def start_run(

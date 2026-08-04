@@ -23,6 +23,23 @@
     });
   });
 
+  document.querySelectorAll(".js-load-credentials").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = form.querySelector(".form-message");
+      message.textContent = "Opening credential store…";
+      try {
+        await postForm(form.action, new FormData());
+        message.textContent = "Saved key unlocked for this session.";
+        message.className = "form-message success-text";
+        window.setTimeout(() => window.location.reload(), 650);
+      } catch (error) {
+        message.textContent = error.message;
+        message.className = "form-message error-text";
+      }
+    });
+  });
+
   const body = document.body;
   const projectId = body.dataset.projectId;
   const token = body.dataset.token;

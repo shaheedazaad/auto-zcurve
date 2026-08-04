@@ -85,7 +85,7 @@
         <p>Gemini is used only for structured extraction from PDFs. Credentials are not written to project or result files.</p>
         <form class="configuration-form js-credentials" action="/{{ token }}/credentials">
           <label for="api-key">Gemini API key</label>
-          <input id="api-key" name="api_key" type="password" autocomplete="off" placeholder="{% if has_saved_api_key %}••••••••••••{% else %}Paste API key{% endif %}">
+          <input id="api-key" name="api_key" type="password" autocomplete="off" placeholder="Paste API key">
           <label class="check-row compact-config">
             <input name="remember" value="yes" type="checkbox" {% if keyring_available %}checked{% endif %}>
             <span>Store in the operating-system credential store</span>
@@ -93,9 +93,12 @@
           <button class="button secondary" type="submit">Save key</button>
           <p class="form-message" role="status"></p>
         </form>
-        {% if has_saved_api_key %}
-          <p class="saved-key-hint">The dots indicate a stored key. Enter a different key to replace it.</p>
-        {% endif %}
+        <form class="configuration-form js-load-credentials" action="/{{ token }}/credentials/load">
+          <button class="button secondary" type="submit">Unlock previously saved key</button>
+          <p class="form-message" role="status"></p>
+        </form>
+        {% if has_saved_api_key %}<p class="saved-key-hint">A saved key is available but remains locked until you choose “Unlock saved key.”</p>{% endif %}
+        {% if is_macos and keyring_available %}<p class="saved-key-hint">macOS may identify Auto Z-Curve’s bundled runtime as “Python,” sometimes with a version number, in the Keychain authorization dialog.</p>{% endif %}
         {% if not keyring_available %}
           <p class="notice warning">No secure credential store is available. The key will remain in memory only for this application session.</p>
         {% endif %}

@@ -101,6 +101,13 @@
         <button class="button secondary" type="submit">Use key</button>
         <p class="form-message" role="status"></p>
       </form>
+      {% if has_saved_api_key %}
+      <form class="inline-key-form js-load-credentials" action="/{{ token }}/credentials/load">
+        <button class="button secondary" type="submit">Unlock saved key</button>
+        <p class="form-message" role="status"></p>
+      </form>
+      {% if is_macos %}<p class="notice-detail">macOS may identify Auto Z-Curve’s bundled runtime as “Python,” sometimes with a version number, when you unlock the key.</p>{% endif %}
+      {% endif %}
       {% if not keyring_available %}
       <p class="notice-detail">No usable system credential store was found, so the key will be session-only.</p>
       {% endif %}

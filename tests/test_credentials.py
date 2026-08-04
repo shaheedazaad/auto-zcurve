@@ -9,6 +9,7 @@ from auto_zcurve.credentials import (
     credentials_path,
     delete_saved_api_key,
     load_saved_api_key,
+    saved_api_key_configured,
     save_api_key,
 )
 from auto_zcurve.env import resolve_api_key
@@ -40,11 +41,13 @@ class CredentialTests(unittest.TestCase):
                         location = save_api_key("abc123")
 
                         self.assertEqual(location, "operating-system credential store")
+                        self.assertTrue(saved_api_key_configured())
                         self.assertEqual(load_saved_api_key(), "abc123")
                         self.assertEqual(resolve_api_key(project_dir=Path(tmp), explicit_key=None), "abc123")
                         self.assertTrue(delete_saved_api_key())
+                        self.assertFalse(saved_api_key_configured())
                         self.assertIsNone(load_saved_api_key())
-                    self.assertFalse(credentials_path().exists())
+                    self.assertNotIn("abc123", credentials_path().read_text(encoding="utf-8"))
             finally:
                 os.chdir(cwd)
 

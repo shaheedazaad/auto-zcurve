@@ -11,7 +11,14 @@ from typing import Iterable, Iterator
 
 from .artifacts import read_zcurve_summary
 from .config import DEFAULTS, RunSettings, load_run_settings
-from .credentials import delete_saved_api_key, load_last_project_dir, load_saved_api_key, save_api_key, save_last_project_dir
+from .credentials import (
+    delete_saved_api_key,
+    load_last_project_dir,
+    load_saved_api_key,
+    saved_api_key_configured,
+    save_api_key,
+    save_last_project_dir,
+)
 from .models import fallback_models, normalize_model_name
 from .paths import DEFAULT_SCHEMA
 from .preflight import run_preflight
@@ -484,6 +491,7 @@ def run_tui() -> int:
         #retry,
         #open_report,
         #save_key,
+        #load_key,
         #delete_key {
             width: 1fr;
             min-width: 8;
@@ -545,7 +553,7 @@ def run_tui() -> int:
             self.refresh_readiness()
 
         def compose(self) -> ComposeResult:
-            saved_key = load_saved_api_key()
+            has_saved_key = saved_api_key_configured()
             model_options = [(model.name, model.name) for model in fallback_models()]
             initial_project_dir = load_last_project_dir() or Path.cwd()
 
@@ -565,10 +573,11 @@ def run_tui() -> int:
                             yield Input(
                                 placeholder="Paste key here",
                                 password=True,
-                                value=saved_key or "",
+                                value="",
                                 id="api_key",
                             )
                             with Horizontal(classes="button-row"):
+                                yield Button("Unlock", id="load_key", variant="default", flat=True)
                                 yield Button("Save key", id="save_key", variant="primary", flat=True)
                                 yield Button("Delete", id="delete_key", variant="warning", flat=True)
                             yield Static("Model", classes="field-label")
@@ -581,7 +590,7 @@ def run_tui() -> int:
                                 yield Button("Run", id="run", variant="success", flat=True)
                                 yield Button("Retry", id="retry", variant="default", flat=True)
                             yield Button("Open Report", id="open_report", variant="primary", flat=True, disabled=True)
-                            yield Static(self._key_status(saved_key), id="status")
+                            yield Static(self._key_status(has_saved_key), id="status")
                         with Collapsible(title="Advanced", id="advanced", collapsed=True):
                             yield Static("Parallel PDFs", classes="field-label")
                             yield Input(
@@ -635,15 +644,17 @@ def run_tui() -> int:
             self.progress_status_widget.update(f"Gemini processing: {done} / {total}")
             self.update_status(label)
 
-        def _key_status(self, saved_key: str | None) -> str:
-            if saved_key:
-                return "Saved API key found. You can replace it or delete it."
+        def _key_status(self, has_saved_key: bool) -> str:
+            if has_saved_key:
+                return "Saved API key available. Choose Unlock before running."
             return "No saved API key. Enter one for this session, or save it permanently."
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             button_id = event.button.id
             if button_id == "save_key":
                 self.save_key()
+            elif button_id == "load_key":
+                self.load_key()
             elif button_id == "delete_key":
                 self.delete_key()
             elif button_id == "browse_project":
@@ -705,7 +716,7 @@ def run_tui() -> int:
 
         def set_busy(self, busy: bool) -> None:
             self.busy = busy
-            for button_id in ("run", "retry", "open_report", "save_key", "delete_key", "browse_project"):
+            for button_id in ("run", "retry", "open_report", "load_key", "save_key", "delete_key", "browse_project"):
                 self.query_one(f"#{button_id}", Button).disabled = busy
             if not busy:
                 self.refresh_readiness()
@@ -718,6 +729,15 @@ def run_tui() -> int:
                 self.feedback(str(exc), severity="error")
                 return
             self.feedback(f"Saved API key to the {location}.", severity="information")
+            self.refresh_readiness()
+
+        def load_key(self) -> None:
+            api_key = load_saved_api_key()
+            if not api_key:
+                self.feedback("No saved API key was found in the credential store.", severity="warning")
+                return
+            self.query_one("#api_key", Input).value = api_key
+            self.feedback("Unlocked saved API key for this session.", severity="information")
             self.refresh_readiness()
 
         def delete_key(self) -> None:
@@ -753,7 +773,7 @@ def run_tui() -> int:
 
         def start_run(self, retry: bool) -> None:
             project_dir = Path(self.query_one("#project_dir", Input).value).expanduser().resolve()
-            api_key = self.query_one("#api_key", Input).value.strip() or load_saved_api_key()
+            api_key = self.query_one("#api_key", Input).value.strip()
             model = self.query_one("#model", Select).value
             try:
                 parallel_requests = max(1, int(self.query_one("#parallel_requests", Input).value.strip() or "1"))

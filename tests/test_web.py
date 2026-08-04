@@ -156,12 +156,28 @@ class WebAppTests(unittest.TestCase):
             if path.is_file():
                 self.assertNotIn(b"top-secret-key", path.read_bytes())
 
-    def test_home_masks_a_saved_api_key(self):
-        with patch("auto_zcurve.web.load_saved_api_key", return_value="saved-secret-key"):
-            response = self.client.get(f"/{TOKEN}/")
+    def test_home_does_not_read_saved_api_key(self):
+        with patch("auto_zcurve.web.saved_api_key_configured", return_value=True):
+            with patch(
+                "auto_zcurve.web.load_saved_api_key",
+                side_effect=AssertionError("Keychain must not be read while rendering"),
+            ):
+                response = self.client.get(f"/{TOKEN}/")
+                project = create_project("No passive Keychain access", root=self.root)
+                project_response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
         self.assertEqual(response.status_code, 200)
-        self.assertIn('placeholder="••••••••••••"', response.text)
-        self.assertIn("The dots indicate a stored key", response.text)
+        self.assertEqual(project_response.status_code, 200)
+        self.assertIn("Unlock previously saved key", response.text)
+        self.assertIn("remains locked", response.text)
+        self.assertNotIn('placeholder="••••••••••••"', response.text)
+
+    def test_saved_api_key_is_read_only_after_explicit_unlock(self):
+        with patch("auto_zcurve.web.load_saved_api_key", return_value="saved-secret-key") as load_key:
+            response = self.client.post(f"/{TOKEN}/credentials/load", headers=ORIGIN)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["loaded"])
+        self.assertEqual(self.app.state.runtime.session_api_key, "saved-secret-key")
+        load_key.assert_called_once_with()
         self.assertNotIn("saved-secret-key", response.text)
 
     def test_run_progress_summary_and_results_download(self):
