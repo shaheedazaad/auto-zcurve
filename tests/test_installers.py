@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@unittest.skipUnless(os.name == "posix" and Path("/bin/sh").is_file(), "requires a POSIX shell")
 class UnixInstallerTests(unittest.TestCase):
     def make_executable(self, path: Path, contents: str) -> None:
         path.write_text(contents, encoding="utf-8")
