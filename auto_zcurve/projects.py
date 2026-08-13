@@ -332,7 +332,10 @@ def project_snapshot(project: ManagedProject) -> dict:
             }
         )
     settings = load_run_settings(project.path)
+    successful_count = sum(item["status"] == "ok" for item in articles)
+    total_tokens = sum(item["total_tokens"] for item in articles)
     report = project.path / "output" / "report.html"
+    zcurve_plot = project.path / "output" / "zcurve_plot.png"
     zcurve_text = read_zcurve_summary(project.path) if report.is_file() else None
     disclosure_rows, usable_inputs = read_disclosure_summary(project.path) if report.is_file() else (0, 0)
     parsed_summary = parse_zcurve_summary(zcurve_text)
@@ -344,6 +347,11 @@ def project_snapshot(project: ManagedProject) -> dict:
             "execution": parsed_summary["execution"],
             "metrics": parsed_summary["metrics"],
             "text": zcurve_text,
+            "has_plot": zcurve_plot.is_file(),
+            "articles_processed_display": f"{successful_count:,}",
+            "extracted_effects_display": f"{disclosure_rows:,}",
+            "usable_zcurve_inputs_display": f"{usable_inputs:,}",
+            "total_tokens_display": f"{total_tokens:,}",
         }
     return {
         "id": project.project_id,
@@ -352,10 +360,10 @@ def project_snapshot(project: ManagedProject) -> dict:
         "articles": articles,
         "pdf_count": len(articles),
         "failed_count": sum(item["status"] == "error" for item in articles),
-        "successful_count": sum(item["status"] == "ok" for item in articles),
+        "successful_count": successful_count,
         "has_extractions": bool(records),
         "has_analysis_results": project_has_analysis_results(project),
-        "total_tokens": sum(item["total_tokens"] for item in articles),
+        "total_tokens": total_tokens,
         "has_report": report.is_file(),
         "report_summary": report_summary,
         "instructions": read_project_instructions(project),

@@ -190,6 +190,7 @@ class WebAppTests(unittest.TestCase):
             output.mkdir(exist_ok=True)
             (output / "report.html").write_text("<h1>Report</h1>", encoding="utf-8")
             (output / "report.qmd").write_text("---\ntitle: Report\n---\n", encoding="utf-8")
+            (output / "zcurve_plot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
             (output / "zcurve_reproduction_settings.csv").write_text(
                 "bootstrap_seed,bootstrap_iterations\n20260802,1000\n",
                 encoding="utf-8",
@@ -248,14 +249,21 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
         self.assertIn("Analysis summary", project_page.text)
         self.assertIn("Expected replication rate", project_page.text)
         self.assertIn("0.434", project_page.text)
-        self.assertIn("Usable z-curve inputs", project_page.text)
+        self.assertIn("usable z-curve inputs", project_page.text)
+        self.assertIn("Key estimates", project_page.text)
+        self.assertIn(f"/{TOKEN}/projects/{project.project_id}/zcurve-plot", project_page.text)
+        self.assertLess(project_page.text.index("Key estimates"), project_page.text.index("zcurve-plot"))
         self.assertLess(project_page.text.index("Analysis summary"), project_page.text.index("Source material"))
+        plot = self.client.get(f"/{TOKEN}/projects/{project.project_id}/zcurve-plot")
+        self.assertEqual(plot.status_code, 200)
+        self.assertEqual(plot.headers["content-type"], "image/png")
         archive_response = self.client.get(f"/{TOKEN}/projects/{project.project_id}/results.zip")
         self.assertEqual(archive_response.status_code, 200)
         with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
             self.assertIn("output/report.html", archive.namelist())
             self.assertIn("output/report.qmd", archive.namelist())
             self.assertIn("output/zcurve_reproduction_settings.csv", archive.namelist())
+            self.assertIn("output/zcurve_plot.png", archive.namelist())
             self.assertNotIn("session-key", "\n".join(archive.namelist()))
 
     def test_instruction_edit_requires_confirmation_and_clears_previous_analysis(self):

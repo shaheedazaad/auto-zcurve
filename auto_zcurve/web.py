@@ -623,6 +623,17 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail="Report not found.")
         return FileResponse(path, media_type="text/html")
 
+    @app.get(f"/{token}/projects/{{project_id}}/zcurve-plot")
+    async def zcurve_plot(project_id: str):
+        try:
+            project = runtime.project(project_id)
+        except ProjectError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        path = project.path / "output" / "zcurve_plot.png"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Z-curve plot not found.")
+        return FileResponse(path, media_type="image/png")
+
     @app.get(f"/{token}/projects/{{project_id}}/results.zip")
     async def download_results(project_id: str):
         try:
@@ -639,6 +650,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "run_log.csv",
             "run_log.json",
             "zcurve_summary.txt",
+            "zcurve_plot.png",
             "zcurve_reproduction_settings.csv",
         }
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:

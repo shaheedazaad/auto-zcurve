@@ -82,6 +82,7 @@ class ReleaseSmokeTests(unittest.TestCase):
 
             self.assertIsNotNone(summary)
             self.assertTrue((project / "output" / "report.html").is_file())
+            self.assertGreater((project / "output" / "zcurve_plot.png").stat().st_size, 0)
             self.assertTrue((project / "output" / "disclosure_table.csv").is_file())
             self.assertTrue(
                 (project / "output" / "zcurve_reproduction_settings.csv").is_file()
@@ -115,6 +116,11 @@ class ReleaseSmokeTests(unittest.TestCase):
                 }
             )
             reproduction_r_libs = _current_r_libs()
+            reproduction_rscript = shutil.which("Rscript")
+            if reproduction_rscript:
+                reproduction_env["QUARTO_R"] = str(
+                    Path(reproduction_rscript).resolve().parent
+                )
             if reproduction_r_libs:
                 reproduction_env["R_LIBS"] = reproduction_r_libs
             quarto = shutil.which("quarto")

@@ -48,23 +48,41 @@
         </div>
         <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">Open full report ↗</a>
       </div>
-      <div class="summary-stats">
-        <div><strong>{{ project.successful_count }}</strong><span>Articles processed</span></div>
-        <div><strong>{{ project.report_summary.extracted_effects }}</strong><span>Extracted effects</span></div>
-        <div><strong>{{ project.report_summary.usable_zcurve_inputs }}</strong><span>Usable z-curve inputs</span></div>
-        <div><strong>{{ project.total_tokens }}</strong><span>Total Gemini tokens</span></div>
-      </div>
-      {% if project.report_summary.metrics %}
-      <div class="zcurve-metrics">
-        {% for metric in project.report_summary.metrics %}
-        <div class="zcurve-metric">
-          <span>{{ metric.label }} ({{ metric.code }})</span>
-          <strong>{{ metric.estimate }}</strong>
-          <small>95% CI {{ metric.lower_ci }}–{{ metric.upper_ci }}</small>
+      <div class="analysis-overview">
+        <div class="estimate-panel">
+          <p class="estimate-heading">Key estimates</p>
+          {% if project.report_summary.metrics %}
+          <div class="zcurve-metrics">
+            {% for metric in project.report_summary.metrics %}
+            <div class="zcurve-metric">
+              <span>{{ metric.label }} <abbr title="{{ metric.label }}">{{ metric.code }}</abbr></span>
+              <strong>{{ metric.estimate }}</strong>
+              <small>95% CI {{ metric.lower_ci }}–{{ metric.upper_ci }}</small>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="estimate-unavailable">No z-curve estimates were available for this run.</p>
+          {% endif %}
         </div>
-        {% endfor %}
+        <figure class="zcurve-plot">
+          {% if project.report_summary.has_plot %}
+          <img src="/{{ token }}/projects/{{ project.id }}/zcurve-plot" alt="Z-curve plot with fitted density and confidence intervals">
+          {% else %}
+          <div class="plot-unavailable">
+            <span aria-hidden="true">Z</span>
+            <p>Regenerate the report to show the z-curve plot here.</p>
+          </div>
+          {% endif %}
+          <figcaption>Z-curve fit and 95% confidence intervals</figcaption>
+        </figure>
       </div>
-      {% endif %}
+      <div class="summary-context" aria-label="Analysis processing details">
+        <span><strong>{{ project.report_summary.articles_processed_display }}</strong> articles processed</span>
+        <span><strong>{{ project.report_summary.extracted_effects_display }}</strong> effects extracted</span>
+        <span><strong>{{ project.report_summary.usable_zcurve_inputs_display }}</strong> usable z-curve inputs</span>
+        <span><strong>{{ project.report_summary.total_tokens_display }}</strong> Gemini tokens</span>
+      </div>
       {% if project.report_summary.execution %}
       <p class="execution-note">{{ project.report_summary.execution }}</p>
       {% endif %}
