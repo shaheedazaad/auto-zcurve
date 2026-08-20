@@ -1,5 +1,6 @@
 site_name: auto-zcurve
 site_description: A local browser app that extracts statistics from PDF articles and builds a z-curve analysis report.
+site_url: https://shaheedazaad.github.io/auto-zcurve/
 docs_dir: docs
 
 theme:

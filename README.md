@@ -1,9 +1,9 @@
 # auto-zcurve
 
 > [!TIP]
-> New to auto-zcurve? The [user guide](docs/index.md) is written for
-> researchers, not developers, and covers install, adding an API key,
-> running your first project, and reading the results.
+> New to auto-zcurve? The [user guide](https://shaheedazaad.github.io/auto-zcurve/)
+> is written for researchers, not developers, and covers install, adding an
+> API key, running your first project, and reading the results.
 
 auto-zcurve reads PDF articles, uses a supported LLM provider to extract focal
 statistical results, and creates a z-curve analysis report with a plot, summary
@@ -137,10 +137,15 @@ Each managed project has an `output/` folder containing:
 ## Documentation for researchers
 
 A plain-language user guide — install, add an API key, run your first
-project, and read the results — lives in [`docs/`](docs/index.md) and is not
-aimed at developers. It needs only `mkdocs` and the `mkdocs-shadcn` theme, not
-the auto-zcurve package itself, so install it in its own small virtual
-environment rather than editable-installing the whole project:
+project, and read the results — is published at
+**[shaheedazaad.github.io/auto-zcurve](https://shaheedazaad.github.io/auto-zcurve/)**
+and is not aimed at developers. Its source lives in [`docs/`](docs/index.md)
+and is deployed automatically on every push to `main`.
+
+To preview changes to it locally, it needs only `mkdocs` and the
+`mkdocs-shadcn` theme, not the auto-zcurve package itself, so install it in
+its own small virtual environment rather than editable-installing the whole
+project:
 
 ```sh
 python3 -m venv .venv-docs
