@@ -86,6 +86,20 @@ STATIC_DIR = PACKAGE_DIR / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_UPLOAD_REQUEST_BYTES = 512 * 1024 * 1024
 
+# Explicit rather than mimetypes.guess_type() (FileResponse's default): that
+# consults the OS's MIME database, which resolves .js to application/javascript
+# on Windows and text/javascript on macOS/Linux -- inconsistent behavior for a
+# fixed, small set of files we already know the type of.
+_STATIC_MEDIA_TYPES = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".txt": "text/plain",
+}
+
+
+def _static_media_type(filename: str) -> str | None:
+    return _STATIC_MEDIA_TYPES.get(Path(filename).suffix)
+
 
 class LocalSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -412,7 +426,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "app.js",
         }:
             raise HTTPException(status_code=404)
-        return FileResponse(STATIC_DIR / filename)
+        return FileResponse(STATIC_DIR / filename, media_type=_static_media_type(filename))
 
     # Vendored UI assets (Basecoat, MIT). Served locally rather than from a CDN:
     # the session token lives in the URL path, so a third-party script would run
@@ -425,7 +439,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "basecoat.LICENSE.txt",
         }:
             raise HTTPException(status_code=404)
-        return FileResponse(STATIC_DIR / "vendor" / filename)
+        return FileResponse(STATIC_DIR / "vendor" / filename, media_type=_static_media_type(filename))
 
     @app.get(f"/{token}/", response_class=HTMLResponse)
     async def home(request: Request):
