@@ -1,0 +1,22 @@
+site_name: auto-zcurve
+site_description: A local browser app that extracts statistics from PDF articles and builds a z-curve analysis report.
+docs_dir: docs
+
+theme:
+  name: shadcn
+
+nav:
+  - Welcome: index.md
+  - Install: installation.md
+  - Getting an API key: api-key.md
+  - Your first project: quickstart.md
+  - Understanding your results: results.md
+  - FAQ and troubleshooting: faq.md
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - fenced_code
+  - codehilite
+  - pymdownx.tabbed:
+      alternate_style: true

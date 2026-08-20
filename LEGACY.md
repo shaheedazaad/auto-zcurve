@@ -1,12 +1,12 @@
-# Legacy Auto Z-Curve Interfaces
+# Legacy auto-zcurve Interfaces
 
 > [!WARNING]
 > **The CLI, terminal UI, and arbitrary-folder workflow are deprecated and will
-> be removed in a future version of Auto Z-Curve. New work should use the local
+> be removed in a future version of auto-zcurve. New work should use the local
 > browser app documented in [README.md](README.md).**
 
 These interfaces remain temporarily available for reproducibility, automation,
-and transition from earlier Auto Z-Curve versions.
+and transition from earlier auto-zcurve versions.
 
 ## Reproducible command-line workflow
 

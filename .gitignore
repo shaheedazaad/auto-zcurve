@@ -13,7 +13,11 @@ build/
 .eggs/
 .pytest_cache/
 .venv/
+.venv-docs/
 .pixi/
+
+# MkDocs
+site/
 
 # R
 *.Rhistory

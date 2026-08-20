@@ -1,6 +1,11 @@
-# Auto Z-Curve
+# auto-zcurve
 
-Auto Z-Curve reads PDF articles, uses a supported LLM provider to extract focal
+> [!TIP]
+> New to auto-zcurve? The [user guide](docs/index.md) is written for
+> researchers, not developers, and covers install, adding an API key,
+> running your first project, and reading the results.
+
+auto-zcurve reads PDF articles, uses a supported LLM provider to extract focal
 statistical results, and creates a z-curve analysis report with a plot, summary
 statistics, and full disclosure table.
 
@@ -16,7 +21,7 @@ Azaad, S. (2026). Empirically derived effect size guidelines for social, individ
 
 The supported installer uses [Pixi](https://pixi.sh/) to provide a locked
 environment containing Python, R, Quarto, all required R packages, and the
-Auto Z-Curve Python dependencies. You do not need to install those tools
+auto-zcurve Python dependencies. You do not need to install those tools
 separately.
 
 ### macOS and Linux
@@ -39,7 +44,7 @@ The installer supports Apple Silicon and Intel macOS 14 or newer, Windows x64,
 and mainstream glibc-based Linux x64. It downloads the latest versioned release
 bundle, installs its committed `pixi.lock`, and downloads the local layout and
 table models used for PDF parsing. To update, run the same command again. It
-also adds the Auto Z-Curve launcher directory to your user `PATH` if needed;
+also adds the auto-zcurve launcher directory to your user `PATH` if needed;
 open a new terminal after the first installation.
 
 ## Use the browser app
@@ -50,7 +55,7 @@ Run the following from your terminal:
 auto-zcurve
 ```
 
-Auto Z-Curve chooses a free local port, generates a one-time random URL token,
+auto-zcurve chooses a free local port, generates a one-time random URL token,
 and opens your browser. The server binds only to `127.0.0.1` and stops when you
 press <kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal.
 
@@ -103,13 +108,13 @@ Duplicate filenames are preserved with a numbered suffix.
 Create a Gemini key in [Google AI Studio](https://aistudio.google.com/app/apikey).
 OpenRouter projects use an `OPENROUTER_API_KEY` (or its separately saved
 credential) instead.
-When “Remember securely” is selected, Auto Z-Curve uses the operating system’s
+When “Remember securely” is selected, auto-zcurve uses the operating system’s
 credential store through Python Keyring. If Linux has no usable secret-service
 backend, the app clearly marks the key as session-only. It never falls back to
 a plaintext file. Saved keys are not read
 automatically when the app starts; choose the corresponding unlock action when
 you want to use one. On macOS, the authorization
-dialog may identify Auto Z-Curve's bundled runtime as “Python,” sometimes with
+dialog may identify auto-zcurve's bundled runtime as “Python,” sometimes with
 a version number.
 
 API keys are not included in project files, logs, URLs, result downloads, or
@@ -128,6 +133,27 @@ Each managed project has an `output/` folder containing:
 | `extractions.json`                 | Structured output plus provider, model, input mode, and parser provenance     |
 | `run_log.csv`                      | Attempts, timing, token usage, input mode, and parser diagnostics             |
 | `raw/*.json`                       | Per-article extraction artifacts                                             |
+
+## Documentation for researchers
+
+A plain-language user guide — install, add an API key, run your first
+project, and read the results — lives in [`docs/`](docs/index.md) and is not
+aimed at developers. It needs only `mkdocs` and the `mkdocs-shadcn` theme, not
+the auto-zcurve package itself, so install it in its own small virtual
+environment rather than editable-installing the whole project:
+
+```sh
+python3 -m venv .venv-docs
+source .venv-docs/bin/activate  # Windows PowerShell: .venv-docs\Scripts\Activate.ps1
+pip install mkdocs mkdocs-shadcn
+mkdocs serve
+```
+
+Then open the printed local address in your browser. `pip install -e ".[docs]"`
+also works if you already have (or want) a full editable install, but it pulls
+in every runtime dependency (FastAPI, google-genai, textual, ...) too, which
+is unnecessary just to read or edit the docs and can be slow on a plain
+system `pip`.
 
 ## Legacy interfaces
 
@@ -157,7 +183,7 @@ pixi run auto-zcurve
 ```
 
 The Python package is installed in editable mode, so source changes take
-effect after restarting Auto Z-Curve. On Apple Silicon, the first launch may
+effect after restarting auto-zcurve. On Apple Silicon, the first launch may
 briefly compile the bundled R `zcurve` package.
 
 Run the test suite and the real R/Quarto release smoke test with:

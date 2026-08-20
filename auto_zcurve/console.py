@@ -36,9 +36,9 @@ class CliConsole:
     def title(self, text: str, subtitle: str | None = None) -> None:
         if self.rich and Panel:
             body = text if subtitle is None else f"{text}\n{subtitle}"
-            self.rich.print(Panel.fit(body, title="Auto Z-Curve", border_style="cyan"))
+            self.rich.print(Panel.fit(body, title="auto-zcurve", border_style="cyan"))
         else:
-            print(f"Auto Z-Curve: {text}")
+            print(f"auto-zcurve: {text}")
             if subtitle:
                 print(subtitle)
 

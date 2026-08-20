@@ -124,7 +124,7 @@ def check_project_readiness(
             ReadinessIssue(
                 "api_key_missing",
                 "Gemini API key missing",
-                "Auto Z-Curve needs a Gemini API key before it can read PDFs.",
+                "auto-zcurve needs a Gemini API key before it can read PDFs.",
                 "Enter a Gemini API key or save one permanently.",
             )
         )
@@ -146,7 +146,7 @@ def check_project_readiness(
             ReadinessIssue(
                 "preflight_failed",
                 "Preflight check failed",
-                "Auto Z-Curve could not check R, Quarto, and package dependencies.",
+                "auto-zcurve could not check R, Quarto, and package dependencies.",
                 "Open the log for details, then install the missing dependency and try again.",
             )
         )
@@ -161,7 +161,7 @@ def check_project_readiness(
                 "python_deps_missing",
                 "Python packages missing",
                 "Some required Python packages are not installed: " + ", ".join(missing_python) + ".",
-                "Install the Python dependencies, then reopen Auto Z-Curve.",
+                "Install the Python dependencies, then reopen auto-zcurve.",
             )
         )
     if "Quarto" in missing_tools:
@@ -212,14 +212,14 @@ def classify_error(error: BaseException | str) -> UserFacingError:
     if "openrouter_api_key" in text or "openrouter" in text and "api key" in text and ("required" in text or "missing" in text):
         return UserFacingError(
             "OpenRouter API key missing",
-            "Auto Z-Curve cannot contact OpenRouter without an API key.",
+            "auto-zcurve cannot contact OpenRouter without an API key.",
             "Enter an OpenRouter API key or save one permanently.",
             detail,
         )
     if "gemini_api_key" in text or "api key" in text and ("required" in text or "missing" in text):
         return UserFacingError(
             "Gemini API key missing",
-            "Auto Z-Curve cannot contact Gemini without an API key.",
+            "auto-zcurve cannot contact Gemini without an API key.",
             "Enter a Gemini API key or save one permanently.",
             detail,
         )
@@ -254,7 +254,7 @@ def classify_error(error: BaseException | str) -> UserFacingError:
             )
         return UserFacingError(
             "Missing dependency",
-            "Auto Z-Curve needs another program or package before it can run.",
+            "auto-zcurve needs another program or package before it can run.",
             "Install the missing dependency listed in the log, then try again.",
             detail,
         )
@@ -303,7 +303,7 @@ def classify_error(error: BaseException | str) -> UserFacingError:
 
     return UserFacingError(
         "Run failed",
-        "Auto Z-Curve could not finish the requested action.",
+        "auto-zcurve could not finish the requested action.",
         "Read the log for details, fix the issue, then try again.",
         detail,
     )

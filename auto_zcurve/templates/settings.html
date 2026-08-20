@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings · Auto Z-Curve{% endblock %}
+{% block title %}Settings · auto-zcurve{% endblock %}
 {% block body_attributes %}data-page="settings"{% endblock %}
 
 {% block page %}
@@ -143,7 +143,7 @@
       <section>Keys can only stay in memory for this application session.</section>
     </div>
     {% elif is_macos %}
-    <p class="u-muted u-xs" style="margin-top:var(--sp-3)">macOS may show Auto Z-Curve’s bundled runtime as “Python” in the Keychain prompt.</p>
+    <p class="u-muted u-xs" style="margin-top:var(--sp-3)">macOS may show auto-zcurve’s bundled runtime as “Python” in the Keychain prompt.</p>
     {% endif %}
   </section>
 
@@ -179,7 +179,7 @@
   {% endfor %}
 
   <footer class="app-foot">
-    <span>Auto Z-Curve {{ version }}</span>
+    <span>auto-zcurve {{ version }}</span>
     <span>Settings stay on this computer and are never included in project downloads.</span>
   </footer>
 </div>

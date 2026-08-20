@@ -86,7 +86,7 @@ try {
     Add-DirectoryToUserPath $BinDir
 
     Write-Host ""
-    Write-Host "Auto Z-Curve is installed."
+    Write-Host "auto-zcurve is installed."
     Write-Host "Open a new PowerShell window and run: auto-zcurve"
 } finally {
     if (Test-Path $TempDir) { Remove-Item -Recurse -Force $TempDir }

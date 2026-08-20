@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>{% block title %}Auto Z-Curve{% endblock %}</title>
+  <title>{% block title %}auto-zcurve{% endblock %}</title>
   <script>
     /* Applied before first paint so the page never flashes the wrong theme.
        Basecoat follows the shadcn convention: a `dark` class on <html>. */
@@ -29,14 +29,18 @@
   <a class="u-visually-hidden-focusable" href="#main">Skip to content</a>
 
   <header class="app-bar">
-    <a class="app-bar-brand" href="/{{ token }}/" aria-label="Auto Z-Curve home">
+    <a class="app-bar-brand" href="/{{ token }}/" aria-label="auto-zcurve home">
       <span class="app-bar-mark" aria-hidden="true">Z</span>
-      <span>Auto Z-Curve</span>
+      <span>auto-zcurve</span>
     </a>
 
     <span class="app-bar-spacer"></span>
 
     <span class="badge" data-variant="outline" title="Projects and results are stored on this computer">Local</span>
+
+    <a class="btn" data-variant="ghost" data-size="sm"
+       href="https://github.com/shaheedazaad/auto-zcurve/blob/main/docs/index.md"
+       target="_blank" rel="noopener">Docs</a>
 
     <a class="btn" data-variant="ghost" data-size="sm" href="/{{ token }}/settings">Settings</a>
 
@@ -59,7 +63,7 @@
   {% if update_version %}
   <div class="page" style="padding-bottom:0">
     <div class="alert" role="status">
-      <h2>Auto Z-Curve {{ update_version }} is available</h2>
+      <h2>auto-zcurve {{ update_version }} is available</h2>
       <section>Rerun the installer command to update.</section>
     </div>
   </div>

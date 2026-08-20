@@ -1,4 +1,4 @@
-# Models shown by Auto Z-Curve and accepted when a run starts.
+# Models shown by auto-zcurve and accepted when a run starts.
 models:
   gemini:
     - id: gemini-3.7-flash

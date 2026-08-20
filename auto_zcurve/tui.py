@@ -559,7 +559,7 @@ def run_tui() -> int:
 
             yield Header(show_clock=True)
             with Vertical(id="body"):
-                yield Static("Auto Z-Curve", id="title")
+                yield Static("auto-zcurve", id="title")
                 with Horizontal(id="workspace"):
                     with Vertical(id="left_pane"):
                         with Vertical(id="setup", classes="panel"):

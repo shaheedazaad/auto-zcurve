@@ -59,7 +59,7 @@ def _request_json(
     if payload is not None:
         method = "POST"
         headers["Content-Type"] = "application/json"
-        headers["X-Title"] = "Auto Z-Curve"
+        headers["X-Title"] = "auto-zcurve"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:

@@ -10,7 +10,7 @@ add_path_line() {
   path_line="AUTO_ZCURVE_BIN_DIR='$escaped_bin_dir'; case \":\$PATH:\" in *\":\$AUTO_ZCURVE_BIN_DIR:\"*) ;; *) export PATH=\"\$AUTO_ZCURVE_BIN_DIR:\$PATH\" ;; esac; unset AUTO_ZCURVE_BIN_DIR"
 
   if ! grep -Fqx "$path_line" "$config_file" 2>/dev/null; then
-    printf '\n# Added by the Auto Z-Curve installer.\n%s\n' "$path_line" >> "$config_file"
+    printf '\n# Added by the auto-zcurve installer.\n%s\n' "$path_line" >> "$config_file"
   fi
 }
 
@@ -70,14 +70,14 @@ fi
 case "$(uname -s)" in
   Darwin) INSTALL_ROOT="${AUTO_ZCURVE_INSTALL_ROOT:-$HOME/.local/share/auto-zcurve}" ;;
   Linux) INSTALL_ROOT="${AUTO_ZCURVE_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/auto-zcurve}" ;;
-  *) echo "Auto Z-Curve supports macOS and glibc-based Linux with this installer." >&2; exit 1 ;;
+  *) echo "auto-zcurve supports macOS and glibc-based Linux with this installer." >&2; exit 1 ;;
 esac
 
 # Conda's R package generates shell launchers containing unquoted copies of its
 # environment prefix. Keep the managed runtime out of paths containing spaces;
 # user projects still use the platform-native application data directory.
 if printf '%s' "$INSTALL_ROOT" | grep -q '[[:space:]]'; then
-  echo "Auto Z-Curve's managed runtime requires a path without spaces." >&2
+  echo "auto-zcurve's managed runtime requires a path without spaces." >&2
   echo "Set AUTO_ZCURVE_INSTALL_ROOT to a space-free directory and rerun the installer." >&2
   exit 1
 fi
@@ -124,5 +124,5 @@ chmod +x "$BIN_DIR/auto-zcurve"
 ensure_launcher_on_path
 
 echo
-echo "Auto Z-Curve is installed."
+echo "auto-zcurve is installed."
 echo "Open a new terminal and run: auto-zcurve"

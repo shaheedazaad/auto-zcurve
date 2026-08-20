@@ -411,7 +411,7 @@ def _project_index_snapshot(project: ManagedProject) -> dict:
 def create_app(*, token: str | None = None, projects_root: Path | None = None) -> FastAPI:
     token = token or secrets.token_urlsafe(32)
     runtime = WebRuntime(token, projects_root=projects_root)
-    app = FastAPI(title="Auto Z-Curve", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="auto-zcurve", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime = runtime
     app.add_middleware(LocalSecurityMiddleware)
 
@@ -1083,7 +1083,7 @@ def launch_web(*, open_browser: bool = True, port: int | None = None) -> int:
     app = create_app(token=token)
     threading.Thread(target=app.state.runtime.check_for_update, daemon=True).start()
     url = f"http://127.0.0.1:{port}/{token}/"
-    print(f"Auto Z-Curve is running locally at {url}")
+    print(f"auto-zcurve is running locally at {url}")
     print("Press Ctrl+C to stop it.")
     if open_browser:
         threading.Timer(0.5, webbrowser.open, args=(url,)).start()

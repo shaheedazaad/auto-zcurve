@@ -1,1 +1,1 @@
-"""Auto Z-Curve test suite."""
+"""auto-zcurve test suite."""

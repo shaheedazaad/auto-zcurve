@@ -92,7 +92,7 @@ def release_command(tag: str, head: str, *, draft: bool = False) -> list[str]:
         str(DIST / "auto-zcurve-bundle.tar.gz"),
         str(DIST / "auto-zcurve-bundle.zip"),
         "--title",
-        f"Auto Z-Curve {tag}",
+        f"auto-zcurve {tag}",
         "--generate-notes",
         "--target",
         head,
@@ -115,7 +115,7 @@ def run_checks_and_build(*, skip_checks: bool) -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build and publish the current Auto Z-Curve release.")
+    parser = argparse.ArgumentParser(description="Build and publish the current auto-zcurve release.")
     parser.add_argument("--draft", action="store_true", help="Create a draft release instead of publishing immediately.")
     parser.add_argument("--yes", action="store_true", help="Publish without an interactive confirmation prompt.")
     parser.add_argument("--skip-checks", action="store_true", help="Skip tests and the R/Quarto smoke test.")

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project.name }} · Auto Z-Curve{% endblock %}
+{% block title %}{{ project.name }} · auto-zcurve{% endblock %}
 {% block body_attributes %}data-project-id="{{ project.id }}"{% endblock %}
 
 {% block page %}
@@ -239,7 +239,7 @@
         <section class="panel panel-pad stack-sm">
           <div>
             <h2 style="margin:0; font-size:var(--text-lg); font-weight:600">Validation checks</h2>
-            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">Auto Z-Curve checks the YAML structure, field definitions, supported types, array item types, duplicate roles, and that <code>effects</code> contains at least one field.</p>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">auto-zcurve checks the YAML structure, field definitions, supported types, array item types, duplicate roles, and that <code>effects</code> contains at least one field.</p>
           </div>
           <p class="u-sm">Validation happens before any existing output is deleted.</p>
         </section>
@@ -450,7 +450,7 @@
   </dialog>
 
   <footer class="app-foot">
-    <span>Auto Z-Curve {{ version }}</span>
+    <span>auto-zcurve {{ version }}</span>
     <span>Project data is stored on this computer.</span>
   </footer>
 </div>

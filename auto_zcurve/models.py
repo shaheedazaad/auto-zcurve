@@ -206,7 +206,7 @@ def validate_model_option(
         if "structured_outputs" not in parameters:
             raise ValueError(
                 f"OpenRouter model `{normalized}` is available, but it does not support strict structured outputs. "
-                "Auto Z-Curve requires JSON Schema enforcement for reliable extraction; choose a model that lists `structured_outputs`."
+                "auto-zcurve requires JSON Schema enforcement for reliable extraction; choose a model that lists `structured_outputs`."
             )
         if not ({"file", "text"} & inputs):
             raise ValueError("This OpenRouter model does not accept text input after PDF parsing.")

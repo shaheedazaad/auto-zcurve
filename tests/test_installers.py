@@ -76,7 +76,7 @@ class UnixInstallerTests(unittest.TestCase):
 
             zshrc_path = zdotdir / ".zshrc"
             zshrc = zshrc_path.read_text(encoding="utf-8")
-            self.assertEqual(zshrc.count("# Added by the Auto Z-Curve installer."), 1)
+            self.assertEqual(zshrc.count("# Added by the auto-zcurve installer."), 1)
             self.assertEqual(zshrc.count("AUTO_ZCURVE_BIN_DIR="), 1)
             self.assertIn("custom pixi", zshrc)
 
