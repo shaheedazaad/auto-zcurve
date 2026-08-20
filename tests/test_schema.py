@@ -6,6 +6,7 @@ from auto_zcurve.schema import (
     build_response_schema,
     parse_extraction_schema,
     read_extraction_schema,
+    normalize_extracted_json,
     validate_extracted_json,
 )
 
@@ -68,6 +69,30 @@ class SchemaTests(unittest.TestCase):
                 "  first:\n    type: string\n    role: reported_statistic\n"
                 "  second:\n    type: string\n    role: reported_statistic\n"
             )
+
+    def test_normalizes_lossless_scalar_values_for_string_fields(self):
+        schema = parse_extraction_schema(
+            "meta_data:\n  doi:\n    type: string\n"
+            "effects:\n"
+            "  sample_id:\n    type: string\n"
+            "  labels:\n    type: array\n    items:\n      type: string\n"
+            "  significant:\n    type: boolean\n"
+        )
+        parsed = {
+            "meta_data": {"doi": 101},
+            "effects": [
+                {"sample_id": 2, "labels": [1, "control", False], "significant": False}
+            ],
+        }
+
+        normalized = normalize_extracted_json(parsed, schema)
+
+        self.assertIs(normalized, parsed)
+        self.assertEqual(parsed["meta_data"]["doi"], "101")
+        self.assertEqual(parsed["effects"][0]["sample_id"], "2")
+        self.assertEqual(parsed["effects"][0]["labels"], ["1", "control", "false"])
+        self.assertIs(parsed["effects"][0]["significant"], False)
+        validate_extracted_json(parsed, schema, provider_name="OpenRouter")
 
 
 if __name__ == "__main__":

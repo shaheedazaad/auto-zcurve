@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Auto Z-Curve{% endblock %}</title>
+  <script>
+    /* Applied before first paint so the page never flashes the wrong theme.
+       Basecoat follows the shadcn convention: a `dark` class on <html>. */
+    (() => {
+      const key = "auto-zcurve-theme";
+      let preference = "system";
+      try { preference = localStorage.getItem(key) || "system"; } catch (_) {}
+      if (!["system", "light", "dark"].includes(preference)) preference = "system";
+      const resolved = preference === "system"
+        ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : preference;
+      document.documentElement.classList.toggle("dark", resolved === "dark");
+      document.documentElement.dataset.themePreference = preference;
+      document.documentElement.style.colorScheme = resolved;
+    })();
+  </script>
+  <link rel="stylesheet" href="/{{ token }}/static/vendor/basecoat.min.css">
+  <link rel="stylesheet" href="/{{ token }}/static/app.css">
+  <script src="/{{ token }}/static/vendor/basecoat.min.js" defer></script>
+</head>
+<body data-token="{{ token }}" {% block body_attributes %}{% endblock %}>
+  <a class="u-visually-hidden-focusable" href="#main">Skip to content</a>
+
+  <header class="app-bar">
+    <a class="app-bar-brand" href="/{{ token }}/" aria-label="Auto Z-Curve home">
+      <span class="app-bar-mark" aria-hidden="true">Z</span>
+      <span>Auto Z-Curve</span>
+    </a>
+
+    <span class="app-bar-spacer"></span>
+
+    <span class="badge" data-variant="outline" title="Projects and results are stored on this computer">Local</span>
+
+    <a class="btn" data-variant="ghost" data-size="sm" href="/{{ token }}/settings">Settings</a>
+
+    <div class="dropdown-menu" id="theme-menu">
+      <button type="button" class="btn" data-variant="ghost" data-size="icon-sm"
+              id="theme-menu-trigger" aria-haspopup="menu" aria-controls="theme-menu-menu"
+              aria-expanded="false" aria-label="Theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 1 0 9 9a9 9 0 0 1 -9 -9"/></svg>
+      </button>
+      <div id="theme-menu-popover" data-popover aria-hidden="true">
+        <div role="menu" id="theme-menu-menu" aria-labelledby="theme-menu-trigger">
+          <div role="menuitemradio" class="js-theme-option" data-theme-value="system" aria-checked="true" tabindex="-1">System</div>
+          <div role="menuitemradio" class="js-theme-option" data-theme-value="light" aria-checked="false" tabindex="-1">Light</div>
+          <div role="menuitemradio" class="js-theme-option" data-theme-value="dark" aria-checked="false" tabindex="-1">Dark</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {% if update_version %}
+  <div class="page" style="padding-bottom:0">
+    <div class="alert" role="status">
+      <h2>Auto Z-Curve {{ update_version }} is available</h2>
+      <section>Rerun the installer command to update.</section>
+    </div>
+  </div>
+  {% endif %}
+
+  <main id="main">{% block page %}{% endblock %}</main>
+
+  <script src="/{{ token }}/static/app.js" defer></script>
+</body>
+</html>

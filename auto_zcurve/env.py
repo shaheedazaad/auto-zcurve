@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from .credentials import load_saved_api_key
+from .providers import normalize_provider, provider_definition, provider_label
 
 
 def load_dotenv(path: Path, overwrite: bool = False) -> None:
@@ -24,7 +25,12 @@ def load_dotenv(path: Path, overwrite: bool = False) -> None:
             os.environ[key] = value
 
 
-def resolve_api_key(project_dir: Path | None = None, explicit_key: str | None = None) -> str:
+def resolve_api_key(
+    project_dir: Path | None = None,
+    explicit_key: str | None = None,
+    provider: str = "gemini",
+) -> str:
+    selected = normalize_provider(provider)
     explicit_key = (explicit_key or "").strip()
     if explicit_key:
         return explicit_key
@@ -33,14 +39,16 @@ def resolve_api_key(project_dir: Path | None = None, explicit_key: str | None = 
         load_dotenv(project_dir / ".env")
     load_dotenv(Path.cwd() / ".env")
 
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    environment_name = provider_definition(selected).environment_key
+    api_key = os.environ.get(environment_name, "").strip()
     if api_key:
         return api_key
 
-    saved_key = load_saved_api_key()
+    saved_key = load_saved_api_key(selected)
     if saved_key:
         return saved_key
 
     raise RuntimeError(
-        "GEMINI_API_KEY is required. Enter it in the CLI, set it in the environment or .env, or save it in the GUI."
+        f"{environment_name} is required. Enter a {provider_label(selected)} key in the CLI, "
+        "set it in the environment or .env, or save it in the browser app."
     )

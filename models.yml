@@ -1,0 +1,21 @@
+# Models shown by Auto Z-Curve and accepted when a run starts.
+models:
+  gemini:
+    - id: gemini-3.7-flash
+      parallel_requests: 3
+      request_delay_sec: 0
+    - id: gemini-3.6-flash
+      parallel_requests: 3
+      request_delay_sec: 0
+    - id: gemini-3.1-pro-preview
+      parallel_requests: 3
+      request_delay_sec: 0
+    - id: gemini-3-flash-preview
+      parallel_requests: 1
+      request_delay_sec: 0
+    - id: gemma-4-31b-it
+      parallel_requests: 1
+      request_delay_sec: 30
+    - id: gemma-4-26b-a4b-it
+      parallel_requests: 1
+      request_delay_sec: 30

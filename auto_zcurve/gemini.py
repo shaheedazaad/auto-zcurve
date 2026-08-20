@@ -3,33 +3,14 @@ from __future__ import annotations
 import json
 import time
 import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .llm import ExtractionResult
 from .models import normalize_model_name
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
-
-
-@dataclass
-class ExtractionResult:
-    source_path: Path
-    source_name: str
-    status: str
-    model_used: str | None = None
-    data: dict[str, Any] | None = None
-    raw_json: str | None = None
-    error: str | None = None
-    duration_sec: float = 0
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    total_tokens: int | None = None
-
-    @property
-    def effect_count(self) -> int:
-        effects = (self.data or {}).get("effects") if self.data else None
-        return len(effects) if isinstance(effects, list) else 0
+from .config import normalize_service_tier
 
 
 def _response_text(response: object) -> str:
@@ -81,13 +62,41 @@ def _response_usage(response: object) -> dict[str, int | None]:
     }
 
 
+def _parse_json_response(raw_text: str) -> tuple[dict[str, Any], str | None]:
+    """Parse Gemini JSON, repairing malformed output while preserving both forms."""
+    try:
+        return json.loads(raw_text), None
+    except json.JSONDecodeError as original_exc:
+        try:
+            from json_repair import repair_json
+        except ImportError as exc:  # pragma: no cover - dependency is declared at install time
+            error = RuntimeError(
+                "Gemini returned invalid JSON and json-repair is not installed."
+            )
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            raise error from exc
+        repaired_text: str | None = None
+        try:
+            repaired_text = repair_json(raw_text)
+            parsed = json.loads(repaired_text)
+        except (TypeError, ValueError, json.JSONDecodeError) as repair_exc:
+            error = RuntimeError(
+                f"Gemini returned invalid JSON and json-repair could not repair it: {original_exc}"
+            )
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            error.repaired_response = repaired_text  # type: ignore[attr-defined]
+            raise error from repair_exc
+        return parsed, repaired_text
+
+
 def _generate(
     client: object,
     uploaded: object,
     model: str,
     prompt: str,
     response_schema: dict[str, Any],
-) -> tuple[dict[str, Any], str, dict[str, int | None]]:
+    service_tier: str = "standard",
+) -> tuple[dict[str, Any], str, str | None, dict[str, int | None]]:
     try:
         from google.genai import types
     except ImportError as exc:  # pragma: no cover - preflight catches this
@@ -99,14 +108,12 @@ def _generate(
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
+            service_tier=normalize_service_tier(service_tier),
         ),
     )
     raw_text = _response_text(response)
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Gemini returned invalid JSON: {exc}") from exc
-    return parsed, raw_text, _response_usage(response)
+    parsed, repaired_text = _parse_json_response(raw_text)
+    return parsed, raw_text, repaired_text, _response_usage(response)
 
 
 def extract_pdf(
@@ -119,6 +126,13 @@ def extract_pdf(
     schema_config: ExtractionSchema,
     instruction_path: Path,
     effect_definition: str | None,
+    request_timeout_sec: int = 600,
+    input_mode: str = "native_pdf",
+    context_length: int | None = None,
+    project_dir: Path | None = None,
+    reasoning_effort: str | None = None,
+    service_tier: str = "standard",
+    endpoint_order: tuple[str, ...] = (),
 ) -> ExtractionResult:
     started = time.monotonic()
     try:
@@ -139,17 +153,28 @@ def extract_pdf(
     with source_path.open("rb") as _fh:
         uploaded = client.files.upload(file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"})
 
-    parsed, raw_text, usage = _generate(client, uploaded, primary_model, prompt, response_schema)
-    validate_extracted_json(parsed, schema_config)
+    parsed, raw_text, repaired_text, usage = _generate(
+        client, uploaded, primary_model, prompt, response_schema, service_tier
+    )
+    try:
+        validate_extracted_json(parsed, schema_config)
+    except Exception as exc:
+        exc.raw_response = raw_text  # type: ignore[attr-defined]
+        exc.repaired_response = repaired_text  # type: ignore[attr-defined]
+        raise
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
         status="ok",
+        provider_used="gemini",
         model_used=normalize_model_name(primary_model),
         data=parsed,
         raw_json=raw_text,
+        raw_response=raw_text,
+        repaired_response=repaired_text,
         duration_sec=round(time.monotonic() - started, 3),
         input_tokens=_int_or_none(usage.get("input_tokens")),
         output_tokens=_int_or_none(usage.get("output_tokens")),
         total_tokens=_int_or_none(usage.get("total_tokens")),
+        input_mode="native_pdf",
     )

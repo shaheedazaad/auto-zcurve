@@ -18,10 +18,15 @@ auto-zcurve run /path/to/project --yes --model gemini-3.6-flash
 auto-zcurve retry /path/to/project --yes
 ```
 
+Gemini is the default provider. OpenRouter is an experimental backup and
+requires an exact manually supplied model ID that supports PDF/file input and
+structured output.
+
 Common options include:
 
 ```text
 --api-key KEY       use a session key without saving it
+--provider NAME     select gemini or openrouter (experimental)
 --parallel N        process N PDFs concurrently
 --force             reprocess successful PDFs (run only)
 --skip-report       skip R/Quarto report generation
@@ -62,9 +67,10 @@ uv tool install auto-zcurve
 ```
 
 This route does not install or manage R, Quarto, or the required R packages.
-Complete report generation therefore requires those dependencies to be
-installed separately. The locked Pixi installer in the main README remains the
-supported installation method.
+It also does not install the managed Docling model directory used by the local
+parsing path. Complete report generation and managed local parsing therefore
+require additional setup. The locked Pixi installer in the main README remains
+the supported installation method.
 
 ## Launching the browser without opening it automatically
 

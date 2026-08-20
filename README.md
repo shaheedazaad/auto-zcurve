@@ -1,12 +1,12 @@
 # Auto Z-Curve
 
-Auto Z-Curve reads PDF articles, uses Google Gemini to extract focal
+Auto Z-Curve reads PDF articles, uses a supported LLM provider to extract focal
 statistical results, and creates a z-curve analysis report with a plot, summary
 statistics, and full disclosure table.
 
 The default interface is a private browser app running only on your computer.
-Your PDFs, projects, and results stay local; only PDF extraction requests are
-sent to Gemini.
+Your PDFs, projects, and results stay local; only the PDF or its locally parsed
+text is sent to the selected LLM provider during extraction.
 
 **Note:** I have validated statistic extraction as part of a study, which is currently under peer review. The preprint citation is below, and details of the validation are in the supplemental material.
 
@@ -35,11 +35,12 @@ Open PowerShell and paste:
 irm https://raw.githubusercontent.com/shaheedazaad/auto-zcurve/main/install.ps1 | iex
 ```
 
-The installer supports Apple Silicon and Intel macOS, Windows x64, and
-mainstream glibc-based Linux x64. It downloads the latest versioned release
-bundle and installs its committed `pixi.lock`. To update, run the same command
-again. It also adds the Auto Z-Curve launcher directory to your user `PATH` if
-needed; open a new terminal after the first installation.
+The installer supports Apple Silicon and Intel macOS 14 or newer, Windows x64,
+and mainstream glibc-based Linux x64. It downloads the latest versioned release
+bundle, installs its committed `pixi.lock`, and downloads the local layout and
+table models used for PDF parsing. To update, run the same command again. It
+also adds the Auto Z-Curve launcher directory to your user `PATH` if needed;
+open a new terminal after the first installation.
 
 ## Use the browser app
 
@@ -58,13 +59,36 @@ In the app:
 1. Create a named project.
 2. Add several PDF articles by dragging or choosing files.
 3. Review or customize the project’s extraction instructions and extraction schema.
-4. Paste a Gemini API key and choose whether to remember it securely.
-5. Run the analysis and follow its live progress.
-6. Review the summary, view or regenerate the report, retry failed articles, open the project
+4. Open **Settings** to add a Gemini API key and set execution defaults.
+5. Select a Gemini model for the project.
+6. Run the analysis and follow its live progress.
+7. Review the summary, view or regenerate the report, retry failed articles, open the project
    folder, or download a ZIP of the result files.
 
-The model field accepts an exact Gemini API model ID. Its listed models are
-suggestions rather than a restriction, so you can enter another model ID.
+Gemini accepts an exact Gemini API model ID and receives the original PDF. The
+app never falls back to prompt-only JSON or response healing.
+
+### Model allowlist
+
+The root [`models.yml`](models.yml) controls which Gemini models appear and are
+accepted when a run starts:
+
+```yaml
+models:
+  gemini:
+    - id: gemini-3.6-flash
+    - id: gemma-4-31b-it
+    - id: gemma-4-26b-a4b-it
+```
+
+Changes are read when the model catalog is requested and again when a run starts,
+so editing the file does not require rebuilding the application. Removing
+`models.yml` restores live-catalog behavior for backward compatibility.
+
+OpenRouter is available as an experimental backup provider. It is intentionally
+not listed in `models.yml`: enter an exact OpenRouter model ID manually and the
+app validates live support for PDF/file input and structured output before a run.
+Quality, latency, and reliability can vary by model and provider route.
 
 Projects are stored in the normal per-user application-data directory:
 
@@ -74,14 +98,17 @@ Projects are stored in the normal per-user application-data directory:
 
 Duplicate filenames are preserved with a numbered suffix.
 
-## Gemini API key privacy
+## API key privacy
 
-Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+Create a Gemini key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+OpenRouter projects use an `OPENROUTER_API_KEY` (or its separately saved
+credential) instead.
 When “Remember securely” is selected, Auto Z-Curve uses the operating system’s
 credential store through Python Keyring. If Linux has no usable secret-service
 backend, the app clearly marks the key as session-only. It never falls back to
-a plaintext file. Saved keys are not read automatically when the app starts;
-choose “Unlock saved key” when you want to use one. On macOS, the authorization
+a plaintext file. Saved keys are not read
+automatically when the app starts; choose the corresponding unlock action when
+you want to use one. On macOS, the authorization
 dialog may identify Auto Z-Curve's bundled runtime as “Python,” sometimes with
 a version number.
 
@@ -98,8 +125,8 @@ Each managed project has an `output/` folder containing:
 | `report.qmd`                       | Standalone Quarto source that reproduces the fit from the disclosure CSV     |
 | `disclosure_table.csv`             | Every extracted effect and supporting metadata                               |
 | `zcurve_reproduction_settings.csv` | Seed, bootstrap, parallel, and package settings used by the reproducible QMD |
-| `extractions.json`                 | Full structured Gemini output for each PDF                                   |
-| `run_log.csv`                      | Processing attempts, timing, status, and token usage                         |
+| `extractions.json`                 | Structured output plus provider, model, input mode, and parser provenance     |
+| `run_log.csv`                      | Attempts, timing, token usage, input mode, and parser diagnostics             |
 | `raw/*.json`                       | Per-article extraction artifacts                                             |
 
 ## Legacy interfaces

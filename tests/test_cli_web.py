@@ -11,6 +11,10 @@ class CliWebTests(unittest.TestCase):
         parser = build_parser()
         self.assertEqual(parser.parse_args(["web", "--no-browser"]).command, "web")
         self.assertEqual(parser.parse_args(["tui"]).command, "tui")
+        parsed = parser.parse_args(
+            ["run", "/tmp/project", "--provider", "gemini", "--model", "gemma-4-31b-it"]
+        )
+        self.assertEqual(parsed.provider, "gemini")
 
     @patch("auto_zcurve.web.launch_web", return_value=0)
     def test_no_argument_command_launches_browser_app(self, launch):

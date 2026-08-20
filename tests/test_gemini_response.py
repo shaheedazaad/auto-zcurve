@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import unittest
 
-from auto_zcurve.gemini import _response_text, _response_usage
+from auto_zcurve.gemini import _parse_json_response, _response_text, _response_usage
 
 
 class Part:
@@ -30,6 +30,11 @@ class Response:
 
 
 class GeminiResponseTests(unittest.TestCase):
+    def test_malformed_json_is_repaired_and_original_is_retained(self):
+        parsed, repaired = _parse_json_response('{"effects": [{"claim": "Finding"}')
+        self.assertEqual(parsed, {"effects": [{"claim": "Finding"}]})
+        self.assertEqual(repaired, '{"effects": [{"claim": "Finding"}]}')
+
     def test_response_text_ignores_non_text_parts(self):
         response = Response(
             [

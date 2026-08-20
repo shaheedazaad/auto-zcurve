@@ -225,9 +225,13 @@ def _validate_section(section: object, fields: dict[str, FieldSpec], section_nam
         _validate_field(value, spec, f"{section_name}.{field_name}")
 
 
-def validate_extracted_json(parsed: object, config: ExtractionSchema) -> None:
+def validate_extracted_json(
+    parsed: object,
+    config: ExtractionSchema,
+    provider_name: str = "Gemini",
+) -> None:
     if not isinstance(parsed, dict):
-        raise ValueError("Gemini returned JSON that is not a top-level object.")
+        raise ValueError(f"{provider_name} returned JSON that is not a top-level object.")
     if config.meta_data:
         if "meta_data" not in parsed:
             raise ValueError("Missing top-level `meta_data` object.")
@@ -240,3 +244,45 @@ def validate_extracted_json(parsed: object, config: ExtractionSchema) -> None:
         raise ValueError("Missing or invalid top-level `effects` array.")
     for index, effect in enumerate(effects, start=1):
         _validate_section(effect, config.effects, f"effects[{index}]")
+
+
+def normalize_extracted_json(
+    parsed: object,
+    config: ExtractionSchema,
+) -> object:
+    """Repair lossless scalar-to-string mistakes in otherwise valid model JSON.
+
+    Some OpenAI-compatible structured-output backends occasionally emit an identifier
+    such as ``sample_id`` as a JSON number even when its schema type is ``string``.
+    Turning JSON scalars into their textual representation is lossless and avoids
+    discarding an entire document for that provider-side schema violation. Other type
+    mismatches remain untouched so normal validation still catches ambiguous output.
+    """
+
+    def as_text(value: object) -> object:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
+
+    def normalize_section(section: object, fields: dict[str, FieldSpec]) -> None:
+        if not isinstance(section, dict):
+            return
+        for field_name, spec in fields.items():
+            value = section.get(field_name)
+            if value is None:
+                continue
+            if spec.type == "STRING":
+                section[field_name] = as_text(value)
+            elif spec.type == "ARRAY" and spec.items_type == "STRING" and isinstance(value, list):
+                section[field_name] = [as_text(item) for item in value]
+
+    if not isinstance(parsed, dict):
+        return parsed
+    normalize_section(parsed.get("meta_data"), config.meta_data)
+    effects = parsed.get("effects")
+    if isinstance(effects, list):
+        for effect in effects:
+            normalize_section(effect, config.effects)
+    return parsed

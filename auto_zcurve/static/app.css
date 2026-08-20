@@ -1,233 +1,736 @@
-:root {
-  --ink: #17251f;
-  --muted: #64716b;
-  --line: #dce3de;
-  --paper: #ffffff;
-  --wash: #f4f7f4;
-  --green: #176b4a;
-  --green-dark: #0d5137;
-  --green-soft: #e8f4ed;
-  --amber: #a45f13;
-  --red: #a63e35;
-  --shadow: 0 12px 34px rgba(26, 49, 38, .07);
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: var(--ink);
-  background: var(--wash);
-  font-synthesis: none;
-}
-* { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 85% 0, #e7f1e9 0, transparent 28rem), var(--wash); }
-button, input, select, textarea { font: inherit; }
-a { color: inherit; }
-.topbar { height: 70px; padding: 0 max(24px, calc((100vw - 1220px)/2)); display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,.88); border-bottom: 1px solid var(--line); backdrop-filter: blur(14px); }
-.brand { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); font-weight: 760; text-decoration: none; letter-spacing: -.02em; }
-.brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--green); color: white; font-family: Georgia, serif; font-style: italic; font-size: 20px; box-shadow: inset 0 -2px rgba(0,0,0,.12); }
-.privacy-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--green-dark); background: var(--green-soft); border: 1px solid #cce4d5; border-radius: 999px; font-size: 12px; font-weight: 650; }
-.status-dot { width: 7px; height: 7px; background: #2f9567; border-radius: 50%; box-shadow: 0 0 0 3px rgba(47,149,103,.13); }
-.home-shell, .project-shell { width: min(1220px, calc(100% - 40px)); margin: 0 auto; }
-.home-shell { padding: 38px 0 30px; }
-.hero { max-width: 820px; margin-bottom: 45px; }
-.eyebrow, .step-label { margin: 0 0 10px; color: var(--green); text-transform: uppercase; letter-spacing: .13em; font-size: 11px; font-weight: 780; }
-h1, h2 { letter-spacing: -.035em; }
-h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(42px, 5.7vw, 72px); line-height: 1.02; font-weight: 500; }
-h2 { margin: 0 0 9px; font-size: 22px; }
-.hero-copy { max-width: 700px; color: var(--muted); font-size: 18px; line-height: 1.65; }
-.home-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 20px; }
-.card { background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
-.create-card, .key-card { padding: 30px; }
-.card p { color: var(--muted); line-height: 1.55; }
-.stack { display: grid; gap: 9px; margin-top: 22px; }
-label { color: #47544e; font-size: 13px; font-weight: 680; }
-input, select, textarea { width: 100%; min-height: 45px; padding: 10px 13px; color: var(--ink); background: #fff; border: 1px solid #cfd9d2; border-radius: 9px; outline: none; transition: border-color .15s, box-shadow .15s; }
-input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,107,74,.12); }
-textarea { resize: vertical; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-.button { min-height: 42px; padding: 10px 15px; display: inline-flex; align-items: center; justify-content: center; gap: 12px; border: 1px solid transparent; border-radius: 9px; font-weight: 720; font-size: 13px; text-decoration: none; cursor: pointer; transition: transform .12s, background .12s; }
-.button:hover:not(:disabled) { transform: translateY(-1px); }
-.button:disabled { opacity: .45; cursor: not-allowed; }
-.button.primary { color: white; background: var(--green); border-color: var(--green); }
-.button.primary:hover:not(:disabled) { background: var(--green-dark); }
-.button.secondary { color: var(--green-dark); background: var(--green-soft); border-color: #c7dfd0; }
-.button.ghost { color: #415048; background: #fff; border-color: var(--line); }
-.button.danger-text { color: var(--red); background: #fff; border-color: #ead3d0; }
-.button.wide { width: 100%; margin-top: 10px; }
-.check-row { display: flex; align-items: flex-start; gap: 9px; color: var(--muted); font-weight: 500; line-height: 1.35; }
-.check-row input { flex: 0 0 auto; width: 16px; min-height: 16px; margin-top: 1px; accent-color: var(--green); }
-.check-row.compact { align-items: center; white-space: nowrap; }
-.card-heading-row, .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.badge { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 720; }
-.badge.success { color: var(--green-dark); background: var(--green-soft); }
-.badge.neutral { color: #66736c; background: #eef1ef; }
-.badge.danger { color: var(--red); background: #f8ecea; }
-.notice { padding: 14px; border: 1px solid #d9e3db; border-radius: 10px; background: #f7faf8; color: var(--muted); font-size: 13px; }
-.notice.warning { border-color: #edd8b8; background: #fff9ef; color: #83521e; }
-.form-message { min-height: 18px; margin: 4px 0 0 !important; font-size: 12px; }
-.saved-key-hint { margin: -2px 0 2px !important; color: var(--green) !important; font-size: 11px; }
-.success-text { color: var(--green) !important; }.error-text { color: var(--red) !important; }.warning-text { color: var(--amber) !important; }
-.projects-section { margin-top: 55px; }
-.home-intro { max-width: 720px; margin-bottom: 24px; }
-.home-intro h1 { font-size: clamp(32px, 4vw, 46px); }
-.home-intro > p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
-.projects-primary { margin-top: 0; }
-.projects-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
-.projects-heading h2 { margin-bottom: 3px; font-size: 25px; }.projects-heading p { margin: 0; }
-.project-search { width: min(310px, 42vw); display: grid; gap: 5px; }
-.project-search span { font-size: 11px; }
-.project-search input { min-height: 40px; }
-.compact-create-form { margin-top: 14px; padding: 12px; display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: center; gap: 10px; background: rgba(255,255,255,.72); border: 1px solid var(--line); border-radius: 12px; }
-.compact-create-form label { padding-left: 4px; white-space: nowrap; }.compact-create-form input { min-height: 40px; }.compact-create-form .button { min-height: 40px; }
-.project-list { margin-top: 14px; overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
-.project-row { display: flex; align-items: center; gap: 14px; padding: 17px 18px; border-bottom: 1px solid var(--line); text-decoration: none; }
-.project-row:last-child { border-bottom: 0; }.project-row:hover { background: #fbfdfb; }
-.project-icon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 10px; background: #eef3ef; color: var(--green); font-family: Georgia, serif; font-size: 19px; }
-.project-main { flex: 1; display: grid; gap: 4px; }.project-main span { color: var(--muted); font-size: 12px; }.row-arrow { color: #819087; }
-.project-list-empty { padding: 34px 18px; color: var(--muted); text-align: center; font-size: 13px; }
-.home-pagination { min-height: 48px; padding-top: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 11px; }
-.configuration-panel { margin-top: 18px; padding: 0; overflow: hidden; box-shadow: none; }
-.configuration-panel > summary { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; list-style: none; }
-.configuration-panel > summary::-webkit-details-marker { display: none; }
-.configuration-panel > summary > span:first-child { display: grid; gap: 2px; }.configuration-panel > summary small { color: var(--muted); font-size: 11px; font-weight: 500; }
-.configuration-body { padding: 0 16px 16px; border-top: 1px solid var(--line); }
-.configuration-body > p { max-width: 760px; font-size: 12px; }
-.configuration-form { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; align-items: center; gap: 9px; }
-.configuration-form > label:first-child { grid-column: 1 / -1; }.configuration-form .form-message { grid-column: 1 / -1; }
-.compact-config { align-items: center; white-space: nowrap; }
-.muted { color: var(--muted); font-size: 12px; }
-.local-footer { margin-top: 50px; padding-top: 18px; display: flex; justify-content: space-between; color: #839088; border-top: 1px solid var(--line); font-size: 11px; }
-.project-shell { padding: 24px 0 60px; }
-.breadcrumb { display: flex; gap: 8px; color: var(--muted); font-size: 12px; }.breadcrumb a { text-decoration: none; color: var(--green); }
-.project-header { margin: 30px 0 26px; display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; }
-.project-header h1 { font-size: clamp(38px, 4.5vw, 56px); }
-.project-meta { color: var(--muted); font-size: 13px; }
-.header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.key-notice { margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1.5fr; align-items: center; gap: 15px 30px; padding: 18px 20px; background: #fffaf0; border-color: #ecd9b7; }
-.key-notice p { margin: 4px 0 0; }.inline-key-form { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; }.inline-key-form .form-message { grid-column: 1/-1; }
-.notice-detail { grid-column: 1/-1; margin: 0 !important; color: var(--amber) !important; font-size: 12px; }
-.workspace-grid { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items: start; }
-.workspace-main { min-width: 0; display: grid; gap: 18px; }
-.upload-card, .instructions-card, .articles-card, .report-summary-card, .run-panel { padding: 22px; }
-.report-summary-top { margin-bottom: 18px; }
-.empty-report-summary { min-height: 112px; display: flex; align-items: center; gap: 16px; }
-.empty-report-summary h2 { margin-bottom: 3px; }.empty-report-summary p:last-child { margin: 0; font-size: 13px; }
-.empty-report-icon { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; color: var(--green); background: var(--green-soft); font-family: Georgia, serif; font-size: 23px; font-style: italic; }
-.instructions-card { padding: 0; overflow: hidden; }
-.instructions-summary { padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; }
-.instructions-summary::-webkit-details-marker { display: none; }
-.instructions-summary .step-label { margin-bottom: 5px; }.instructions-summary h2 { margin: 0; }
-.instructions-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--green); font-size: 12px; font-weight: 720; }
-.instructions-toggle i { display: inline-block; font-style: normal; transition: transform .15s; }
-.instructions-card[open] .instructions-toggle i { transform: rotate(180deg); }
-.instructions-body { padding: 0 22px 20px; border-top: 1px solid var(--line); }
-.instructions-body > p { margin-bottom: 0; font-size: 13px; }
-.instruction-warning { margin: 4px 0 !important; line-height: 1.45 !important; }
-.schema-link-row { margin-top: 14px; padding: 13px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #f7faf8; border: 1px solid var(--line); border-radius: 10px; }
-.schema-link-row > div { display: grid; gap: 4px; }.schema-link-row span { color: var(--muted); font-size: 11px; line-height: 1.4; }
-.schema-link-row .button { flex: 0 0 auto; min-height: 36px; padding: 7px 11px; font-size: 11px; }
-.dropzone { position: relative; margin-top: 15px; border: 1.5px dashed #b9c9bf; border-radius: 12px; background: #fafcfa; transition: .15s; }
-.dropzone.dragging { background: var(--green-soft); border-color: var(--green); }
-.dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.dropzone label { min-height: 82px; padding: 14px 18px; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; }
-.dropzone-copy { display: grid; gap: 4px; }.dropzone-copy > span { color: var(--muted); font-weight: 500; font-size: 12px; }
-.upload-symbol { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: var(--green); background: var(--green-soft); font-size: 20px; font-weight: 400; }
-.status-legend { display: flex; gap: 12px; color: var(--muted); font-size: 10px; }.status-legend span { display:flex;align-items:center;gap:4px; }
-.legend-dot, .status-label i { width: 7px; height: 7px; display: inline-block; border-radius: 50%; }.ready { background: #a4aea8; }.ok { background: #2e9264; }.error { background: #c2594e; }
-.article-table-wrap { overflow-x: auto; margin: 15px -22px 0; }
-.article-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.article-table th { padding: 10px 14px; color: #76827b; background: #fafbfa; border-block: 1px solid var(--line); text-align: left; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; }
-.article-table td { padding: 13px 14px; border-bottom: 1px solid #edf0ee; color: #536058; }
-.article-table td:first-child { display: flex; align-items: center; gap: 10px; color: var(--ink); }.article-table td:first-child span:last-child { display:grid;gap:4px; }
-.article-table small { max-width: 410px; color: var(--red); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pdf-icon { padding: 4px 5px; color: #994238; background: #faece9; border-radius: 4px; font-size: 8px; font-weight: 800; }
-.status-label { display: inline-flex; align-items: center; gap: 6px; }.status-label.ready i { background:#a4aea8; }.status-label.ok i { background:#2e9264; }.status-label.error i { background:#c2594e; }
-.empty-row td { display: table-cell !important; padding: 35px !important; text-align: center; color: var(--muted) !important; }
-.table-pagination { min-height: 50px; margin: 0 -4px -10px; padding-top: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 11px; }
-.pagination-button { min-height: 32px; padding: 6px 10px; font-size: 11px; }
-.run-panel { position: sticky; top: 20px; }
-.run-panel > p { font-size: 13px; }.run-panel .stack { margin-top: 18px; }
-.field-hint { margin: -3px 0 4px !important; color: var(--muted) !important; font-size: 10px; line-height: 1.4 !important; }
-.progress-area { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
-.progress-heading { display: flex; justify-content: space-between; font-size: 11px; }.progress-heading span { color: var(--muted); }
-.progress-track { height: 6px; margin-top: 10px; overflow: hidden; background: #e7ece8; border-radius: 99px; }.progress-track span { display:block;height:100%;background:var(--green);transition:width .25s;border-radius:99px; }
-.progress-area p { margin-bottom: 0; font-size: 11px; }
-.run-result { margin-top: 18px; padding: 13px; display: flex; gap: 10px; color: var(--green-dark); background: var(--green-soft); border-radius: 10px; }
-.result-check { width: 22px; height: 22px; display:grid;place-items:center;border-radius:50%;background:var(--green);color:white;font-size:12px; }.run-result p { margin:3px 0 0;font-size:11px; }
-.analysis-overview { margin-top: 18px; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(0, 1.28fr); align-items: stretch; gap: 20px; }
-.estimate-panel { min-width: 0; padding: 2px 0; }
-.estimate-heading { margin: 0 0 10px; color: var(--muted) !important; text-transform: uppercase; letter-spacing: .1em; font-size: 10px; font-weight: 760; }
-.zcurve-metrics { display: grid; gap: 9px; }
-.zcurve-metric { padding: 14px 15px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 12px; background: var(--green-soft); border: 1px solid #d9eadf; border-radius: 10px; }
-.zcurve-metric span { min-width: 0; color: var(--green-dark); font-size: 11px; font-weight: 700; }
-.zcurve-metric abbr { margin-left: 4px; color: #618071; text-decoration: none; font-size: 9px; letter-spacing: .04em; }
-.zcurve-metric strong { grid-row: 1 / 3; grid-column: 2; color: var(--ink); font-family: Georgia, serif; font-size: 27px; font-weight: 500; }
-.zcurve-metric small { color: var(--muted); font-size: 10px; }
-.estimate-unavailable { padding: 15px; background: #f7f9f7; border-radius: 9px; font-size: 12px; }
-.zcurve-plot { min-width: 0; margin: 0; padding: 12px 12px 8px; display: flex; flex-direction: column; justify-content: center; background: #fbfcfb; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.zcurve-plot img { width: 100%; height: auto; max-height: 390px; display: block; object-fit: contain; }
-.zcurve-plot figcaption { padding: 6px 3px 0; color: var(--muted); font-size: 9px; text-align: center; }
-.plot-unavailable { min-height: 245px; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); text-align: center; }
-.plot-unavailable span { width: 42px; height: 42px; display: grid; place-items: center; color: var(--green); background: var(--green-soft); border-radius: 50%; font-family: Georgia, serif; font-size: 22px; font-style: italic; }
-.plot-unavailable p { max-width: 220px; margin: 0; font-size: 11px; }
-.summary-context { margin-top: 14px; padding-top: 11px; display: flex; flex-wrap: wrap; gap: 6px 16px; border-top: 1px solid #edf0ee; color: #849089; font-size: 9px; }
-.summary-context span { position: relative; }
-.summary-context span + span::before { position: absolute; left: -10px; content: "·"; color: #b3bbb6; }
-.summary-context strong { color: #68756e; font-weight: 650; }
-.execution-note { margin: 13px 0 0; font-size: 11px; }
-.summary-details { margin-top: 13px; color: var(--muted); font-size: 11px; }
-.summary-details summary { cursor: pointer; color: var(--green-dark); font-weight: 700; }
-.summary-details pre { max-height: 320px; overflow: auto; padding: 12px; color: #34423b; background: #f7f9f7; border-radius: 8px; white-space: pre-wrap; }
-.privacy-note { margin-top: 20px; padding-top: 17px; display: flex; gap: 10px; border-top: 1px solid var(--line); color: var(--green); }.privacy-note p { margin:0;font-size:10px; }.privacy-note strong { display:block;color:#3b4a42;font-size:11px; }
-.schema-header { margin: 30px 0 24px; display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
-.schema-header h1 { font-size: clamp(38px, 4.5vw, 54px); }.schema-header p:last-child { max-width: 720px; margin-bottom: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
-.schema-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; align-items: start; gap: 18px; }
-.schema-editor-card { min-width: 0; padding: 22px; }.schema-editor-heading { margin-bottom: 17px; }
-.schema-reset-warning { margin: 0 0 15px; line-height: 1.5; }
-.js-schema-form > label { display: inline-block; margin-bottom: 8px; }
-.yaml-editor { position: relative; height: clamp(440px, 66vh, 760px); overflow: hidden; background: #17221d; border: 1px solid #2a3c33; border-radius: 11px; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
-.yaml-editor:focus-within { border-color: #62b58c; box-shadow: 0 0 0 3px rgba(23,107,74,.15); }
-.yaml-highlight, .yaml-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 17px 18px; border: 0; border-radius: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 450; line-height: 1.65; letter-spacing: 0; tab-size: 2; white-space: pre; overflow: auto; }
-.yaml-highlight { z-index: 1; pointer-events: none; color: #d7e2dc; background: transparent; scrollbar-width: none; }
-.yaml-highlight::-webkit-scrollbar { display: none; }
-.yaml-input { z-index: 2; min-height: 0; resize: none; color: transparent; -webkit-text-fill-color: transparent; caret-color: #f2f7f4; background: transparent; outline: none; }
-.yaml-input:focus { border-color: transparent; box-shadow: none; }
-.yaml-input::selection { background: rgba(112, 181, 146, .34); }
-.yaml-key { color: #82cfaa; }.yaml-punctuation { color: #a8b9b0; }.yaml-string { color: #e5c681; }.yaml-number { color: #d99c82; }.yaml-literal { color: #b7a6e8; }.yaml-comment { color: #7f9589; font-style: italic; }
-.schema-form-actions { margin-top: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }.schema-form-actions .form-message { flex: 1 1 260px; margin-left: 5px !important; }
-.schema-guide { display: grid; gap: 14px; position: sticky; top: 20px; }.guide-card { padding: 19px; box-shadow: none; }
-.guide-card h2 { font-size: 18px; }.guide-card > p { font-size: 12px; }.guide-card code { padding: 1px 4px; color: #2b5742; background: #edf4ef; border-radius: 4px; font-size: .92em; }
-.schema-terms { margin: 16px 0 0; display: grid; gap: 13px; }.schema-terms div { display: grid; gap: 3px; }.schema-terms dt { font-size: 12px; font-weight: 750; }.schema-terms dd { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.48; }
-.schema-example { margin: 10px 0; padding: 10px 12px; color: #d7e2dc; background: #17221d; border-radius: 8px; font-size: 11px; overflow-x: auto; }.guide-note { color: #775324 !important; }
-[hidden] { display: none !important; }
-@media (max-width: 900px) {
-  .home-grid, .workspace-grid, .schema-layout { grid-template-columns: 1fr; }
-  .run-panel { position: static; }
-  .schema-guide { position: static; grid-template-columns: repeat(2, 1fr); }.schema-guide .guide-card:first-child { grid-column: 1 / -1; }
-  .project-header { align-items: flex-start; flex-direction: column; }
-  .header-actions { justify-content: flex-start; }
-  .key-notice { grid-template-columns: 1fr; }
-  .analysis-overview { grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); gap: 14px; }
-}
-@media (max-width: 620px) {
-  .privacy-pill { display: none; }
-  .home-shell, .project-shell { width: min(100% - 24px, 1220px); }
-  .home-shell { padding-top: 45px; }
-  .home-grid { gap: 12px; }
-  .create-card, .key-card, .upload-card, .articles-card, .report-summary-card, .run-panel { padding: 18px; }
-  .instructions-summary { padding: 16px 18px; }
-  .instructions-body { padding: 0 18px 18px; }
-  .project-row .badge { display: none; }
-  .local-footer { display: grid; gap: 7px; }
-  .inline-key-form { grid-template-columns: 1fr; }
-  .status-legend { display: none; }
-  .analysis-overview { grid-template-columns: 1fr; }
-  .zcurve-plot { grid-row: 2; }
-  .summary-context { gap: 5px 12px; }
-  .summary-context span + span::before { left: -8px; }
-  .projects-heading { align-items: stretch; flex-direction: column; }
-  .project-search { width: 100%; }
-  .compact-create-form { grid-template-columns: 1fr; }.compact-create-form label { padding-left: 0; }
-  .configuration-form { grid-template-columns: 1fr; }.configuration-form > label:first-child, .configuration-form .form-message { grid-column: auto; }
-  .compact-config { white-space: normal; }
-  .schema-header { align-items: flex-start; flex-direction: column; }
-  .schema-guide { grid-template-columns: 1fr; }.schema-guide .guide-card:first-child { grid-column: auto; }
-  .schema-link-row { align-items: flex-start; flex-direction: column; }.schema-link-row .button { width: 100%; }
-  .schema-editor-card { padding: 16px; }.yaml-editor { height: 58vh; min-height: 390px; }
+/* Auto Z-Curve application layer.
+ *
+ * Basecoat (vendored, see static/vendor/) supplies every component: .btn,
+ * .badge, .card, .input, .table, .tabs, .alert, .select, .dialog. It ships its
+ * own cascade layers, so this file declares one layer of its own -- `app` --
+ * and appends it last. Everything below is therefore either (a) a token the
+ * component library does not define, or (b) page composition, which no
+ * component library can know about.
+ *
+ * Two rules keep this file from drifting the way its predecessor did:
+ *   1. Never redefine a class the library owns, and never reuse a utility name
+ *      from Tailwind/Basecoat with different values. New names only.
+ *   2. Never type a raw length or colour at a call site. If a value is worth
+ *      using twice it becomes a token here first.
+ */
+@layer theme, base, components, utilities, app;
+
+@layer app {
+  /* ---------------------------------------------------------------------
+     Tokens the component library does not provide.
+
+     Basecoat follows shadcn and ships only `destructive` as a status colour.
+     This app also reports success (report ready, article done) and warning
+     (locked key, experimental provider), so those are defined here with the
+     same {solid, subtle, foreground} shape -- and, unlike the previous
+     stylesheet, every one of them is redefined for dark mode below.
+     Contrast targets: subtle pairs >= 4.5:1, solid pairs >= 4.5:1.
+     --------------------------------------------------------------------- */
+  :root {
+    --success: oklch(0.52 0.13 155);
+    --success-foreground: oklch(0.99 0 0);
+    --success-subtle: oklch(0.96 0.03 155);
+    --success-subtle-foreground: oklch(0.40 0.10 155);
+
+    /* Amber is too light to carry white text at its natural lightness -- the
+       obvious value here scores 3.69:1. Darkened until it clears 4.5:1. */
+    --warning: oklch(0.52 0.13 55);
+    --warning-foreground: oklch(0.99 0 0);
+    --warning-subtle: oklch(0.96 0.04 85);
+    --warning-subtle-foreground: oklch(0.44 0.10 60);
+
+    --info-subtle: oklch(0.96 0.03 250);
+    --info-subtle-foreground: oklch(0.45 0.12 255);
+
+    /* Spacing: a strict 4px grid. Six steps, no in-between values. */
+    --sp-1: 0.25rem;
+    --sp-2: 0.5rem;
+    --sp-3: 0.75rem;
+    --sp-4: 1rem;
+    --sp-6: 1.5rem;
+    --sp-8: 2rem;
+
+    /* Type: dense. Body is 14px, the density Linear/GitHub use for tools. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.875rem;
+    --text-lg: 1rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+
+    --page-width: 72rem;
+    --bar-height: 3rem;
+  }
+
+  .dark {
+    --success: oklch(0.68 0.14 155);
+    --success-foreground: oklch(0.18 0.02 155);
+    --success-subtle: oklch(0.27 0.05 155);
+    --success-subtle-foreground: oklch(0.87 0.12 155);
+
+    --warning: oklch(0.75 0.14 70);
+    --warning-foreground: oklch(0.20 0.03 70);
+    --warning-subtle: oklch(0.28 0.05 70);
+    --warning-subtle-foreground: oklch(0.89 0.11 80);
+
+    --info-subtle: oklch(0.28 0.05 250);
+    --info-subtle-foreground: oklch(0.86 0.09 250);
+
+    /* Basecoat's stock dark theme sits at L=14.5% -- near-black. Lifted to a
+       true dark grey, with surfaces above it (card/popover/muted/accent)
+       shifted by the same amount so the layering between them is unchanged. */
+    --background: oklch(0.20 0 0);
+    --card: oklch(0.25 0 0);
+    --popover: oklch(0.25 0 0);
+    --secondary: oklch(0.30 0 0);
+    --muted: oklch(0.30 0 0);
+    --accent: oklch(0.40 0 0);
+  }
+
+  /* ---------------------------------------------------------------------
+     Base
+     --------------------------------------------------------------------- */
+  html {
+    min-width: 320px;
+    font-size: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  /* ---------------------------------------------------------------------
+     Status colour helpers. Named `u-` so they can never collide with a
+     Basecoat or Tailwind class.
+     --------------------------------------------------------------------- */
+  .u-muted { color: var(--muted-foreground); }
+  .u-success { color: var(--success-subtle-foreground); }
+  .u-warning { color: var(--warning-subtle-foreground); }
+  .u-error { color: var(--destructive); }
+  .u-xs { font-size: var(--text-xs); }
+  .u-sm { font-size: var(--text-sm); }
+  .u-mono { font-family: var(--font-mono); }
+  .u-nowrap { white-space: nowrap; }
+  .u-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .u-visually-hidden,
+  .u-visually-hidden-focusable:not(:focus) {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Badge variants Basecoat lacks. Uses its data-variant API so badges keep
+     one consistent authoring shape everywhere. */
+  .badge[data-variant='success'] {
+    background: var(--success-subtle);
+    color: var(--success-subtle-foreground);
+    border-color: transparent;
+  }
+  .badge[data-variant='warning'] {
+    background: var(--warning-subtle);
+    color: var(--warning-subtle-foreground);
+    border-color: transparent;
+  }
+  .badge[data-variant='info'] {
+    background: var(--info-subtle);
+    color: var(--info-subtle-foreground);
+    border-color: transparent;
+  }
+
+  /* Basecoat ships only `destructive` for alerts; this app also needs to warn
+     (locked keys, experimental provider) and confirm (report ready). */
+  .alert[data-variant='warning'] {
+    background: var(--warning-subtle);
+    color: var(--warning-subtle-foreground);
+    border-color: color-mix(in oklch, var(--warning) 30%, transparent);
+  }
+  .alert[data-variant='success'] {
+    background: var(--success-subtle);
+    color: var(--success-subtle-foreground);
+    border-color: color-mix(in oklch, var(--success) 30%, transparent);
+  }
+  .alert[data-variant='warning'] .btn[data-variant='outline'],
+  .alert[data-variant='success'] .btn[data-variant='outline'] {
+    background: var(--background);
+  }
+
+  /* ---------------------------------------------------------------------
+     Page shell
+     --------------------------------------------------------------------- */
+  .app-bar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--bar-height);
+    padding-inline: var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--background);
+  }
+
+  .app-bar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-weight: 600;
+    font-size: var(--text-base);
+    color: var(--foreground);
+    text-decoration: none;
+  }
+
+  .app-bar-mark {
+    display: grid;
+    place-items: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: var(--radius-sm);
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+
+  .app-bar-spacer { margin-left: auto; }
+
+  .page {
+    width: 100%;
+    max-width: var(--page-width);
+    margin-inline: auto;
+    padding: var(--sp-6) var(--sp-4) var(--sp-8);
+  }
+
+  /* Form-led pages (settings, schema). A number input has no business being
+     800px wide; constraining the page is simpler than constraining each field. */
+  .page-narrow { max-width: 56rem; }
+
+  /* Basecoat ships breadcrumb structure but no spacing or separator styling. */
+  .breadcrumb {
+    margin-bottom: var(--sp-2);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
+  .breadcrumb > ol { gap: var(--sp-2); }
+  .breadcrumb a { color: inherit; text-decoration: none; }
+  .breadcrumb a:hover { color: var(--foreground); }
+  .breadcrumb [aria-current='page'] { color: var(--foreground); }
+
+  /* Native selects inside a field should fill it, like every other control. */
+  .field > select.select { width: 100%; }
+
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-6);
+  }
+
+  .page-head h1 {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .page-head p {
+    margin: var(--sp-1) 0 0;
+    color: var(--muted-foreground);
+    font-size: var(--text-base);
+  }
+
+  /* ---------------------------------------------------------------------
+     Section: the one heading rule.
+
+     A heading ALWAYS sits on the page background, above its panel. Panels
+     never carry their own title bar. This is the convention the previous
+     design broke -- 12 headings inside cards, 1 above -- and it is the reason
+     Execution and API keys looked like different apps.
+     --------------------------------------------------------------------- */
+  .section + .section { margin-top: var(--sp-8); }
+
+  .section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-3);
+  }
+
+  .section-head h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .section-head p {
+    margin: var(--sp-1) 0 0;
+    max-width: 60ch;
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
+
+  .section-head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
+
+  /* A panel is a plain content surface: no header, no title, no footer.
+     Content-only, so it can never disagree with another panel's chrome. */
+  .panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+
+  .panel-pad { padding: var(--sp-4); }
+
+  .panel-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-top: 1px solid var(--border);
+  }
+
+  /* ---------------------------------------------------------------------
+     Tab bar. Deliberately NOT Basecoat's `.tabs`: this app deep-links tabs
+     via the URL hash and drives them from app.js, and Basecoat's tabs.js
+     would auto-initialise `.tabs` and fight that.
+     --------------------------------------------------------------------- */
+  .tabbar {
+    display: flex;
+    gap: var(--sp-1);
+    margin-bottom: var(--sp-6);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .tabbar button {
+    flex: 0 0 auto;
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tabbar button:hover { color: var(--foreground); }
+  .tabbar button.is-active {
+    border-bottom-color: var(--primary);
+    color: var(--foreground);
+  }
+  .tabbar button:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
+  .tab-panel[hidden] { display: none; }
+
+  /* ---------------------------------------------------------------------
+     Rows: the answer to "a card per item". A provider, a project, an article
+     is a ROW inside one panel, not a card of its own.
+     --------------------------------------------------------------------- */
+  .rows > * + * { border-top: 1px solid var(--border); }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+  }
+
+  .row-main { min-width: 0; flex: 1; }
+
+  .row-title {
+    display: block;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row-meta {
+    display: block;
+    margin-top: 0.125rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
+
+  .row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    white-space: nowrap;
+  }
+
+  a.row {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.row:hover { background: var(--accent); }
+
+  /* ---------------------------------------------------------------------
+     Layout helpers
+     --------------------------------------------------------------------- */
+  .stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+  .cluster-between {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+  .field-max { max-width: 22rem; }
+
+  /* ---------------------------------------------------------------------
+     Empty state -- one pattern, used everywhere something can be absent.
+     --------------------------------------------------------------------- */
+  .empty {
+    display: grid;
+    justify-items: center;
+    gap: var(--sp-1);
+    padding: var(--sp-8) var(--sp-4);
+    text-align: center;
+  }
+  .empty-icon {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    margin-bottom: var(--sp-1);
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .empty-title { margin: 0; font-weight: 500; }
+  .empty-text { margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); max-width: 44ch; }
+
+  /* ---------------------------------------------------------------------
+     Footer
+     --------------------------------------------------------------------- */
+  .app-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    margin-top: var(--sp-8);
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+
+  /* ---------------------------------------------------------------------
+     Responsive. One breakpoint. The previous sheet had three that disagreed
+     with each other and with the framework.
+     --------------------------------------------------------------------- */
+  @media (max-width: 48rem) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .page-head, .section-head { flex-direction: column; align-items: stretch; }
+    .row { flex-wrap: wrap; }
+  }
+
+  /* ---------------------------------------------------------------------
+     Project overview: report summary and its metric cards.
+     --------------------------------------------------------------------- */
+  .analysis-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: var(--sp-6);
+    align-items: start;
+  }
+
+  .zcurve-plot { margin: 0; }
+  .zcurve-plot img { display: block; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-md); }
+  .zcurve-plot figcaption { margin-top: var(--sp-2); color: var(--muted-foreground); font-size: var(--text-xs); text-align: center; }
+
+  .plot-unavailable {
+    display: grid;
+    place-items: center;
+    gap: var(--sp-2);
+    aspect-ratio: 4 / 3;
+    padding: var(--sp-4);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+    text-align: center;
+    color: var(--muted-foreground);
+  }
+  .plot-unavailable > span { font-size: var(--text-2xl); font-weight: 700; }
+  .plot-unavailable p { margin: 0; max-width: 26ch; font-size: var(--text-sm); }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--sp-3); }
+  .metric-card { padding: var(--sp-3) var(--sp-4); }
+  .metric-title { margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); }
+  .metric-value { margin: var(--sp-1) 0 0; font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.01em; }
+  .metric-desc { margin: var(--sp-1) 0 0; color: var(--muted-foreground); font-size: var(--text-xs); }
+
+  .summary-context {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding-top: var(--sp-4);
+    margin-top: var(--sp-4);
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
+  .summary-context strong { color: var(--foreground); font-weight: 600; }
+
+  @media (max-width: 64rem) {
+    .analysis-overview { grid-template-columns: 1fr; }
+  }
+
+  /* ---------------------------------------------------------------------
+     Sources tab: the PDF dropzone. Deliberately not `.panel` -- a dashed
+     border reads as "drop target" the way a solid one does not.
+     --------------------------------------------------------------------- */
+  .dropzone {
+    padding: var(--sp-8) var(--sp-4);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    text-align: center;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .dropzone.dragging { border-color: var(--primary); background: var(--accent); }
+  .dropzone input[type='file'] {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .dropzone label { display: grid; justify-items: center; gap: var(--sp-2); cursor: pointer; }
+  .upload-symbol {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: var(--muted-foreground);
+    font-size: var(--text-xl);
+  }
+  .dropzone-copy { display: grid; gap: var(--sp-1); }
+  .dropzone-copy > span:last-child { color: var(--muted-foreground); font-size: var(--text-sm); }
+
+  /* ---------------------------------------------------------------------
+     Articles table. A small decorative file icon and the empty-row cell;
+     the real row markup is emitted by app.js and must stay byte-identical
+     to the markup below (same relationship as home.html's projectRow()).
+     --------------------------------------------------------------------- */
+  .file-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-right: var(--sp-2);
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .article-message { display: block; font-size: var(--text-xs); }
+  .table-empty-cell { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--muted-foreground); }
+
+  /* A long PDF filename would otherwise claim as much width as it wants
+     (table columns default to auto-sizing on content), squeezing the
+     action buttons until they wrap onto a second line. Capping and
+     truncating the name keeps the rest of the row on one line; the full
+     name is still available via `title`. */
+  .article-name {
+    display: inline-block;
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .article-row td:last-child .cluster { flex-wrap: nowrap; }
+
+  /* ---------------------------------------------------------------------
+     Run analysis tab: one panel, two columns -- configure on the left,
+     run/monitor on the right -- separated by a rule rather than a second
+     card, so an idle run column (two buttons) sitting next to a taller
+     settings form doesn't read as two mismatched boxes.
+     --------------------------------------------------------------------- */
+  .run-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--sp-6);
+    align-items: start;
+  }
+  .run-columns > :last-child {
+    padding-inline-start: var(--sp-6);
+    border-inline-start: 1px solid var(--border);
+  }
+  @media (max-width: 64rem) {
+    .run-columns { grid-template-columns: 1fr; }
+    .run-columns > :last-child {
+      padding-inline-start: 0;
+      border-inline-start: 0;
+      padding-top: var(--sp-6);
+      border-top: 1px solid var(--border);
+    }
+  }
+
+  .run-actions-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+  .run-secondary-actions { display: flex; }
+
+  .progress-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-2);
+    font-size: var(--text-sm);
+  }
+
+  /* Hand-rolled rather than Basecoat's `.progress`, which expects a Tailwind
+     background utility on its inner span -- this app has no build step to
+     guarantee that class survives in the vendored bundle. */
+  .run-progress {
+    height: 0.5rem;
+    border-radius: 999px;
+    background: var(--muted);
+    overflow: hidden;
+  }
+  .run-progress > span {
+    display: block;
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.2s ease;
+  }
+
+  .run-data-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    margin-top: var(--sp-6);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .run-data-note svg { flex: 0 0 auto; margin-top: 0.1rem; }
+
+  /* ---------------------------------------------------------------------
+     Article output view: an inline swap within the Articles tab (table ->
+     detail, with a back button) rather than an overlay -- the raw/repaired
+     JSON can be long, and a modal/drawer here just added a close-affordance
+     problem for no real benefit over reusing the tab's own space.
+     --------------------------------------------------------------------- */
+  /* Grid items default to min-width:auto, which lets an unbroken run response
+     (raw text that failed JSON.parse, e.g. whatever needed repairing) force
+     the track wider than the panel instead of wrapping. */
+  .response-panels { display: grid; gap: var(--sp-4); min-width: 0; }
+  .response-panels > div { min-width: 0; }
+  .response-panels pre {
+    margin: var(--sp-2) 0 0;
+    padding: var(--sp-3);
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border-radius: var(--radius-md);
+    background: var(--muted);
+  }
+  .json-viewer { font-family: var(--font-mono); font-size: var(--text-xs); }
+  .json-key { color: var(--primary); }
+  .json-string { color: var(--success-subtle-foreground); }
+  .json-literal, .json-number { color: var(--warning-subtle-foreground); }
+
+  /* ---------------------------------------------------------------------
+     Schema editor: a `<pre>` of highlighted spans stacked exactly under a
+     transparent-text `<textarea>`, which stays on top to keep receiving
+     clicks and keystrokes. Every box-model property below must match
+     between the two layers or the rendered text drifts from what's typed.
+     --------------------------------------------------------------------- */
+  .schema-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: var(--sp-6);
+    align-items: start;
+  }
+  @media (max-width: 64rem) {
+    .schema-layout { grid-template-columns: 1fr; }
+  }
+  .schema-guide { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .schema-terms { display: grid; gap: var(--sp-3); margin: var(--sp-3) 0 0; }
+  .schema-terms dt { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; }
+  .schema-terms dd { margin: var(--sp-1) 0 0; color: var(--muted-foreground); font-size: var(--text-sm); }
+  .schema-example {
+    margin: var(--sp-2) 0;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .yaml-editor {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    overflow: hidden;
+  }
+  .yaml-highlight,
+  .yaml-input {
+    margin: 0;
+    padding: var(--sp-3);
+    width: 100%;
+    height: 24rem;
+    border: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    tab-size: 2;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .yaml-highlight {
+    position: absolute;
+    inset: 0;
+    color: var(--foreground);
+    pointer-events: none;
+  }
+  .yaml-highlight code { display: block; white-space: inherit; word-break: inherit; }
+  .yaml-input {
+    position: relative;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--foreground);
+    resize: vertical;
+  }
+  .yaml-key { color: var(--primary); font-weight: 600; }
+  .yaml-string { color: var(--success-subtle-foreground); }
+  .yaml-number, .yaml-literal { color: var(--warning-subtle-foreground); }
+  .yaml-comment { color: var(--muted-foreground); font-style: italic; }
+  .yaml-punctuation { color: var(--muted-foreground); }
 }

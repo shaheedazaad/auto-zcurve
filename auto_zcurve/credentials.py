@@ -4,11 +4,17 @@ import json
 import os
 from pathlib import Path
 
+from .providers import normalize_provider, provider_definition, provider_label
+
 
 SERVICE_NAME = "auto-zcurve"
 KEY_NAME = "gemini_api_key"
 LAST_PROJECT_KEY = "last_project_dir"
 SAVED_API_KEY_KEY = "saved_api_key_configured"
+SAVED_API_KEY_KEYS = {
+    "gemini": SAVED_API_KEY_KEY,
+    "openrouter": "openrouter_saved_api_key_configured",
+}
 
 
 class CredentialStoreUnavailable(RuntimeError):
@@ -30,7 +36,7 @@ def credentials_dir() -> Path:
 def credentials_path() -> Path:
     """Path for non-secret preferences.
 
-    Kept as a public helper for compatibility. Gemini keys are never written
+    Kept as a public helper for compatibility. Provider keys are never written
     here; they live in the operating-system credential store.
     """
 
@@ -70,9 +76,10 @@ def credential_store_available() -> bool:
     return True
 
 
-def load_saved_api_key() -> str | None:
+def load_saved_api_key(provider: str = "gemini") -> str | None:
+    selected = normalize_provider(provider)
     try:
-        value = _keyring_module().get_password(SERVICE_NAME, KEY_NAME)
+        value = _keyring_module().get_password(SERVICE_NAME, provider_definition(selected).credential_key)
     except CredentialStoreUnavailable:
         return None
     except Exception:
@@ -81,12 +88,17 @@ def load_saved_api_key() -> str | None:
     return api_key or None
 
 
-def save_api_key(api_key: str) -> str:
+def save_api_key(api_key: str, provider: str = "gemini") -> str:
+    selected = normalize_provider(provider)
     api_key = api_key.strip()
     if not api_key:
-        raise ValueError("Cannot save an empty Gemini API key.")
+        raise ValueError(f"Cannot save an empty {provider_label(selected)} API key.")
     try:
-        _keyring_module().set_password(SERVICE_NAME, KEY_NAME, api_key)
+        _keyring_module().set_password(
+            SERVICE_NAME,
+            provider_definition(selected).credential_key,
+            api_key,
+        )
     except CredentialStoreUnavailable:
         raise
     except Exception as exc:
@@ -94,7 +106,7 @@ def save_api_key(api_key: str) -> str:
             "The operating-system credential store rejected the key. "
             "The key can still be used for this app session."
         ) from exc
-    _set_saved_api_key_configured(True)
+    _set_saved_api_key_configured(True, selected)
     return "operating-system credential store"
 
 
@@ -122,18 +134,21 @@ def _save_preferences(data: dict) -> None:
         pass
 
 
-def saved_api_key_configured() -> bool:
+def saved_api_key_configured(provider: str = "gemini") -> bool:
     """Report saved-key intent without opening the credential store."""
 
-    return _load_preferences().get(SAVED_API_KEY_KEY) is True
+    selected = normalize_provider(provider)
+    return _load_preferences().get(SAVED_API_KEY_KEYS[selected]) is True
 
 
-def _set_saved_api_key_configured(configured: bool) -> None:
+def _set_saved_api_key_configured(configured: bool, provider: str = "gemini") -> None:
+    selected = normalize_provider(provider)
+    preference_key = SAVED_API_KEY_KEYS[selected]
     data = _load_preferences()
     if configured:
-        data[SAVED_API_KEY_KEY] = True
+        data[preference_key] = True
     else:
-        data.pop(SAVED_API_KEY_KEY, None)
+        data.pop(preference_key, None)
     _save_preferences(data)
 
 
@@ -151,11 +166,15 @@ def save_last_project_dir(project_dir: Path) -> None:
     _save_preferences(data)
 
 
-def delete_saved_api_key() -> bool:
+def delete_saved_api_key(provider: str = "gemini") -> bool:
+    selected = normalize_provider(provider)
     try:
-        _keyring_module().delete_password(SERVICE_NAME, KEY_NAME)
+        _keyring_module().delete_password(
+            SERVICE_NAME,
+            provider_definition(selected).credential_key,
+        )
     except Exception:
-        _set_saved_api_key_configured(False)
+        _set_saved_api_key_configured(False, selected)
         return False
-    _set_saved_api_key_configured(False)
+    _set_saved_api_key_configured(False, selected)
     return True

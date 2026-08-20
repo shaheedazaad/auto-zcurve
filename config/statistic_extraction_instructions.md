@@ -1,6 +1,6 @@
 # Article Processing Instructions
 
-## General instructions 
+## General instructions
 
 You extract structured study information for z-curve analyses.
 
@@ -17,9 +17,9 @@ Also ignore secondary analyses, for example robustness checks, sensitivity analy
 
 ## Statistic extraction
 
-When possible, fill `{{reported_statistic_field}}` with a z-curve-readable string such as `t(38)=2.14`, `F(1,98)=4.10`, `chi(2)=5.21`, `z=2.41`, or `p=0.012`.
+When possible, fill `{{reported_statistic_field}}` with either a t, F, chi, z, or _exact_ p statistic. Results _must_ be in precisely one of the following formats with no additional text: t(38)=2.14, F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.
 
-If both a p value and statistic are available, report the statistic instead.
+If both a p value and statistic are available, report the statistic instead (but only if the statistic is complete, otherwise extract the p value).
 
 ## Preregistration
 
@@ -27,4 +27,4 @@ Preregistation should be reported at the effect level. It is possible for a stud
 
 ## Sample numbering
 
-It is important to know whether multiple statistics/effects come from the same sample of participants. All effects from the same, or overlapping, samples within a study should share a sample ID. Give the first sample whose data is reported in the paper an ID of 1, the second 2, and so on. 
+It is important to know whether multiple statistics/effects come from the same sample of participants. All effects from the same, or overlapping, samples within a study should share a sample ID. Give the first sample whose data is reported in the paper an ID of 1, the second 2, and so on.

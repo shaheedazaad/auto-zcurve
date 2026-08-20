@@ -42,10 +42,16 @@ class ReportRenderTests(unittest.TestCase):
             self.assertIn('read_csv("disclosure_table.csv"', reproducible_qmd)
             self.assertIn("zcurve_clustered(", reproducible_qmd)
             self.assertIn("is.finite(analysis_z)", reproducible_qmd)
+            report_template = Path("report/report_template.qmd").read_text(encoding="utf-8")
+            self.assertIn("run_date", report_template)
+            self.assertIn("app_version", report_template)
+            self.assertIn("truncate_csv_text", report_template)
             self.assertFalse((project / "report.html").exists())
             self.assertEqual(Path(calls[0][1]["cwd"]), project / "output")
             self.assertNotIn("--output-dir", calls[0][0])
             self.assertIn("report.qmd", calls[0][0])
+            self.assertEqual(calls[0][1]["env"]["AUTO_ZCURVE_MODEL_NAME"], "gemini-3.1-pro-preview")
+            self.assertIn("AUTO_ZCURVE_VERSION", calls[0][1]["env"])
 
 
 if __name__ == "__main__":

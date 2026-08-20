@@ -5,13 +5,14 @@ import sys
 from pathlib import Path
 
 from .artifacts import load_extractions
-from .config import DEFAULTS, RunSettings, load_run_settings
+from .config import DEFAULTS, RunSettings, load_app_settings, load_run_settings
 from .console import CliConsole
-from .models import fallback_models, list_live_models, normalize_model_name
+from .models import fallback_models, list_live_models, model_request_defaults, normalize_model_name, validate_model_option
 from .preflight import PreflightError, run_preflight
 from .runner import ensure_project_layout, retry_project, run_project
 from .env import resolve_api_key
 from .user_facing import classify_error, format_run_result
+from .providers import normalize_provider, provider_label
 
 
 def _questionary():
@@ -32,43 +33,53 @@ def prompt_project_dir() -> Path:
     return Path(answer).expanduser().resolve()
 
 
-def prompt_api_key(project_dir: Path, explicit_key: str | None, interactive: bool) -> str:
+def prompt_api_key(
+    project_dir: Path,
+    explicit_key: str | None,
+    interactive: bool,
+    provider: str = "gemini",
+) -> str:
+    selected = normalize_provider(provider)
     try:
-        return resolve_api_key(project_dir, explicit_key=explicit_key)
+        return resolve_api_key(project_dir, explicit_key=explicit_key, provider=selected)
     except RuntimeError:
         if not interactive:
             raise
 
     q = _questionary()
     if q:
-        answer = q.password("Gemini API key:").ask()
+        answer = q.password(f"{provider_label(selected)} API key:").ask()
     else:
         import getpass
 
-        answer = getpass.getpass("Gemini API key: ")
+        answer = getpass.getpass(f"{provider_label(selected)} API key: ")
 
-    return resolve_api_key(project_dir, explicit_key=answer)
+    return resolve_api_key(project_dir, explicit_key=answer, provider=selected)
 
 
-def prompt_model(api_key: str, console: CliConsole) -> str:
+def prompt_model(api_key: str, console: CliConsole, provider: str = "gemini") -> str:
+    selected_provider = normalize_provider(provider)
+    if selected_provider == "openrouter":
+        primary = input("OpenRouter model ID (for example vendor/model): ").strip()
+        return validate_model_option("openrouter", primary, api_key).name
     try:
-        options = list_live_models(api_key)
+        options = list_live_models(api_key, selected_provider)
         if not options:
-            raise RuntimeError("No compatible Gemini generateContent models were returned.")
+            raise RuntimeError(f"No compatible {provider_label(selected_provider)} models were returned.")
     except Exception as exc:
         console.warn(f"Live model discovery was unavailable: {exc}")
-        options = fallback_models()
+        options = fallback_models(selected_provider)
 
     choice_names = [option.name for option in options]
     q = _questionary()
     if q:
         primary = q.select("Primary extraction model:", choices=choice_names).ask()
-        return normalize_model_name(primary)
+        return normalize_model_name(primary, selected_provider)
 
     console.table("Available Models", ["#", "Model"], enumerate(choice_names, start=1))
     selected = int(input("Primary extraction model number: ").strip())
     primary = choice_names[selected - 1]
-    return normalize_model_name(primary)
+    return normalize_model_name(primary, selected_provider)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,8 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run extraction for a project directory.")
     run.add_argument("project_dir", type=Path)
     run.add_argument("--yes", action="store_true", help="Accept setup defaults and do not prompt.")
-    run.add_argument("--model", help="Primary Gemini model.")
-    run.add_argument("--api-key", help="Gemini API key for this run. Not stored.")
+    run.add_argument("--provider", choices=("gemini", "openrouter"), help="LLM provider (default: saved setting or gemini).")
+    run.add_argument("--model", help="Primary provider model ID.")
+    run.add_argument("--api-key", help="Selected provider's API key for this run. Not stored.")
     run.add_argument("--parallel", type=int, help="Number of PDFs to process at the same time.")
     run.add_argument("--force", action="store_true", help="Reprocess PDFs even if they already succeeded.")
     run.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
@@ -88,8 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
     retry = subparsers.add_parser("retry", help="Retry failed files from the latest project outputs.")
     retry.add_argument("project_dir", type=Path)
     retry.add_argument("--yes", action="store_true", help="Retry all failed files without prompting.")
-    retry.add_argument("--model", help="Override primary Gemini model.")
-    retry.add_argument("--api-key", help="Gemini API key for this retry. Not stored.")
+    retry.add_argument("--provider", choices=("gemini", "openrouter"), help="Override the saved LLM provider.")
+    retry.add_argument("--model", help="Override the saved provider model.")
+    retry.add_argument("--api-key", help="Selected provider's API key for this retry. Not stored.")
     retry.add_argument("--parallel", type=int, help="Number of PDFs to retry at the same time.")
     retry.add_argument("--source", action="append", help="Retry only this source path relative to sources/.")
     retry.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
@@ -112,20 +125,43 @@ def _settings_from_args(
     api_key: str,
 ) -> RunSettings:
     existing = load_run_settings(project_dir)
-    primary = args.model or (existing.primary_model if existing else None)
+    app_defaults = load_app_settings()
+    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
+    primary = args.model or (
+        existing.primary_model if existing and existing.provider == provider else None
+    )
 
     if not primary and not interactive:
-        raise RuntimeError("A Gemini model is required. Pass --model or run `auto-zcurve` for guided setup.")
+        raise RuntimeError(
+            f"A {provider_label(provider)} model is required. Pass --model or use the browser app."
+        )
 
     if not primary:
-        primary = prompt_model(api_key, console)
+        primary = prompt_model(api_key, console, provider)
+
+    if provider == "openrouter":
+        primary = validate_model_option(provider, primary, api_key).name
+
+    model_parallel, model_delay = model_request_defaults(primary, provider)
 
     return RunSettings(
-        primary_model=normalize_model_name(primary),
-        request_timeout_sec=DEFAULTS["request_timeout_sec"],
-        parallel_requests=max(1, int(args.parallel or DEFAULTS["parallel_requests"])),
-        max_upload_size_mb=DEFAULTS["max_upload_size_mb"],
+        primary_model=normalize_model_name(primary, provider),
+        provider=provider,
+        request_timeout_sec=(
+            existing.request_timeout_sec if existing else app_defaults.request_timeout_sec
+        ),
+        parallel_requests=max(
+            1,
+            int(args.parallel if args.parallel is not None else (existing.parallel_requests if existing else model_parallel)),
+        ),
+        request_delay_sec=existing.request_delay_sec if existing else model_delay,
+        max_upload_size_mb=(
+            existing.max_upload_size_mb if existing else app_defaults.max_upload_size_mb
+        ),
         effect_definition=existing.effect_definition if existing else None,
+        pdf_parser=app_defaults.pdf_parser,
+        reasoning_effort=app_defaults.reasoning_effort,
+        service_tier=app_defaults.service_tier,
     )
 
 
@@ -134,6 +170,7 @@ def guided(console: CliConsole) -> int:
     project_dir = prompt_project_dir()
     args = argparse.Namespace(
         model=None,
+        provider=None,
         api_key=None,
         yes=False,
         force=False,
@@ -157,7 +194,14 @@ def run_command(args: argparse.Namespace, project_dir: Path, interactive: bool, 
     if not args.skip_preflight:
         run_preflight(project_dir, interactive=interactive and not args.yes, console=console)
     prompt_allowed = interactive and not args.yes
-    api_key = prompt_api_key(project_dir, explicit_key=args.api_key, interactive=prompt_allowed)
+    existing = load_run_settings(project_dir)
+    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
+    api_key = prompt_api_key(
+        project_dir,
+        explicit_key=args.api_key,
+        interactive=prompt_allowed,
+        provider=provider,
+    )
     settings = _settings_from_args(args, project_dir, console, interactive=prompt_allowed, api_key=api_key)
     summary = run_project(
         project_dir=project_dir,
@@ -184,7 +228,14 @@ def retry_command(args: argparse.Namespace, console: CliConsole) -> int:
     project_dir = args.project_dir.expanduser().resolve()
     if not args.skip_preflight:
         run_preflight(project_dir, interactive=False, console=console)
-    api_key = prompt_api_key(project_dir, explicit_key=args.api_key, interactive=False)
+    existing = load_run_settings(project_dir)
+    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
+    api_key = prompt_api_key(
+        project_dir,
+        explicit_key=args.api_key,
+        interactive=False,
+        provider=provider,
+    )
     settings = _settings_from_args(args, project_dir, console, interactive=False, api_key=api_key)
     summary = retry_project(
         project_dir=project_dir,

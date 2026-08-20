@@ -61,7 +61,7 @@ class ReleaseSmokeTests(unittest.TestCase):
                 source_path=pdf,
                 source_name=pdf.name,
                 status="ok",
-                model_used="fixture-model",
+                model_used="gemini-3.6-flash",
                 data={"meta_data": {"doi": "10.0000/fixture"}, "effects": effects},
                 raw_json="{}",
                 input_tokens=10,
@@ -71,7 +71,7 @@ class ReleaseSmokeTests(unittest.TestCase):
             with patch("auto_zcurve.runner.extract_pdf", return_value=result):
                 summary = run_project(
                     project_dir=project,
-                    settings=RunSettings(primary_model="fixture-model", parallel_requests=1),
+                    settings=RunSettings(primary_model="gemini-3.6-flash", parallel_requests=1),
                     assume_yes=True,
                     interactive=False,
                     force=False,

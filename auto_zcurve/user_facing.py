@@ -209,11 +209,25 @@ def classify_error(error: BaseException | str) -> UserFacingError:
     detail = str(error)
     text = detail.lower()
 
+    if "openrouter_api_key" in text or "openrouter" in text and "api key" in text and ("required" in text or "missing" in text):
+        return UserFacingError(
+            "OpenRouter API key missing",
+            "Auto Z-Curve cannot contact OpenRouter without an API key.",
+            "Enter an OpenRouter API key or save one permanently.",
+            detail,
+        )
     if "gemini_api_key" in text or "api key" in text and ("required" in text or "missing" in text):
         return UserFacingError(
             "Gemini API key missing",
             "Auto Z-Curve cannot contact Gemini without an API key.",
             "Enter a Gemini API key or save one permanently.",
+            detail,
+        )
+    if "openrouter" in text and ("401" in text or "403" in text or "invalid api key" in text):
+        return UserFacingError(
+            "OpenRouter rejected the API key",
+            "The saved or entered OpenRouter API key was not accepted.",
+            "Check the key in OpenRouter, then paste it again.",
             detail,
         )
     if "api key not valid" in text or "invalid api key" in text or "permission_denied" in text or "unauthenticated" in text:
@@ -263,6 +277,13 @@ def classify_error(error: BaseException | str) -> UserFacingError:
             "Extraction schema problem",
             "The extraction_schema.yml file could not be read or used.",
             "Open extraction_schema.yml, fix the schema, then run again.",
+            detail,
+        )
+    if "openrouter" in text:
+        return UserFacingError(
+            "OpenRouter request failed",
+            "OpenRouter or the selected model did not complete the request.",
+            "Check the model compatibility, internet connection, and API key, then retry the failed PDF.",
             detail,
         )
     if "google-genai" in text or "gemini" in text or "deadline" in text or "timeout" in text or "network" in text:

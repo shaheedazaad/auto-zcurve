@@ -28,6 +28,8 @@ repo_dir <- Sys.getenv("AUTO_ZCURVE_REPO_DIR")
 schema_path <- Sys.getenv("AUTO_ZCURVE_SCHEMA_PATH", file.path(project_dir, "extraction_schema.yml"))
 instruction_path <- Sys.getenv("AUTO_ZCURVE_INSTRUCTIONS_PATH", file.path(repo_dir, "config", "statistic_extraction_instructions.md"))
 model_name <- Sys.getenv("AUTO_ZCURVE_MODEL_NAME")
+provenance_app_version <- Sys.getenv("AUTO_ZCURVE_VERSION", "unknown")
+provenance_run_date <- format(Sys.time(), "%Y-%m-%d")
 effect_definition <- Sys.getenv("AUTO_ZCURVE_EFFECT_DEFINITION")
 
 source(file.path(repo_dir, "R", "utils.R"))
@@ -54,6 +56,33 @@ run_log <- tibble::as_tibble(run_log_raw)
 effect_table <- flatten_results(results, config)
 zcurve_bundle <- run_zcurve_analysis(effect_table, config)
 disclosure_table <- zcurve_bundle$disclosure_table %||% effect_table
+
+# Keep exported text fields below common CSV reader field limits. The complete
+# provider response remains available in the project's raw response artifacts.
+truncate_csv_text <- function(value, max_bytes = 100000L) {
+  if (is.na(value)) return(NA_character_)
+  value <- as.character(value)
+  if (nchar(value, type = "bytes") <= max_bytes) return(value)
+  suffix <- "\n...[truncated; see raw response artifact]"
+  budget <- max_bytes - nchar(suffix, type = "bytes")
+  kept <- substr(value, 1L, nchar(value))
+  while (nchar(kept, type = "bytes") > budget && nchar(kept) > 1L) {
+    kept <- substr(kept, 1L, max(1L, floor(nchar(kept) * 0.9)))
+  }
+  paste0(kept, suffix)
+}
+disclosure_table <- disclosure_table |>
+  dplyr::mutate(dplyr::across(dplyr::where(is.character), ~ vapply(.x, truncate_csv_text, character(1))))
+
+# Keep provenance with every disclosed effect so exported CSVs remain
+# interpretable outside the generated HTML report.
+disclosure_table <- disclosure_table |>
+  dplyr::mutate(
+    run_date = .env$provenance_run_date,
+    model = model_name,
+    app_version = .env$provenance_app_version,
+    .before = 1
+  )
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)

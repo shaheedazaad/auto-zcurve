@@ -12,3 +12,4 @@ DEFAULT_INSTRUCTIONS = REPO_ROOT / "config" / "statistic_extraction_instructions
 REPORT_TEMPLATE = REPO_ROOT / "report" / "report_template.qmd"
 REPRODUCIBLE_REPORT_TEMPLATE = REPO_ROOT / "report" / "reproducible_report.qmd"
 R_PREFLIGHT_SCRIPT = REPO_ROOT / "scripts" / "preflight.R"
+MODEL_CONFIG = REPO_ROOT / "models.yml"

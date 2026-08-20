@@ -1,6 +1,6 @@
 name: default_zcurve_schema
 description: >
-  This schema defines the data you will receive from Gemini. Add/remove fields as needed.
+  This schema defines the structured data you will receive from the selected LLM. Add/remove fields as needed.
 
 meta_data:
   doi:
@@ -29,14 +29,14 @@ effects:
     type: string
     role: reported_statistic
     description: >
-      Statistical result in z-curve-readable form such as t(38)=2.14,
-      F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.
+      A statistical result. That can either be a t, F, chi, z, or *exact* p value. Results *must* be precisely in one of the following
+      formats with no additional text: t(38)=2.14, F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.
   reported_statistic_quote:
     type: string
-    description: > 
-      A quote/multiple quotes (with page number) showing where the statistic came from. (Separate multiple quotes with |). 
-      If the statistic came from tables/figures, instead explain in as much detail how you extracted the 
-      statistic and what information you used to calculate it.
+    description: >
+      A quote/multiple quotes (with page number) showing the context in which the statistic came from (i.e., the statistic and surrounding text).
+      Separate multiple quotes with |. If the statistic came from tables/figures, instead explain in as much 
+      detail how you extracted the statistic and what information you used to calculate it.
   significant:
     type: boolean
     description: Whether this effect was reported as statistically significant.

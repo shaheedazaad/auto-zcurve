@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}Settings · Auto Z-Curve{% endblock %}
+{% block body_attributes %}data-page="settings"{% endblock %}
+
+{% block page %}
+<div class="page page-narrow">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <ol>
+      <li><a href="/{{ token }}/">Projects</a></li>
+      <li aria-hidden="true"><span aria-hidden="true">/</span></li>
+      <li aria-current="page">Settings</li>
+    </ol>
+  </nav>
+
+  <div class="page-head">
+    <div>
+      <h1>Settings</h1>
+      <p>Defaults for new runs, and the API keys used to reach each provider.</p>
+    </div>
+  </div>
+
+  <form class="js-app-settings section" action="/{{ token }}/settings">
+    <div class="section-head">
+      <div>
+        <h2>Execution</h2>
+        <p>Applies to every new run and retry, across all projects. Individual projects can override throughput.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-pad stack">
+        <div class="grid-2">
+          <div class="field">
+            <label for="parallel-pdfs">Parallel PDFs</label>
+            <input class="input" id="parallel-pdfs" name="parallel_requests" type="number" min="1" max="32" value="{{ app_settings.parallel_requests }}" required>
+            <p>How many articles are processed at once. Default 1.</p>
+          </div>
+          <div class="field">
+            <label for="request-delay">Delay between requests</label>
+            <input class="input" id="request-delay" name="request_delay_sec" type="number" min="0" max="3600" value="{{ app_settings.request_delay_sec }}" required>
+            <p>Seconds between provider requests. Default 30.</p>
+          </div>
+          <div class="field">
+            <label for="request-timeout">Request timeout</label>
+            <input class="input" id="request-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="{{ app_settings.request_timeout_sec }}" required>
+            <p>Seconds allowed for a single provider request.</p>
+          </div>
+          <div class="field">
+            <label for="service-tier">Gemini service tier</label>
+            <select class="select" id="service-tier" name="service_tier">
+              {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if app_settings.service_tier == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="pdf-parser">PDF parser</label>
+            {# cloudflare-ai is being retired: tests/test_web.py asserts it is not
+               offered here. It still renders if a project already has it set, so
+               an existing setting is never silently rewritten. #}
+            <select class="select" id="pdf-parser" name="pdf_parser">
+              {% for value, label in pdf_parser_labels.items() %}
+              {% if value != 'cloudflare-ai' or app_settings.pdf_parser == value %}
+              <option value="{{ value }}" {% if app_settings.pdf_parser == value %}selected{% endif %}>{{ label }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            <p>How PDF content is prepared before it reaches the model.</p>
+          </div>
+          <div class="field">
+            <label for="reasoning-effort">Reasoning effort</label>
+            <select class="select" id="reasoning-effort" name="reasoning_effort">
+              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if app_settings.reasoning_effort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <p>Higher effort can improve accuracy, at more cost and latency.</p>
+          </div>
+          <div class="field">
+            <label for="max-upload-size">Maximum PDF size</label>
+            <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
+            <p>Megabytes. Applied when new files are uploaded.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel-foot">
+        <p class="form-message u-sm" role="status"></p>
+        <button class="btn" type="submit">Save settings</button>
+      </div>
+    </div>
+  </form>
+
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <h2>API keys</h2>
+        <p>Stored in your operating-system credential store. A saved key is never read until you explicitly unlock it for the session.</p>
+      </div>
+    </div>
+
+    <div class="panel rows">
+      {% for credential in credential_providers %}
+      <div class="row" data-credential-row="{{ credential.name }}">
+        <span class="row-main">
+          <strong class="row-title">{{ credential.label }}</strong>
+          <span class="row-meta form-message" role="status">
+            {%- if credential.has_api_key %}Unlocked for this session
+            {%- elif credential.has_saved_api_key %}Saved on this computer, locked
+            {%- else %}No key stored{% endif -%}
+          </span>
+        </span>
+
+        {% if credential.has_api_key %}
+          <span class="badge" data-variant="success">Ready</span>
+        {% elif credential.has_saved_api_key %}
+          <span class="badge" data-variant="warning">Locked</span>
+        {% else %}
+          <span class="badge" data-variant="outline">Not set</span>
+        {% endif %}
+
+        <span class="row-actions">
+          {% if credential.has_saved_api_key and not credential.has_api_key %}
+          <form class="js-load-credentials" action="/{{ token }}/credentials/load">
+            <input type="hidden" name="provider" value="{{ credential.name }}">
+            <button class="btn" data-size="sm" type="submit">Unlock</button>
+          </form>
+          {% endif %}
+          <button class="btn" data-variant="outline" data-size="sm" type="button"
+                  data-open-key-dialog="{{ credential.name }}">
+            {% if credential.has_api_key or credential.has_saved_api_key %}Replace{% else %}Add key{% endif %}
+          </button>
+          {% if credential.has_api_key or credential.has_saved_api_key %}
+          <form class="js-delete-credentials" action="/{{ token }}/credentials/delete" data-provider-label="{{ credential.label }}">
+            <input type="hidden" name="provider" value="{{ credential.name }}">
+            <button class="btn" data-variant="ghost" data-size="sm" type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not keyring_available %}
+    <div class="alert" data-variant="warning" style="margin-top:var(--sp-3)">
+      <h2>No secure credential store is available</h2>
+      <section>Keys can only stay in memory for this application session.</section>
+    </div>
+    {% elif is_macos %}
+    <p class="u-muted u-xs" style="margin-top:var(--sp-3)">macOS may show Auto Z-Curve’s bundled runtime as “Python” in the Keychain prompt.</p>
+    {% endif %}
+  </section>
+
+  {% for credential in credential_providers %}
+  <dialog class="dialog" id="key-dialog-{{ credential.name }}" aria-labelledby="key-dialog-title-{{ credential.name }}">
+      {# The form is the dialog's direct child: Basecoat styles `.dialog > * >
+         header|section|footer`, so an extra wrapper would silently disable it. #}
+      <form class="js-credentials" action="/{{ token }}/credentials">
+        <input type="hidden" name="provider" value="{{ credential.name }}">
+        <header>
+          <h2 id="key-dialog-title-{{ credential.name }}">{{ credential.label }} API key</h2>
+          <p>The key is sent only to {{ credential.label }} during extraction.</p>
+        </header>
+        <section>
+          <div class="field">
+            <label for="api-key-{{ credential.name }}">API key</label>
+            <input class="input" id="api-key-{{ credential.name }}" name="api_key" type="password"
+                   autocomplete="off" placeholder="Paste {{ credential.label }} API key" required>
+          </div>
+          <div class="field" data-orientation="horizontal" style="margin-top:var(--sp-3)">
+            <input class="input" type="checkbox" id="remember-{{ credential.name }}" name="remember" value="yes"
+                   {% if keyring_available %}checked{% endif %} {% if not keyring_available %}disabled{% endif %}>
+            <label for="remember-{{ credential.name }}">Store securely on this computer</label>
+          </div>
+          <p class="form-message u-sm" role="status"></p>
+        </section>
+        <footer>
+          <button class="btn" data-variant="outline" type="button" data-close-key-dialog>Cancel</button>
+          <button class="btn" type="submit">Save key</button>
+        </footer>
+      </form>
+  </dialog>
+  {% endfor %}
+
+  <footer class="app-foot">
+    <span>Auto Z-Curve {{ version }}</span>
+    <span>Settings stay on this computer and are never included in project downloads.</span>
+  </footer>
+</div>
+{% endblock %}

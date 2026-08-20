@@ -1,70 +1,78 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>{{ project.name }} · Auto Z-Curve</title>
-  <link rel="stylesheet" href="/{{ token }}/static/app.css">
-</head>
-<body data-project-id="{{ project.id }}" data-token="{{ token }}">
-  <header class="topbar">
-    <a class="brand" href="/{{ token }}/">
-      <span class="brand-mark">Z</span>
-      <span>Auto Z-Curve</span>
-    </a>
-    <span class="privacy-pill"><span class="status-dot"></span> Private on this computer</span>
-  </header>
+{% extends "base.html" %}
 
-  <main class="project-shell">
-    {% if update_version %}
-    <p class="notice update-notice"><strong>Auto Z-Curve {{ update_version }} is available.</strong> Rerun the installer command to update.</p>
-    {% endif %}
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/{{ token }}/">Projects</a><span>/</span><span>{{ project.name }}</span>
-    </nav>
+{% block title %}{{ project.name }} · Auto Z-Curve{% endblock %}
+{% block body_attributes %}data-project-id="{{ project.id }}"{% endblock %}
 
-    <header class="project-header">
-      <div>
-        <p class="eyebrow">Managed project</p>
-        <h1>{{ project.name }}</h1>
-        <p class="project-meta">{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.successful_count }} processed · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
-      </div>
-      <div class="header-actions">
-        <button class="button ghost js-open-folder" type="button">Open project folder</button>
-        <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/results.zip">Download results</a>
-        {% if project.has_report %}
-        <a class="button primary" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">View report ↗</a>
-        {% endif %}
-      </div>
-    </header>
+{% block page %}
+<div class="page">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <ol>
+      <li><a href="/{{ token }}/">Projects</a></li>
+      <li aria-hidden="true"><span aria-hidden="true">/</span></li>
+      <li aria-current="page">{{ project.name }}</li>
+    </ol>
+  </nav>
 
-    {% if project.report_summary %}
-    <section class="card report-summary-card report-summary-top">
-      <div class="section-heading">
-        <div>
-          <p class="step-label">Report ready</p>
-          <h2>Analysis summary</h2>
-        </div>
-        <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">Open full report ↗</a>
-      </div>
-      <div class="analysis-overview">
-        <div class="estimate-panel">
-          <p class="estimate-heading">Key estimates</p>
-          {% if project.report_summary.metrics %}
-          <div class="zcurve-metrics">
-            {% for metric in project.report_summary.metrics %}
-            <div class="zcurve-metric">
-              <span>{{ metric.label }} <abbr title="{{ metric.label }}">{{ metric.code }}</abbr></span>
-              <strong>{{ metric.estimate }}</strong>
-              <small>95% CI {{ metric.lower_ci }}–{{ metric.upper_ci }}</small>
-            </div>
-            {% endfor %}
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.successful_count }} processed · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
+    </div>
+    <div class="section-head-actions">
+      <button class="btn js-open-folder" data-variant="outline" data-size="sm" type="button">Open project folder</button>
+      <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/results.zip">Download results</a>
+      {% if project.has_report %}
+      <a class="btn" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">View report ↗</a>
+      {% endif %}
+      <div class="dropdown-menu" id="project-actions-menu">
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm"
+                id="project-actions-trigger" aria-haspopup="menu" aria-controls="project-actions-menu-menu"
+                aria-expanded="false" aria-label="Project actions">
+          <svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>
+        </button>
+        <div id="project-actions-popover" data-popover data-align="end" aria-hidden="true">
+          <div role="menu" id="project-actions-menu-menu" aria-labelledby="project-actions-trigger">
+            <button type="button" role="menuitem" data-open-rename-dialog>Rename project</button>
+            <form class="js-reset-project" action="/{{ token }}/projects/{{ project.id }}/reset">
+              <button type="submit" role="menuitem" {% if not project.has_analysis_results %}disabled{% endif %}>Clear all outputs</button>
+            </form>
+            <form class="js-delete-project" action="/{{ token }}/projects/{{ project.id }}/delete" data-project-name="{{ project.name }}">
+              <button type="submit" role="menuitem" class="u-error">Delete project</button>
+            </form>
           </div>
-          {% else %}
-          <p class="estimate-unavailable">No z-curve estimates were available for this run.</p>
-          {% endif %}
         </div>
+      </div>
+    </div>
+  </div>
+
+  {% if key_warning %}
+  <div class="alert" data-variant="warning" role="status" style="margin-bottom:var(--sp-6)">
+    <section>{{ key_warning }}</section>
+  </div>
+  {% endif %}
+
+  <div class="tabbar" role="tablist" aria-label="Project sections" aria-orientation="horizontal" data-project-tabs>
+    <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab-target="overview" aria-selected="false">Overview</button>
+    <button type="button" role="tab" id="tab-sources" aria-controls="panel-sources" data-tab-target="sources" aria-selected="false">Sources</button>
+    <button type="button" role="tab" id="tab-extraction-setup" aria-controls="panel-extraction-setup" data-tab-target="extraction-setup" aria-selected="false">Extraction instructions</button>
+    <button type="button" role="tab" id="tab-schema" aria-controls="panel-schema" data-tab-target="schema" aria-selected="false">Schema</button>
+    <button type="button" role="tab" id="tab-articles" aria-controls="panel-articles" data-tab-target="articles" aria-selected="false">Articles</button>
+    <button type="button" role="tab" id="tab-run-analysis" aria-controls="panel-run-analysis" data-tab-target="run-analysis" aria-selected="false">Run analysis</button>
+  </div>
+
+  <section class="tab-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" data-tab-panel="overview">
+    {% if project.report_summary %}
+    <div class="section-head">
+      <div>
+        <h2>Analysis summary</h2>
+      </div>
+      <div class="section-head-actions">
+        <span class="badge" data-variant="success">Report ready</span>
+        <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/report" target="_blank" rel="noopener">Open full report ↗</a>
+      </div>
+    </div>
+    <div class="panel panel-pad stack">
+      <div class="analysis-overview">
         <figure class="zcurve-plot">
           {% if project.report_summary.has_plot %}
           <img src="/{{ token }}/projects/{{ project.id }}/zcurve-plot" alt="Z-curve plot with fitted density and confidence intervals">
@@ -76,189 +84,374 @@
           {% endif %}
           <figcaption>Z-curve fit and 95% confidence intervals</figcaption>
         </figure>
-      </div>
-      <div class="summary-context" aria-label="Analysis processing details">
-        <span><strong>{{ project.report_summary.articles_processed_display }}</strong> articles processed</span>
-        <span><strong>{{ project.report_summary.extracted_effects_display }}</strong> effects extracted</span>
-        <span><strong>{{ project.report_summary.usable_zcurve_inputs_display }}</strong> usable z-curve inputs</span>
-        <span><strong>{{ project.report_summary.total_tokens_display }}</strong> Gemini tokens</span>
+        <div>
+          <p class="u-sm u-muted" style="margin:0 0 var(--sp-2)">Key estimates</p>
+          {% if project.report_summary.metrics %}
+          <div class="metrics-grid">
+            {% for metric in project.report_summary.metrics %}
+            <div class="panel metric-card" aria-label="{{ metric.label }} estimate">
+              <p class="metric-title">{{ metric.label }}</p>
+              <p class="metric-value">{{ metric.estimate }}</p>
+              <p class="metric-desc">95% CI {{ metric.lower_ci }}–{{ metric.upper_ci }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="alert" role="status"><section>No z-curve estimates were available for this run.</section></div>
+          {% endif %}
+          <div class="summary-context" aria-label="Analysis processing details">
+            <span><strong>{{ project.report_summary.articles_processed_display }}</strong> articles processed</span>
+            <span><strong>{{ project.report_summary.extracted_effects_display }}</strong> effects extracted</span>
+            <span><strong>{{ project.report_summary.usable_zcurve_inputs_display }}</strong> usable z-curve inputs</span>
+            <span><strong>{{ project.report_summary.total_tokens_display }}</strong> LLM tokens</span>
+          </div>
+        </div>
       </div>
       {% if project.report_summary.execution %}
-      <p class="execution-note">{{ project.report_summary.execution }}</p>
+      <p class="u-sm u-muted" style="margin:0">{{ project.report_summary.execution }}</p>
       {% endif %}
       {% if project.report_summary.text %}
-      <details class="summary-details">
-        <summary>Show complete z-curve summary</summary>
-        <pre>{{ project.report_summary.text }}</pre>
+      <details>
+        <summary class="u-sm">Show complete z-curve summary</summary>
+        <pre class="u-mono u-xs" style="white-space:pre-wrap; margin-top:var(--sp-2)">{{ project.report_summary.text }}</pre>
       </details>
       {% endif %}
-    </section>
+    </div>
     {% else %}
-    <section class="card report-summary-card report-summary-top empty-report-summary">
-      <span class="empty-report-icon" aria-hidden="true">Z</span>
-      <div>
-        <p class="step-label">Analysis summary</p>
-        <h2>No report yet</h2>
-        <p>Process some articles to generate a report and see its key results here.</p>
+    <div class="panel">
+      <div class="empty">
+        <div class="empty-icon" aria-hidden="true">Z</div>
+        <p class="empty-title">No report yet</p>
+        <p class="empty-text">Process some articles to generate a report and see its key results here. Head to <strong>Sources</strong> to add PDFs, then <strong>Run analysis</strong> to start.</p>
       </div>
-    </section>
+    </div>
     {% endif %}
+  </section>
 
-    {% if not has_api_key %}
-    <section class="notice key-notice">
+  <section class="tab-panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" data-tab-panel="sources" hidden>
+    <div class="section-head">
       <div>
-        <strong>Add a Gemini API key before you run</strong>
-        <p>Your key is used only for PDF extraction and never appears in project files or results.</p>
+        <h2>Add PDF articles</h2>
       </div>
-      <form class="inline-key-form js-credentials" action="/{{ token }}/credentials">
-        <input name="api_key" type="password" autocomplete="off" placeholder="Paste Gemini API key" required>
-        <label class="check-row compact">
-          <input name="remember" value="yes" type="checkbox" {% if keyring_available %}checked{% endif %}>
-          <span>Remember securely</span>
-        </label>
-        <button class="button secondary" type="submit">Use key</button>
-        <p class="form-message" role="status"></p>
-      </form>
-      {% if has_saved_api_key %}
-      <form class="inline-key-form js-load-credentials" action="/{{ token }}/credentials/load">
-        <button class="button secondary" type="submit">Unlock saved key</button>
-        <p class="form-message" role="status"></p>
-      </form>
-      {% if is_macos %}<p class="notice-detail">macOS may identify Auto Z-Curve’s bundled runtime as “Python,” sometimes with a version number, when you unlock the key.</p>{% endif %}
-      {% endif %}
-      {% if not keyring_available %}
-      <p class="notice-detail">No usable system credential store was found, so the key will be session-only.</p>
-      {% endif %}
-    </section>
-    {% elif key_warning %}
-    <p class="notice warning">{{ key_warning }}</p>
-    {% endif %}
+      <span class="badge" data-variant="outline" data-pdf-count>{{ project.pdf_count }} PDFs</span>
+    </div>
+    <form class="dropzone js-upload" action="/{{ token }}/projects/{{ project.id }}/uploads">
+      <input id="pdf-files" name="files" type="file" accept="application/pdf,.pdf" multiple>
+      <label for="pdf-files">
+        <span class="upload-symbol" aria-hidden="true">+</span>
+        <span class="dropzone-copy">
+          <strong>Drop PDFs here or choose files</strong>
+          <span>Select several articles at once · up to {{ project.max_upload_size_mb }} MB each</span>
+        </span>
+      </label>
+    </form>
+    <p class="upload-message form-message u-sm" role="status"></p>
+  </section>
 
-    <section class="workspace-grid">
-      <div class="workspace-main">
-        <section class="card upload-card">
-          <div class="section-heading">
-            <div>
-              <p class="step-label">1 · Source material</p>
-              <h2>Add PDF articles</h2>
-            </div>
-            <span class="badge neutral" data-pdf-count>{{ project.pdf_count }} PDFs</span>
-          </div>
-          <form class="dropzone js-upload" action="/{{ token }}/projects/{{ project.id }}/uploads">
-            <input id="pdf-files" name="files" type="file" accept="application/pdf,.pdf" multiple>
-            <label for="pdf-files">
-              <span class="upload-symbol" aria-hidden="true">＋</span>
-              <span class="dropzone-copy">
-                <strong>Drop PDFs here or choose files</strong>
-                <span>Select several articles at once · up to 128 MB each</span>
-              </span>
-            </label>
-          </form>
-          <p class="upload-message form-message" role="status"></p>
-        </section>
-
-        <details class="card instructions-card">
-          <summary class="instructions-summary">
-            <span>
-              <p class="step-label">2 · Extraction setup</p>
-              <h2>Extraction instructions</h2>
-            </span>
-            <span class="instructions-toggle">Edit <i aria-hidden="true">⌄</i></span>
-          </summary>
-          <div class="instructions-body">
-            <p>These project-specific instructions tell Gemini how to identify and extract eligible statistics.</p>
-            <div class="schema-link-row">
-              <div>
-                <strong>Extraction schema</strong>
-                <span>Choose which article-level and effect-level fields Gemini returns.</span>
-              </div>
-              <a class="button ghost" href="/{{ token }}/projects/{{ project.id }}/schema">Edit schema →</a>
-            </div>
-            <form class="stack js-instructions" action="/{{ token }}/projects/{{ project.id }}/instructions" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
-              <label for="extraction-instructions">Instructions</label>
-              <textarea id="extraction-instructions" name="instructions" rows="12" maxlength="100000" required>{{ project.instructions }}</textarea>
-              {% if project.has_analysis_results %}
-              <p class="notice warning instruction-warning">Changing these instructions will delete the current report, extraction results, and processing logs. Every PDF will need to be processed again.</p>
-              {% endif %}
-              <button class="button secondary js-save-instructions" type="submit">Save instructions</button>
-              <p class="form-message instruction-message" role="status"></p>
-            </form>
-          </div>
-        </details>
-
-        <section class="card articles-card">
-          <div class="section-heading">
-            <div>
-              <p class="step-label">3 · Review</p>
-              <h2>Articles</h2>
-            </div>
-            <div class="status-legend"><span><i class="legend-dot ready"></i>Ready</span><span><i class="legend-dot ok"></i>Done</span><span><i class="legend-dot error"></i>Failed</span></div>
-          </div>
-          <div class="article-table-wrap">
-            <table class="article-table">
-              <thead><tr><th>Article</th><th>Status</th><th>Effects</th><th>Tokens</th></tr></thead>
-              <tbody data-article-body>
-                {% for article in project.articles[:10] %}
-                <tr>
-                  <td><span class="pdf-icon">PDF</span><span><strong>{{ article.name }}</strong>{% if article.error %}<small>{{ article.error }}</small>{% endif %}</span></td>
-                  <td><span class="status-label {{ article.status }}"><i></i>{{ article.status|capitalize }}</span></td>
-                  <td>{{ article.effects or "—" }}</td>
-                  <td>{{ article.total_tokens or "—" }}</td>
-                </tr>
-                {% else %}
-                <tr class="empty-row"><td colspan="4">No articles yet. Add PDFs above to begin.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          <nav class="table-pagination" data-article-pagination aria-label="Article pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
-            <button class="button ghost pagination-button js-page-previous" type="button" disabled>Previous</button>
-            <span data-page-status>Page 1 of {{ ((project.pdf_count - 1) // 10) + 1 }}</span>
-            <button class="button ghost pagination-button js-page-next" type="button" {% if project.pdf_count <= 10 %}disabled{% endif %}>Next</button>
-          </nav>
-        </section>
+  <section class="tab-panel" id="panel-extraction-setup" role="tabpanel" aria-labelledby="tab-extraction-setup" data-tab-panel="extraction-setup" hidden>
+    <div class="section-head">
+      <div>
+        <h2>Extraction instructions</h2>
+        <p>These project-specific instructions tell the selected LLM how to identify and extract eligible statistics.</p>
       </div>
+    </div>
+    <div class="panel panel-pad stack">
+      <form class="js-instructions stack-sm" action="/{{ token }}/projects/{{ project.id }}/instructions" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
+        <div class="field">
+          <label for="extraction-instructions">Instructions</label>
+          <textarea class="textarea" id="extraction-instructions" name="instructions" rows="14" maxlength="100000" required>{{ project.instructions }}</textarea>
+        </div>
+        {% if project.has_analysis_results %}
+        <div class="alert" data-variant="warning" role="status">
+          <section>Changing these instructions will delete the current report, extraction results, and processing logs. Every PDF will need to be processed again.</section>
+        </div>
+        {% endif %}
+        <div class="cluster" style="justify-content:flex-end">
+          <p class="form-message instruction-message u-sm" role="status"></p>
+          <button class="btn js-save-instructions" type="submit">Save instructions</button>
+        </div>
+      </form>
+    </div>
+  </section>
 
-      <aside class="run-panel card">
-        <p class="step-label">4 · Analyze</p>
-        <h2>Run extraction</h2>
-        <p>Gemini processes each PDF according to the project instructions; R and Quarto then generate the z-curve report.</p>
-        <form class="stack js-run-settings">
-          <label for="model">Gemini model</label>
-          <input id="model" name="model" list="gemini-model-options" value="{{ project.model }}" autocomplete="off" spellcheck="false" required>
-          <datalist id="gemini-model-options">
-            {% for model in models %}
-            <option value="{{ model.name }}"></option>
-            {% endfor %}
-          </datalist>
-          <p class="field-hint">Enter an exact Gemini API model ID or select a suggested model.</p>
-          <label for="parallel">Parallel PDFs</label>
-          <input id="parallel" name="parallel_requests" type="number" min="1" max="32" value="{{ project.parallel_requests }}">
+  <section class="tab-panel" id="panel-schema" role="tabpanel" aria-labelledby="tab-schema" data-tab-panel="schema" hidden>
+    <div class="section-head">
+      <div>
+        <h2>Extraction schema</h2>
+        <p>The schema defines the information the selected LLM returns for each article and each statistical effect.</p>
+      </div>
+      <span class="badge u-mono" data-variant="outline">extraction_schema.yml</span>
+    </div>
+
+    <div class="schema-layout">
+      <div class="panel panel-pad stack">
+        {% if project.has_analysis_results %}
+        <div class="alert" data-variant="warning" role="status">
+          <section>Saving a changed schema will delete the current report, extracted results, and processing logs. Your PDFs will remain, but every article will need to be processed again.</section>
+        </div>
+        {% endif %}
+        {% if job and job.status in ["queued", "running"] %}
+        <div class="alert" data-variant="warning" role="status">
+          <section>The schema cannot be changed while this project is running.</section>
+        </div>
+        {% endif %}
+
+        <form class="js-schema-form stack-sm" action="/{{ token }}/projects/{{ project.id }}/schema" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
+          <div class="field">
+            <label for="schema-text">Schema YAML</label>
+            <div class="yaml-editor" data-yaml-editor>
+              <pre class="yaml-highlight" aria-hidden="true"><code></code></pre>
+              <textarea id="schema-text" class="yaml-input" name="schema_text" wrap="soft" spellcheck="false" autocomplete="off" maxlength="200000" required>{{ schema_text }}</textarea>
+            </div>
+          </div>
+          <div class="cluster" style="justify-content:flex-end">
+            <p class="form-message schema-message u-sm" role="status"></p>
+            <button class="btn js-save-schema" type="submit" {% if job and job.status in ["queued", "running"] %}disabled{% endif %}>Validate and save</button>
+          </div>
         </form>
-        <button class="button primary wide js-run" type="button" {% if not project.pdf_count or not has_api_key %}disabled{% endif %}>Run analysis <span>→</span></button>
-        <button class="button secondary wide js-retry" type="button" {% if not project.failed_count or not has_api_key %}disabled{% endif %}>Retry failed</button>
-        <button class="button secondary wide js-regenerate-report" type="button" {% if not project.has_extractions %}disabled{% endif %}>Regenerate report</button>
-        <button class="button danger-text wide js-cancel" type="button" hidden>Cancel run</button>
+      </div>
 
-        <div class="progress-area" {% if not job or job.status not in ["queued", "running"] %}hidden{% endif %}>
-          <div class="progress-heading"><strong data-progress-title>Processing articles</strong><span data-progress-count>0 / {{ project.pdf_count }}</span></div>
-          <div class="progress-track"><span data-progress-bar style="width:0%"></span></div>
-          <p data-progress-message>Preparing…</p>
-        </div>
+      <aside class="schema-guide">
+        <section class="panel panel-pad stack-sm">
+          <div>
+            <h2 style="margin:0; font-size:var(--text-lg); font-weight:600">What the schema controls</h2>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">Think of the schema as a blank data table. Each named field becomes a column, and its description tells the LLM what belongs in that column.</p>
+          </div>
+          <dl class="schema-terms">
+            <div><dt><code>meta_data</code></dt><dd>Information recorded once per article, such as its DOI or study description.</dd></div>
+            <div><dt><code>effects</code></dt><dd>Information repeated for every focal statistical result found in the article.</dd></div>
+            <div><dt><code>type</code></dt><dd>The kind of answer allowed: <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, or <code>array</code>.</dd></div>
+            <div><dt><code>description</code></dt><dd>A plain-language instruction explaining what the LLM should extract.</dd></div>
+            <div><dt><code>required</code></dt><dd>Use <code>true</code> only when every response must contain this field.</dd></div>
+          </dl>
+        </section>
 
-        <div class="run-result" data-run-result {% if not project.has_report %}hidden{% endif %}>
-          <span class="result-check">✓</span>
-          <div><strong>Report ready</strong><p>Your extraction and z-curve results are available.</p></div>
-        </div>
-        <p class="form-message run-message" role="status"></p>
+        <section class="panel panel-pad stack-sm">
+          <div>
+            <h2 style="margin:0; font-size:var(--text-lg); font-weight:600">Keep a reported statistic for z-curve</h2>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">The analysis needs a field containing a statistic such as <code>t(38)=2.14</code>, <code>F(1,98)=4.10</code>, <code>z=2.41</code>, or <code>p=0.012</code>.</p>
+          </div>
+          <p class="u-sm">Name that field <code>reported_statistic</code>, or mark a differently named field with:</p>
+          <pre class="schema-example">role: reported_statistic</pre>
+          <p class="u-sm u-muted">Without a usable reported statistic, extraction can succeed but there may be nothing to include in the z-curve.</p>
+        </section>
 
-        <div class="privacy-note">
-          <span aria-hidden="true">⌂</span>
-          <p><strong>Data handling</strong>PDFs and outputs remain local. PDF content is sent to Gemini only during extraction.</p>
-        </div>
+        <section class="panel panel-pad stack-sm">
+          <div>
+            <h2 style="margin:0; font-size:var(--text-lg); font-weight:600">Validation checks</h2>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">Auto Z-Curve checks the YAML structure, field definitions, supported types, array item types, duplicate roles, and that <code>effects</code> contains at least one field.</p>
+          </div>
+          <p class="u-sm">Validation happens before any existing output is deleted.</p>
+        </section>
       </aside>
-    </section>
-  </main>
-  <script src="/{{ token }}/static/app.js" defer></script>
-</body>
-</html>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="panel-articles" role="tabpanel" aria-labelledby="tab-articles" data-tab-panel="articles" hidden>
+    <div data-articles-table-view>
+    <div class="section-head">
+      <div>
+        <h2>Review</h2>
+      </div>
+      <div class="cluster" aria-label="Article statuses">
+        <span class="badge" data-variant="outline">Ready</span>
+        <span class="badge" data-variant="success">Done</span>
+        <span class="badge" data-variant="destructive">Failed</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th><button class="table-sort js-sort-articles" type="button" data-sort-key="name">Article <span aria-hidden="true">↕</span></button></th>
+              <th><button class="table-sort js-sort-articles" type="button" data-sort-key="status">Status <span aria-hidden="true">↕</span></button></th>
+              <th><button class="table-sort js-sort-articles" type="button" data-sort-key="effects">Effects <span aria-hidden="true">↕</span></button></th>
+              <th>Tokens</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody data-article-body>
+            {% for article in project.articles[:10] %}
+            <tr class="article-row article-row-{{ article.status }}">
+              <td>
+                <span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>
+                <span>
+                  <strong class="article-name" title="{{ article.name }}">{{ article.name }}</strong>
+                  {% if article.error %}<small class="article-message u-error">{{ article.error }}</small>
+                  {% elif article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
+                </span>
+              </td>
+              <td>
+                {% if article.status == "ok" %}<span class="badge article-status" data-variant="success">{{ "JSON repaired" if article.json_repaired else "Done" }}</span>
+                {% elif article.status == "error" %}<span class="badge article-status" data-variant="destructive">Failed</span>
+                {% else %}<span class="badge article-status" data-variant="outline">Ready</span>{% endif %}
+              </td>
+              <td>{{ article.effects or "—" }}</td>
+              <td class="u-muted u-sm u-nowrap">{{ article.input_tokens or 0 }} in · {{ article.output_tokens or 0 }} out</td>
+              <td>
+                <div class="cluster">
+                  {% if article.raw_response %}<button class="btn js-view-response" data-variant="outline" data-size="sm" type="button" data-source-name="{{ article.name }}">View output</button>{% endif %}
+                  {% if article.status != 'ready' %}<button class="btn js-delete-response" data-variant="ghost" data-size="sm" type="button" data-source-name="{{ article.name }}">Delete</button>{% endif %}
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDFs from the Sources tab to begin.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <nav class="panel-foot" data-article-pagination aria-label="Article pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
+        <span class="u-muted u-sm" data-page-status>Page 1 of {{ ((project.pdf_count - 1) // 10) + 1 }}</span>
+        <button class="btn js-page-previous" data-variant="outline" data-size="sm" type="button" disabled>Previous</button>
+        <button class="btn js-page-next" data-variant="outline" data-size="sm" type="button" {% if project.pdf_count <= 10 %}disabled{% endif %}>Next</button>
+      </nav>
+    </div>
+    </div>
+
+    <div data-articles-detail-view hidden>
+      <div class="section-head">
+        <div>
+          <button class="btn" data-variant="outline" data-size="sm" type="button" data-response-back>← Back to articles</button>
+        </div>
+      </div>
+      <div class="panel panel-pad stack">
+        <h2 data-response-title style="margin:0; font-size:var(--text-lg); font-weight:600">Provider output</h2>
+        <div data-response-body></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="panel-run-analysis" role="tabpanel" aria-labelledby="tab-run-analysis" data-tab-panel="run-analysis" hidden>
+    <p class="u-sm u-muted" style="margin:0 0 var(--sp-4)">The selected LLM processes each PDF according to the project instructions; R and Quarto then generate the z-curve report.</p>
+
+    <div class="panel panel-pad">
+      <div class="run-columns">
+        <div class="stack">
+          <div>
+            <h3 style="margin:0; font-size:var(--text-lg); font-weight:600">Run settings</h3>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">Provider, model, and throughput for this project.</p>
+          </div>
+          <form class="js-run-settings stack">
+            <div class="grid-2">
+              <div class="field">
+                <label for="provider">Provider</label>
+                <select class="select" id="provider" name="provider">
+                  {% for name, label in providers %}
+                  <option value="{{ name }}" data-key-ready="{{ 'true' if (provider_key_status or {}).get(name, false) else 'false' }}" data-saved-key="{{ 'true' if (provider_saved_key_status or {}).get(name, false) else 'false' }}" {% if project.provider == name %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="parallel-requests">Parallel PDFs</label>
+                <input class="input" id="parallel-requests" name="parallel_requests" type="number" min="1" max="32" value="{{ project.parallel_requests }}" required>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="model" data-provider-label>{{ provider_label }} model</label>
+              <input class="input" id="model" name="model" list="gemini-model-options" value="{{ project.model }}" autocomplete="off" spellcheck="false" required>
+              <datalist id="gemini-model-options">
+                {% for model in models %}
+                <option value="{{ model.name }}"></option>
+                {% endfor %}
+              </datalist>
+              <p class="u-sm u-muted" data-model-hint>Select a compatible model. PDF handling follows the application-wide parser setting.</p>
+              <p class="u-sm" data-model-validation role="status"></p>
+            </div>
+            <div class="alert" data-variant="warning" data-openrouter-warning {% if project.provider != 'openrouter' %}hidden{% endif %}>
+              <section><strong>Experimental backup provider.</strong> Model quality, PDF support, structured-output behavior, latency, and reliability can vary by model and provider route.</section>
+            </div>
+
+            <div class="field">
+              <label for="request-delay-sec">Delay between submissions (seconds)</label>
+              <input class="input" id="request-delay-sec" name="request_delay_sec" type="number" min="0" max="3600" value="{{ project.request_delay_sec }}" required>
+              <p>Minimum time between provider request starts.</p>
+            </div>
+
+            <div class="cluster" style="justify-content:flex-end">
+              <p class="form-message project-settings-message u-sm" role="status"></p>
+              <button class="btn js-save-project-settings" data-variant="outline" data-size="sm" type="button">Save project settings</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="stack">
+          <div class="alert" data-variant="warning" data-run-credential-prompt {% if has_api_key %}hidden{% endif %}>
+            <h2 data-key-heading>Unlock or add a {{ provider_label }} API key to run</h2>
+            <section>
+              <p data-key-prompt-copy>{% if has_saved_api_key %}Your saved key must be unlocked again after restarting the app.{% else %}No {{ provider_label }} key is configured for this session.{% endif %}</p>
+              <form class="js-load-credentials cluster" action="/{{ token }}/credentials/load" data-unlock-form {% if not has_saved_api_key %}hidden{% endif %}>
+                <input type="hidden" name="provider" value="{{ project.provider }}" data-credential-provider>
+                <button class="btn" data-size="sm" type="submit" data-unlock-button>Unlock saved {{ provider_label }} key</button>
+                <span class="form-message u-sm" role="status"></span>
+              </form>
+              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings">Enter API key in Settings</a>
+            </section>
+          </div>
+
+          <div data-run-actions {% if not has_api_key %}hidden{% endif %}>
+            <div class="run-actions-row">
+              <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.successful_count and project.remaining_count %}Continue processing {{ project.remaining_count }} PDF{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
+              <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count else 'false' }}" {% if not project.failed_count %}disabled{% endif %}>Retry failed</button>
+            </div>
+          </div>
+          <button class="btn js-cancel" data-variant="outline" style="width:100%" type="button" hidden>Cancel run</button>
+
+          <div class="progress-area" {% if not job or job.status not in ["queued", "running"] %}hidden{% endif %}>
+            <div class="progress-heading"><strong data-progress-title>Processing articles</strong><span data-progress-count>0 / {{ project.pdf_count }}</span></div>
+            <div class="run-progress" data-progress-bar role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Extraction progress"><span></span></div>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0" data-progress-message aria-live="polite">Preparing…</p>
+          </div>
+          <div class="alert" data-variant="warning" data-slow-extraction-warning hidden>
+            <h2>This paper is taking longer than a minute.</h2>
+            <section>Flex tier can queue requests to reduce cost. For faster processing, change the Gemini usage tier in <a href="/{{ token }}/settings">Settings</a>.</section>
+          </div>
+
+          <div class="alert" data-variant="success" data-run-result {% if not project.has_report %}hidden{% endif %}>
+            <section>
+              <strong>Report ready</strong>
+              <p>Your extraction and z-curve results are available.</p>
+            </section>
+          </div>
+          <p class="form-message run-message u-sm" role="status"></p>
+
+          <div class="run-secondary-actions">
+            <button class="btn js-regenerate-report" data-variant="ghost" data-size="sm" type="button" {% if not project.has_extractions %}disabled{% endif %}>Regenerate report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="run-data-note">
+      <svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/><circle cx="12" cy="12" r="9"/></svg>
+      Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser and provider configured in Settings.
+    </p>
+  </section>
+
+  <dialog class="dialog" id="rename-project-dialog" aria-labelledby="rename-project-title">
+    <form class="js-rename-project" action="/{{ token }}/projects/{{ project.id }}/rename">
+      <header>
+        <h2 id="rename-project-title">Rename project</h2>
+      </header>
+      <section>
+        <div class="field">
+          <label for="rename-project-name">Project name</label>
+          <input class="input" id="rename-project-name" name="name" maxlength="100" value="{{ project.name }}" required>
+        </div>
+        <p class="form-message u-sm" role="status"></p>
+      </section>
+      <footer>
+        <button class="btn" data-variant="outline" type="button" data-close-rename-dialog>Cancel</button>
+        <button class="btn" type="submit">Save name</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <footer class="app-foot">
+    <span>Auto Z-Curve {{ version }}</span>
+    <span>Project data is stored on this computer.</span>
+  </footer>
+</div>
+{% endblock %}

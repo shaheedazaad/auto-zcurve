@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import queue
 import shutil
 import threading
+import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,10 +19,12 @@ from .artifacts import (
     upsert_extraction,
     utc_now,
 )
-from .config import RunSettings, save_run_settings
+from .config import RunSettings, load_run_settings, save_run_settings
 from .console import CliConsole
-from .gemini import ExtractionResult, extract_pdf
+from .llm import ExtractionResult
+from .models import ModelOption, resolve_input_mode, validate_model_option
 from .paths import DEFAULT_SCHEMA
+from .providers import extract_pdf, normalize_provider
 from .projects import project_instruction_path
 from .report import render_report
 from .schema import build_response_schema, read_extraction_schema
@@ -33,6 +36,43 @@ _ARTIFACT_LOCK = threading.Lock()
 
 class RunCancelled(RuntimeError):
     pass
+
+
+class _CancellationSignal:
+    """Combine user cancellation with an internal stop signal."""
+
+    def __init__(self, *events: threading.Event | None) -> None:
+        self._events = tuple(event for event in events if event is not None)
+
+    def is_set(self) -> bool:
+        return any(event.is_set() for event in self._events)
+
+
+class _RequestPacer:
+    """Enforce a minimum interval between provider request starts."""
+
+    def __init__(self, delay_sec: int) -> None:
+        self.delay_sec = max(0, int(delay_sec))
+        self._last_started: float | None = None
+        self._lock = threading.Lock()
+
+    def wait(self, cancellation_event: object | None) -> None:
+        if self.delay_sec <= 0:
+            return
+        while True:
+            _raise_if_cancelled(cancellation_event)
+            with self._lock:
+                now = time.monotonic()
+                remaining = 0 if self._last_started is None else self.delay_sec - (now - self._last_started)
+                if remaining <= 0:
+                    self._last_started = now
+                    return
+            time.sleep(min(remaining, 0.1))
+
+
+def _raise_if_cancelled(cancellation_event: object | None) -> None:
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RunCancelled("Run cancelled.")
 
 
 @dataclass
@@ -118,7 +158,9 @@ def _log_result(
             "source_file": str(result.source_path),
             "status": result.status,
             "effects": result.effect_count,
+            "provider": normalize_provider(result.provider_used or "gemini"),
             "model": primary_model,
+            "provider_used": result.provider_used,
             "model_used": result.model_used,
             "retry": retry,
             "error": result.error,
@@ -128,6 +170,19 @@ def _log_result(
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,
             "total_tokens": result.total_tokens,
+            "input_mode": result.input_mode,
+            "parser_name": result.parser_name,
+            "parser_version": result.parser_version,
+            "parser_config_version": result.parser_config_version,
+            "source_pdf_sha256": result.source_pdf_sha256,
+            "parsed_document_sha256": result.parsed_document_sha256,
+            "parser_page_count": result.parser_page_count,
+            "parser_mean_grade": result.parser_mean_grade,
+            "parser_low_grade": result.parser_low_grade,
+            "parser_warnings": list(result.parser_warnings),
+            "parser_cache_path": result.parser_cache_path,
+            "parser_duration_sec": result.parser_duration_sec,
+            "estimated_input_tokens": result.estimated_input_tokens,
         },
     )
 
@@ -140,7 +195,11 @@ def _process_one(
     api_key: str,
     retry: bool,
     run_id: str,
+    model_option: ModelOption,
+    cancellation_event: object | None = None,
+    request_pacer: _RequestPacer | None = None,
 ):
+    _raise_if_cancelled(cancellation_event)
     started_at = utc_now()
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     if source_path.stat().st_size > max_bytes:
@@ -148,8 +207,11 @@ def _process_one(
             source_path=source_path,
             source_name=source_name(project_dir, source_path),
             status="error",
+            provider_used=normalize_provider(settings.provider),
+            input_mode=model_option.input_mode,
             error=f"File exceeds max_upload_size_mb ({settings.max_upload_size_mb} MB).",
         )
+        _raise_if_cancelled(cancellation_event)
         with _ARTIFACT_LOCK:
             upsert_extraction(project_dir, result)
             _log_result(
@@ -165,7 +227,10 @@ def _process_one(
     config = read_extraction_schema(project_dir / "extraction_schema.yml")
     response_schema = build_response_schema(config)
     try:
+        if request_pacer is not None:
+            request_pacer.wait(cancellation_event)
         result = extract_pdf(
+            provider=settings.provider,
             source_path=source_path,
             source_name=source_name(project_dir, source_path),
             api_key=api_key,
@@ -174,14 +239,43 @@ def _process_one(
             schema_config=config,
             instruction_path=project_instruction_path(project_dir),
             effect_definition=settings.effect_definition,
+            request_timeout_sec=settings.request_timeout_sec,
+            input_mode=model_option.input_mode,
+            context_length=model_option.context_length,
+            project_dir=project_dir,
+            reasoning_effort=(settings.reasoning_effort if model_option.supports_reasoning else None),
+            service_tier=settings.service_tier,
+            endpoint_order=model_option.endpoint_order,
         )
+        _raise_if_cancelled(cancellation_event)
+    except RunCancelled:
+        raise
     except Exception as exc:
+        _raise_if_cancelled(cancellation_event)
+        diagnostics = getattr(exc, "diagnostics", {})
         result = ExtractionResult(
             source_path=source_path,
             source_name=source_name(project_dir, source_path),
             status="error",
+            provider_used=normalize_provider(settings.provider),
+            input_mode=model_option.input_mode,
             error=redact_secrets(exc, [api_key]),
+            parser_name=str(diagnostics.get("parser_name") or "") or None,
+            parser_version=str(diagnostics.get("parser_version") or "") or None,
+            parser_config_version=str(diagnostics.get("parser_config_version") or "") or None,
+            source_pdf_sha256=str(diagnostics.get("source_sha256") or "") or None,
+            parsed_document_sha256=str(diagnostics.get("document_sha256") or "") or None,
+            parser_page_count=int(diagnostics["page_count"]) if diagnostics.get("page_count") else None,
+            parser_mean_grade=str(diagnostics.get("mean_grade") or "") or None,
+            parser_low_grade=str(diagnostics.get("low_grade") or "") or None,
+            parser_warnings=tuple(str(item) for item in diagnostics.get("warnings") or []),
+            parser_cache_path=str(diagnostics.get("cache_metadata_path") or "") or None,
+            parser_duration_sec=float(diagnostics["duration_sec"]) if diagnostics.get("duration_sec") else None,
+            provider_responses=getattr(exc, "provider_responses", None),
+            raw_response=getattr(exc, "raw_response", None),
+            repaired_response=getattr(exc, "repaired_response", None),
         )
+    _raise_if_cancelled(cancellation_event)
     with _ARTIFACT_LOCK:
         upsert_extraction(project_dir, result)
         _log_result(
@@ -193,6 +287,89 @@ def _process_one(
             started_at=started_at,
         )
     return result
+
+
+def _process_paths(
+    *,
+    paths: list[Path],
+    workers: int,
+    project_dir: Path,
+    settings: RunSettings,
+    api_key: str,
+    retry: bool,
+    run_id: str,
+    model_option: ModelOption,
+    progress,
+    cancellation_event: threading.Event | None,
+) -> None:
+    """Process paths concurrently while letting cancellation return immediately.
+
+    Provider calls are synchronous and cannot be safely killed mid-request. Daemon
+    workers let the controlling web job or CLI unwind without waiting for them;
+    cancellation checks prevent their late results from being persisted.
+    """
+
+    pending: queue.Queue[Path] = queue.Queue()
+    completed: queue.Queue[tuple[ExtractionResult | None, BaseException | None]] = queue.Queue()
+    internal_stop = threading.Event()
+    signal = _CancellationSignal(cancellation_event, internal_stop)
+    request_pacer = _RequestPacer(settings.request_delay_sec)
+    for path in paths:
+        pending.put(path)
+
+    def worker() -> None:
+        while not signal.is_set():
+            try:
+                path = pending.get_nowait()
+            except queue.Empty:
+                return
+            if signal.is_set():
+                return
+            try:
+                result = _process_one(
+                    project_dir=project_dir,
+                    source_path=path,
+                    settings=settings,
+                    api_key=api_key,
+                    retry=retry,
+                    run_id=run_id,
+                    model_option=model_option,
+                    cancellation_event=signal,
+                    request_pacer=request_pacer,
+                )
+            except BaseException as exc:
+                internal_stop.set()
+                completed.put((None, exc))
+                return
+            completed.put((result, None))
+
+    threads = [
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name=f"auto-zcurve-pdf-{index + 1}",
+        )
+        for index in range(workers)
+    ]
+    for thread in threads:
+        thread.start()
+
+    received = 0
+    try:
+        while received < len(paths):
+            _raise_if_cancelled(cancellation_event)
+            try:
+                result, error = completed.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if error is not None:
+                raise error
+            assert result is not None
+            received += 1
+            progress.advance(f"{result.status}: {result.source_name}")
+    except BaseException:
+        internal_stop.set()
+        raise
 
 
 def run_project(
@@ -207,6 +384,7 @@ def run_project(
     api_key: str,
     cancellation_event: threading.Event | None = None,
 ) -> RunSummary | None:
+    _raise_if_cancelled(cancellation_event)
     if not ensure_project_layout(project_dir, assume_yes, interactive, console):
         return None
 
@@ -216,46 +394,67 @@ def run_project(
         console.warn("Add PDF files to sources/ before running extraction.")
         return None
 
-    save_run_settings(project_dir, settings)
+    previous_settings = load_run_settings(project_dir)
+    provider_or_model_changed = bool(
+        previous_settings
+        and (
+            normalize_provider(previous_settings.provider) != normalize_provider(settings.provider)
+            or previous_settings.primary_model != settings.primary_model
+            or previous_settings.pdf_parser != settings.pdf_parser
+            or previous_settings.reasoning_effort != settings.reasoning_effort
+            or previous_settings.service_tier != settings.service_tier
+        )
+    )
     existing = latest_by_source(load_extractions(project_dir))
     to_process = [
         path
         for path in pdfs
-        if force or existing.get(source_name(project_dir, path), {}).get("status") != "ok"
+        if force
+        or provider_or_model_changed
+        or existing.get(source_name(project_dir, path), {}).get("status") != "ok"
     ]
+    if provider_or_model_changed:
+        console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all PDFs will be reprocessed.")
     skipped = len(pdfs) - len(to_process)
     if skipped:
         console.info(f"Skipping {skipped} PDF(s) with existing successful extractions. Use --force to rerun them.")
 
     run_id = str(uuid.uuid4())
+    model_option = validate_model_option(
+        settings.provider,
+        settings.primary_model,
+        api_key,
+        timeout_sec=min(settings.request_timeout_sec, 30),
+    )
+    _raise_if_cancelled(cancellation_event)
+    model_option = replace(
+        model_option,
+        input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
+    )
+    settings.primary_model = model_option.name
+    save_run_settings(project_dir, settings)
     if to_process:
         workers = max(1, min(settings.parallel_requests, len(to_process)))
-        with console.progress(len(to_process), "Extracting PDFs") as progress:
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = [
-                    executor.submit(
-                        _process_one,
-                        project_dir=project_dir,
-                        source_path=path,
-                        settings=settings,
-                        api_key=api_key,
-                        retry=False,
-                        run_id=run_id,
-                    )
-                    for path in to_process
-                ]
-                for future in as_completed(futures):
-                    result = future.result()
-                    label = f"{result.status}: {result.source_name}"
-                    progress.advance(label)
-                    if cancellation_event is not None and cancellation_event.is_set():
-                        for pending in futures:
-                            pending.cancel()
-                        raise RunCancelled("Run cancelled.")
+        worker_label = "worker" if workers == 1 else "workers"
+        with console.progress(
+            len(to_process),
+            f"Extracting PDFs with {workers} parallel {worker_label}",
+        ) as progress:
+            _process_paths(
+                paths=to_process,
+                workers=workers,
+                project_dir=project_dir,
+                settings=settings,
+                api_key=api_key,
+                retry=False,
+                run_id=run_id,
+                model_option=model_option,
+                progress=progress,
+                cancellation_event=cancellation_event,
+            )
 
     report_path = None
-    if cancellation_event is not None and cancellation_event.is_set():
-        raise RunCancelled("Run cancelled.")
+    _raise_if_cancelled(cancellation_event)
     if not skip_report:
         report_path = render_report(
             project_dir=project_dir,
@@ -284,6 +483,7 @@ def retry_project(
     api_key: str,
     cancellation_event: threading.Event | None = None,
 ) -> RunSummary | None:
+    _raise_if_cancelled(cancellation_event)
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
     latest = latest_by_source(load_extractions(project_dir))
@@ -296,33 +496,41 @@ def retry_project(
         return summarize(project_dir, existing_report if existing_report.exists() else None)
 
     paths = [project_dir / "sources" / name for name in failures]
+    model_option = validate_model_option(
+        settings.provider,
+        settings.primary_model,
+        api_key,
+        timeout_sec=min(settings.request_timeout_sec, 30),
+    )
+    _raise_if_cancelled(cancellation_event)
+    model_option = replace(
+        model_option,
+        input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
+    )
+    settings.primary_model = model_option.name
     save_run_settings(project_dir, settings)
     run_id = str(uuid.uuid4())
-    with console.progress(len(paths), "Retrying failed PDFs") as progress:
-        with ThreadPoolExecutor(max_workers=max(1, min(settings.parallel_requests, len(paths)))) as executor:
-            futures = [
-                executor.submit(
-                    _process_one,
-                    project_dir=project_dir,
-                    source_path=path,
-                    settings=settings,
-                    api_key=api_key,
-                    retry=True,
-                    run_id=run_id,
-                )
-                for path in paths
-            ]
-            for future in as_completed(futures):
-                result = future.result()
-                progress.advance(f"{result.status}: {result.source_name}")
-                if cancellation_event is not None and cancellation_event.is_set():
-                    for pending in futures:
-                        pending.cancel()
-                    raise RunCancelled("Run cancelled.")
+    workers = max(1, min(settings.parallel_requests, len(paths)))
+    worker_label = "worker" if workers == 1 else "workers"
+    with console.progress(
+        len(paths),
+        f"Retrying failed PDFs with {workers} parallel {worker_label}",
+    ) as progress:
+        _process_paths(
+            paths=paths,
+            workers=workers,
+            project_dir=project_dir,
+            settings=settings,
+            api_key=api_key,
+            retry=True,
+            run_id=run_id,
+            model_option=model_option,
+            progress=progress,
+            cancellation_event=cancellation_event,
+        )
 
     report_path = None
-    if cancellation_event is not None and cancellation_event.is_set():
-        raise RunCancelled("Run cancelled.")
+    _raise_if_cancelled(cancellation_event)
     if not skip_report:
         report_path = render_report(
             project_dir=project_dir,

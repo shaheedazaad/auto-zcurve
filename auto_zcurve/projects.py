@@ -19,7 +19,7 @@ from .artifacts import (
     read_zcurve_summary,
 )
 from .config import DEFAULTS, load_run_settings
-from .models import DEFAULT_MODEL
+from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
 
@@ -234,10 +234,37 @@ def project_has_analysis_results(project: ManagedProject) -> bool:
     return output.is_dir() and any(path.is_file() for path in output.rglob("*"))
 
 
-def _reset_project_analysis(project: ManagedProject) -> None:
+def reset_project_analysis(project: ManagedProject) -> None:
+    """Remove generated analysis artifacts while preserving project inputs."""
+
     output = project.path / "output"
-    shutil.rmtree(output)
+    if output.exists():
+        shutil.rmtree(output)
     (output / "raw").mkdir(parents=True)
+
+
+def delete_project(project: ManagedProject) -> None:
+    """Permanently remove one validated managed-project directory."""
+
+    if not _metadata_path(project.path).is_file():
+        raise ProjectError("Project not found.")
+    shutil.rmtree(project.path)
+
+
+def rename_project(project: ManagedProject, name: str) -> ManagedProject:
+    clean_name = " ".join(name.split()).strip()
+    if not clean_name:
+        raise ProjectError("Enter a project name.")
+    if len(clean_name) > 100:
+        raise ProjectError("Project names must be 100 characters or fewer.")
+    renamed = ManagedProject(
+        project_id=project.project_id,
+        name=clean_name,
+        path=project.path,
+        created_at=project.created_at,
+    )
+    _write_metadata(renamed)
+    return renamed
 
 
 def update_project_instructions(
@@ -266,7 +293,7 @@ def update_project_instructions(
         )
 
     if has_results:
-        _reset_project_analysis(project)
+        reset_project_analysis(project)
 
     (project.path / PROJECT_INSTRUCTIONS_NAME).write_text(normalized, encoding="utf-8")
     return {"changed": True, "reset": has_results}
@@ -306,7 +333,7 @@ def update_project_schema(
         )
 
     if has_results:
-        _reset_project_analysis(project)
+        reset_project_analysis(project)
 
     schema_path.write_text(normalized, encoding="utf-8")
     return {"changed": True, "reset": has_results}
@@ -315,23 +342,50 @@ def update_project_schema(
 def project_snapshot(project: ManagedProject) -> dict:
     sources = sorted(project.path.joinpath("sources").glob("*.pdf"))
     records = latest_by_source(load_extractions(project.path))
+
+    def response_text(record: dict, key: str) -> str:
+        relative = str(record.get(key) or "").strip()
+        if not relative:
+            return ""
+        candidate = (project.path / relative).resolve()
+        try:
+            candidate.relative_to(project.path.resolve())
+        except ValueError:
+            return ""
+        try:
+            return candidate.read_text(encoding="utf-8")[:2_000_000]
+        except (OSError, UnicodeError):
+            return ""
+
     articles = []
     for source in sources:
         record = records.get(source.name, {})
         status = str(record.get("status") or "ready")
+        raw_response = response_text(record, "raw_response_path") or str(record.get("raw_json") or "")[:2_000_000]
         articles.append(
             {
                 "name": source.name,
                 "size": source.stat().st_size,
                 "status": status,
                 "error": str(record.get("error") or ""),
+                "warning": " ".join(str(item) for item in record.get("parser_warnings") or []),
+                "input_mode": str(record.get("input_mode") or ""),
+                "parser_name": str(record.get("parser_name") or ""),
+                "parser_low_grade": str(record.get("parser_low_grade") or ""),
                 "effects": int(record.get("effects") or 0),
                 "input_tokens": int(record.get("input_tokens") or 0),
                 "output_tokens": int(record.get("output_tokens") or 0),
                 "total_tokens": int(record.get("total_tokens") or 0),
+                "json_repaired": bool(record.get("json_repaired")),
+                "raw_response": raw_response,
+                "repaired_response": response_text(record, "repaired_response_path"),
             }
         )
     settings = load_run_settings(project.path)
+    default_parallel, default_delay = model_request_defaults(
+        settings.primary_model if settings else DEFAULT_MODEL,
+        settings.provider if settings else "gemini",
+    )
     successful_count = sum(item["status"] == "ok" for item in articles)
     total_tokens = sum(item["total_tokens"] for item in articles)
     report = project.path / "output" / "report.html"
@@ -361,12 +415,15 @@ def project_snapshot(project: ManagedProject) -> dict:
         "pdf_count": len(articles),
         "failed_count": sum(item["status"] == "error" for item in articles),
         "successful_count": successful_count,
+        "remaining_count": max(0, len(articles) - successful_count),
         "has_extractions": bool(records),
         "has_analysis_results": project_has_analysis_results(project),
         "total_tokens": total_tokens,
         "has_report": report.is_file(),
         "report_summary": report_summary,
         "instructions": read_project_instructions(project),
+        "provider": settings.provider if settings else "gemini",
         "model": settings.primary_model if settings else DEFAULT_MODEL,
-        "parallel_requests": settings.parallel_requests if settings else DEFAULTS["parallel_requests"],
+        "parallel_requests": settings.parallel_requests if settings else default_parallel,
+        "request_delay_sec": settings.request_delay_sec if settings else default_delay,
     }

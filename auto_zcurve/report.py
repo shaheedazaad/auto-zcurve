@@ -4,8 +4,10 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
 from .paths import (
     DEFAULT_INSTRUCTIONS,
     REPORT_TEMPLATE,
@@ -46,12 +48,18 @@ def render_report(
     effect_definition: str | None,
     instruction_path: Path = DEFAULT_INSTRUCTIONS,
 ) -> Path:
-    quarto = shutil.which("quarto")
-    if quarto is None:
-        raise RuntimeError("Quarto is not installed or not on PATH.")
-
     out_dir = project_dir / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
+    render_log = out_dir / "report_render.log"
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    quarto = shutil.which("quarto")
+    if quarto is None:
+        render_log.write_text(
+            f"started_at: {started_at}\nstatus: not_started\nerror: Quarto is not installed or not on PATH.\n",
+            encoding="utf-8",
+        )
+        raise RuntimeError(f"Quarto is not installed or not on PATH. Detailed log: {render_log}")
+
     render_template = out_dir / "report.qmd"
     shutil.copyfile(REPORT_TEMPLATE, render_template)
     expected = out_dir / "report.html"
@@ -69,6 +77,7 @@ def render_report(
             "AUTO_ZCURVE_SCHEMA_PATH": str(schema_path.resolve()),
             "AUTO_ZCURVE_INSTRUCTIONS_PATH": str(instruction_path.resolve()),
             "AUTO_ZCURVE_MODEL_NAME": model_name,
+            "AUTO_ZCURVE_VERSION": __version__,
             "AUTO_ZCURVE_EFFECT_DEFINITION": effect_definition or "",
             "DENO_DIR": str(cache_dir / "deno"),
             "QUARTO_CACHE": str(cache_dir / "quarto"),
@@ -82,25 +91,52 @@ def render_report(
         env["QUARTO_R"] = str(Path(rscript).resolve().parent)
     if r_libs:
         env["R_LIBS"] = r_libs
-    completed = subprocess.run(
-        [
-            quarto,
-            "render",
-            render_template.name,
-            "--to",
-            "html",
-            "--output",
-            expected.name,
-        ],
-        check=False,
-        text=True,
-        capture_output=True,
-        env=env,
-        cwd=str(out_dir),
+    command = [
+        quarto,
+        "render",
+        render_template.name,
+        "--to",
+        "html",
+        "--output",
+        expected.name,
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            text=True,
+            capture_output=True,
+            env=env,
+            cwd=str(out_dir),
+        )
+    except OSError as exc:
+        render_log.write_text(
+            f"started_at: {started_at}\nstatus: launch_failed\ncommand: {command!r}\nerror: {exc}\n",
+            encoding="utf-8",
+        )
+        raise RuntimeError(f"Could not launch Quarto: {exc}. Detailed log: {render_log}") from exc
+    render_log.write_text(
+        "\n".join(
+            [
+                f"started_at: {started_at}",
+                f"status: {'ok' if completed.returncode == 0 and expected.exists() else 'failed'}",
+                f"returncode: {completed.returncode}",
+                f"command: {command!r}",
+                "\n--- stdout ---",
+                completed.stdout or "(empty)",
+                "\n--- stderr ---",
+                completed.stderr or "(empty)",
+                f"\nexpected_html: {expected}",
+                f"html_created: {expected.exists()}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
     if completed.returncode != 0:
         raise RuntimeError(
             "Quarto report rendering failed.\n"
+            + f"Detailed log: {render_log}\n"
             + (completed.stdout or "")
             + (completed.stderr or "")
         )
@@ -108,4 +144,8 @@ def render_report(
         shutil.copyfile(REPRODUCIBLE_REPORT_TEMPLATE, render_template)
         return expected
 
-    raise RuntimeError(f"Quarto completed but did not create {expected}.")
+    raise RuntimeError(
+        f"Quarto completed but did not create {expected}. Detailed log: {render_log}\n"
+        + (completed.stdout or "")
+        + (completed.stderr or "")
+    )

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 
@@ -23,9 +24,15 @@ class ArtifactTests(unittest.TestCase):
                 model_used="gemini-3.5-flash",
                 data={"effects": [{"reported_statistic": "t(38)=2.14"}]},
                 raw_json='{"effects":[]}',
+                raw_response='{"effects":[]}\nEXTRA',
+                repaired_response='{"effects":[]}',
                 input_tokens=100,
                 output_tokens=20,
                 total_tokens=120,
+                provider_used="openrouter",
+                provider_responses=[
+                    {"attempt": 1, "response": {"id": "generation-1", "choices": []}}
+                ],
             )
 
             records = upsert_extraction(project, result)
@@ -33,6 +40,18 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(records[0]["effects"], 1)
             self.assertEqual(records[0]["input_tokens"], 100)
             self.assertTrue(any((project / "output" / "raw").glob("study-*.json")))
+            response_files = list(
+                (project / "output" / "raw").glob("study-*.provider-response.json")
+            )
+            self.assertEqual(len(response_files), 1)
+            archived = json.loads(response_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(archived["responses"][0]["response"]["id"], "generation-1")
+            self.assertIn("provider_response_path", records[0])
+            response_text_files = list((project / "output" / "raw").glob("study-*.response.txt"))
+            self.assertEqual(len(response_text_files), 1)
+            self.assertEqual(response_text_files[0].read_text(encoding="utf-8"), '{"effects":[]}\nEXTRA')
+            self.assertIn("raw_response_path", records[0])
+            self.assertIn("repaired_response_path", records[0])
 
             append_run_log(project, {"source_name": "study.pdf", "status": "ok"})
             rows = load_run_log(project)
