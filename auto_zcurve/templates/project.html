@@ -378,20 +378,15 @@
         </div>
 
         <div class="stack">
-          <div class="alert" data-variant="warning" data-run-credential-prompt {% if has_api_key %}hidden{% endif %}>
-            <h2 data-key-heading>Unlock or add a {{ provider_label }} API key to run</h2>
+          <div class="alert" data-variant="warning" data-run-credential-prompt {% if has_api_key or has_saved_api_key %}hidden{% endif %}>
+            <h2 data-key-heading>Add a {{ provider_label }} API key to run</h2>
             <section>
-              <p data-key-prompt-copy>{% if has_saved_api_key %}Your saved key must be unlocked again after restarting the app.{% else %}No {{ provider_label }} key is configured for this session.{% endif %}</p>
-              <form class="js-load-credentials cluster" action="/{{ token }}/credentials/load" data-unlock-form {% if not has_saved_api_key %}hidden{% endif %}>
-                <input type="hidden" name="provider" value="{{ project.provider }}" data-credential-provider>
-                <button class="btn" data-size="sm" type="submit" data-unlock-button>Unlock saved {{ provider_label }} key</button>
-                <span class="form-message u-sm" role="status"></span>
-              </form>
+              <p data-key-prompt-copy>No {{ provider_label }} key is configured for this session.</p>
               <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings">Enter API key in Settings</a>
             </section>
           </div>
 
-          <div data-run-actions {% if not has_api_key %}hidden{% endif %}>
+          <div data-run-actions {% if not (has_api_key or has_saved_api_key) %}hidden{% endif %}>
             <div class="run-actions-row">
               <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.successful_count and project.remaining_count %}Continue processing {{ project.remaining_count }} PDF{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
               <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count else 'false' }}" {% if not project.failed_count %}disabled{% endif %}>Retry failed</button>

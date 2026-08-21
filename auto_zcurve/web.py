@@ -250,6 +250,22 @@ class WebRuntime:
     def api_key(self, provider: str = "gemini") -> str | None:
         return self.session_api_keys.get(normalize_provider(provider))
 
+    def _load_key_from_store(self, provider: str) -> str | None:
+        """Blocking: reads the OS credential store. Call via a threadpool from async routes."""
+
+        selected = normalize_provider(provider)
+        existing = self.session_api_keys.get(selected)
+        if existing:
+            return existing
+        if not saved_api_key_configured(selected):
+            return None
+        key = load_saved_api_key(selected)
+        if not key:
+            return None
+        self.session_api_keys[selected] = key
+        self.key_warnings.pop(selected, None)
+        return key
+
     def secrets(self) -> list[str]:
         return list(self.session_api_keys.values())
 
@@ -556,7 +572,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     @app.post(f"/{token}/api/models/openrouter/validate")
     async def validate_openrouter_model(model: str = Form(...)):
-        key = runtime.api_key("openrouter")
+        key = await asyncio.to_thread(runtime._load_key_from_store, "openrouter")
         if not key:
             raise HTTPException(status_code=400, detail="An OpenRouter API key is required to validate a model.")
         try:
@@ -813,7 +829,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             selected = normalize_provider(provider)
             normalized_model = normalize_model_name(model, selected)
             if selected == "openrouter":
-                key = runtime.api_key(selected)
+                key = await asyncio.to_thread(runtime._load_key_from_store, selected)
                 if key is None:
                     raise ValueError("An OpenRouter API key is required to validate a model.")
                 validate_model_option(selected, normalized_model, key)
@@ -849,10 +865,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             existing = load_run_settings(project.path)
             app_defaults = load_app_settings()
             selected = normalize_provider(provider)
-            if runtime.api_key(selected) is None:
+            key = await asyncio.to_thread(runtime._load_key_from_store, selected)
+            if key is None:
                 raise ValueError(f"A {provider_label(selected)} API key is required.")
             if selected == "openrouter":
-                validate_model_option(selected, model, runtime.api_key(selected) or "")
+                validate_model_option(selected, model, key)
             default_parallel, default_delay = model_request_defaults(model, selected)
             use_saved_values = existing is not None and existing.provider == selected
             settings = RunSettings(
@@ -899,10 +916,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             selected_model = model or (
                 existing.primary_model if existing.provider == selected else ""
             )
-            if runtime.api_key(selected) is None:
+            key = await asyncio.to_thread(runtime._load_key_from_store, selected)
+            if key is None:
                 raise ValueError(f"A {provider_label(selected)} API key is required.")
             if selected == "openrouter":
-                validate_model_option(selected, selected_model, runtime.api_key(selected) or "")
+                validate_model_option(selected, selected_model, key)
             default_parallel, default_delay = model_request_defaults(selected_model, selected)
             use_saved_values = existing.provider == selected
             settings = RunSettings(

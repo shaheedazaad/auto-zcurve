@@ -286,21 +286,22 @@ class WebAppTests(unittest.TestCase):
         response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Unlock or add a Gemini API key to run", response.text)
+        self.assertIn("Add a Gemini API key to run", response.text)
         self.assertIn(f'href="/{TOKEN}/settings">Enter API key in Settings</a>', response.text)
         self.assertIn("data-run-actions hidden", response.text)
         self.assertIn('value="openrouter" data-key-ready="true"', response.text)
         self.assertIn("syncProviderCredentialState", (Path("auto_zcurve/static/app.js")).read_text(encoding="utf-8"))
 
-    def test_project_saved_key_can_be_unlocked_directly_from_run_panel(self):
-        project = create_project("Unlock from run panel", root=self.root)
+    def test_project_with_saved_key_shows_run_actions_without_unlocking(self):
+        project = create_project("Run panel with saved key", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
         with patch("auto_zcurve.web.saved_api_key_configured", return_value=True):
             response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Unlock saved Gemini key", response.text)
-        self.assertIn(f'action="/{TOKEN}/credentials/load" data-unlock-form', response.text)
+        self.assertIn("data-run-actions", response.text)
+        self.assertNotIn("data-run-actions hidden", response.text)
+        self.assertNotIn("Unlock", response.text)
         self.assertNotIn('class="card key-notice"', response.text)
 
     def test_partial_project_offers_to_continue_remaining_pdfs(self):
@@ -443,6 +444,38 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(self.app.state.runtime.session_api_key, "saved-secret-key")
         load_key.assert_called_once_with()
         self.assertNotIn("saved-secret-key", response.text)
+
+    def test_run_auto_loads_saved_key_without_explicit_unlock(self):
+        project = create_project("Auto unlock on run", root=self.root)
+        (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
+
+        with (
+            patch("auto_zcurve.web.saved_api_key_configured", return_value=True),
+            patch("auto_zcurve.web.load_saved_api_key", return_value="saved-secret-key") as load_key,
+            patch("auto_zcurve.web.run_preflight"),
+            patch("auto_zcurve.web.run_project"),
+        ):
+            response = self.client.post(
+                f"/{TOKEN}/projects/{project.project_id}/run",
+                data={"model": "gemini-3.5-flash"},
+                headers=ORIGIN,
+            )
+        self.assertEqual(response.status_code, 202)
+        load_key.assert_called_once()
+        self.assertEqual(self.app.state.runtime.session_api_key, "saved-secret-key")
+
+    def test_run_without_saved_or_session_key_still_fails(self):
+        project = create_project("No key anywhere", root=self.root)
+        (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
+
+        with patch("auto_zcurve.web.saved_api_key_configured", return_value=False):
+            response = self.client.post(
+                f"/{TOKEN}/projects/{project.project_id}/run",
+                data={"model": "gemini-3.5-flash"},
+                headers=ORIGIN,
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("API key is required", response.json()["detail"])
 
     def test_openrouter_credentials_and_filtered_model_catalog_are_separate(self):
         response = self.client.post(

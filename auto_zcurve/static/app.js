@@ -828,9 +828,7 @@
   const runActions = document.querySelector("[data-run-actions]");
   const keyHeading = document.querySelector("[data-key-heading]");
   const keyPromptCopy = document.querySelector("[data-key-prompt-copy]");
-  const unlockButton = document.querySelector("[data-unlock-button]");
   const keyInput = document.querySelector("[data-key-input]");
-  const unlockForm = document.querySelector("[data-unlock-form]");
   const macosKeyNote = document.querySelector("[data-macos-key-note]");
   let currentModelCatalog = [];
 
@@ -850,22 +848,22 @@
     const label = selected.textContent?.trim() || "Gemini";
     const keyReady = selected.dataset.keyReady === "true";
     const savedKey = selected.dataset.savedKey === "true";
+    // A saved key doesn't need a manual "Unlock" click: pressing Run/Retry loads it
+    // from the OS credential store on demand, so those actions are available whenever
+    // either a session key or a saved key exists.
+    const canRun = keyReady || savedKey;
     if (providerLabel) providerLabel.textContent = label;
-    if (credentialPrompt) credentialPrompt.hidden = keyReady;
-    if (runActions) runActions.hidden = !keyReady;
-    if (keyHeading) keyHeading.textContent = `Unlock or add a ${label} API key to run`;
-    if (keyPromptCopy) keyPromptCopy.textContent = savedKey
-      ? "Your saved key must be unlocked again after restarting the app."
-      : `No ${label} key is configured for this session.`;
-    if (unlockButton) unlockButton.textContent = `Unlock saved ${label} key`;
+    if (credentialPrompt) credentialPrompt.hidden = canRun;
+    if (runActions) runActions.hidden = !canRun;
+    if (keyHeading) keyHeading.textContent = `Add a ${label} API key to run`;
+    if (keyPromptCopy) keyPromptCopy.textContent = `No ${label} key is configured for this session.`;
     if (keyInput) keyInput.placeholder = `Paste ${label} API key`;
     document.querySelectorAll("[data-credential-provider]").forEach((input) => {
       input.value = selected.value;
     });
-    if (unlockForm) unlockForm.hidden = !savedKey;
     if (macosKeyNote) macosKeyNote.hidden = !savedKey;
-    runButton.disabled = runButton.dataset.hasPdfs !== "true" || !keyReady;
-    retryButton.disabled = retryButton.dataset.hasFailures !== "true" || !keyReady;
+    runButton.disabled = runButton.dataset.hasPdfs !== "true" || !canRun;
+    retryButton.disabled = retryButton.dataset.hasFailures !== "true" || !canRun;
   };
 
   const refreshModels = async ({ preserveValue = false } = {}) => {
@@ -893,7 +891,9 @@
     if (selectedProvider.dataset.keyReady !== "true") {
       currentModelCatalog = [];
       modelOptions.innerHTML = "";
-      modelInput.placeholder = "Unlock the API key to load models";
+      modelInput.placeholder = selectedProvider.dataset.savedKey === "true"
+        ? "Model list loads after your first run"
+        : "Add an API key to load models";
       updateModelHint();
       return;
     }
