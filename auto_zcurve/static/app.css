@@ -147,8 +147,13 @@
     border-color: transparent;
   }
 
-  /* Basecoat ships only `destructive` for alerts; this app also needs to warn
-     (locked keys, experimental provider) and confirm (report ready). */
+  /* Basecoat ships only `destructive` for alerts; this app also needs info,
+     warnings (locked keys, experimental provider), and confirmations. */
+  .alert[data-variant='info'] {
+    background: var(--info-subtle);
+    color: var(--info-subtle-foreground);
+    border-color: color-mix(in oklch, var(--info-subtle-foreground) 30%, transparent);
+  }
   .alert[data-variant='warning'] {
     background: var(--warning-subtle);
     color: var(--warning-subtle-foreground);

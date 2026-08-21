@@ -13,7 +13,7 @@ what that involves.
 ## Does this cost money?
 
 auto-zcurve itself is free. Running an analysis uses your own AI provider
-API key, which may incur small costs depending on the provider, model, and
+API key, which will incur costs depending on the provider, model, and
 number/length of articles — check current Gemini pricing if that matters
 for your budget. Gemini's free tier is usually enough for trying the app out
 on a handful of articles.

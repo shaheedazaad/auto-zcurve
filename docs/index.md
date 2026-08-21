@@ -1,5 +1,9 @@
 # Welcome
 
+!!! warning "Important"
+    This tool is designed to help you quickly audit a literature for credibility
+    when planning your own studies. It is not suitable for producing publication-quality data.
+
 auto-zcurve helps you build a **z-curve analysis** from a folder of PDF
 journal articles, without writing any code.
 
@@ -8,8 +12,8 @@ statistical results you care about (t-tests, F-tests, z-scores, p-values...),
 and turns them into a z-curve report: a plot, summary statistics, and a full
 table of every effect it found, so you can check its work.
 
-This guide is written for researchers, not programmers. If you can install an
-app and use a web browser, you can use auto-zcurve.
+The app is installed and run from the command line, but is designed for
+ non-technical users.
 
 ## What it actually does, in plain terms
 
@@ -20,7 +24,7 @@ app and use a web browser, you can use auto-zcurve.
 4. auto-zcurve hands that list to the `zcurve` R package, which fits the
    z-curve model and produces a report.
 5. You get a webpage report, a spreadsheet of every extracted effect, and the
-   files needed to reproduce the statistical fit later.
+   files needed to reproduce the z-curve later.
 
 ## What runs where
 
@@ -29,19 +33,20 @@ in your normal web browser — it is not a website you sign up for. Nothing
 about your project is uploaded anywhere, with one exception: when you run an
 analysis, the PDF (or its extracted text) for each article is sent to the AI
 provider you've configured, because that is how the statistics get extracted.
-Nothing else — no project names, no other files — leaves your computer.
+Nothing else leaves your computer.
 
 See [Getting an API key](api-key.md) for what that sending step involves and
 how to keep your key safe.
 
 ## A note on validation
 
-Statistic extraction accuracy was validated as part of a study, currently
-under peer review:
+Statistic extraction accuracy using Gemini 3.1 Pro Preview was validated as part of a related study, currently under peer review:
 
 > Azaad, S. (2026). *Empirically derived effect size guidelines for social,
 > individual differences, and cognitive psychology.* PsyArXiv.
 > [https://doi.org/10.31234/osf.io/r4xwb_v1](https://doi.org/10.31234/osf.io/r4xwb_v1)
+
+See the supplemental materials for that preperint for the validation process. Other models' performance may vary, but it is reasonable to assume that newer models would perform better.
 
 ## Where to go next
 

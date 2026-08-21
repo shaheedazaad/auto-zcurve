@@ -147,6 +147,8 @@ class WebAppTests(unittest.TestCase):
         response = self.client.get(f"/{TOKEN}/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("<h1>Projects</h1>", response.text)
+        self.assertIn('data-variant="warning"', response.text)
+        self.assertIn("It is not suitable for producing publication-quality data.", response.text)
         self.assertIn("Search projects", response.text)
         self.assertIn("/static/vendor/basecoat.min.css", response.text)
         self.assertNotIn("cdn.jsdelivr.net", response.text)
@@ -166,6 +168,17 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(
             set(payload[0]),
             {"id", "name", "pdf_count", "failed_count", "total_tokens", "has_report"},
+        )
+
+    def test_update_notice_uses_the_info_variant(self):
+        self.app.state.runtime.update_version = "0.12.4"
+
+        response = self.client.get(f"/{TOKEN}/")
+
+        self.assertIn('<div class="alert" data-variant="info" role="status">', response.text)
+        self.assertIn(
+            'href="https://shaheedazaad.github.io/auto-zcurve/" target="_blank" rel="noopener">auto-zcurve 0.12.4 is available</a>',
+            response.text,
         )
 
     def test_settings_page_defaults_to_cloudflare_and_persists_app_defaults(self):

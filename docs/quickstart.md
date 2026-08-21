@@ -37,8 +37,7 @@ Nothing is sent anywhere yet — this just registers the files in your project.
 The **Extraction instructions** tab holds the plain-language instructions the
 AI model follows when deciding what counts as an eligible statistic in your
 articles. Sensible defaults are pre-filled; read through them and adjust the
-wording if your field has different conventions (for example, what counts as
-a focal test versus a follow-up test).
+wording if you want to extract the test for a particular phenomenon.
 
 ![The Extraction instructions tab, showing the default guidance text](assets/screenshots/project-instructions.png)
 
