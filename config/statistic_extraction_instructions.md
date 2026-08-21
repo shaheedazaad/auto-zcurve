@@ -12,7 +12,7 @@ Place study-level document details in `meta_data`.
 Each item in `effects` should represent one statistic.
 Only extract statistics that match the description under "Effects of interest" below.
 If the paper contains multiple eligible tests, include them all in `effects`.
-When a paper reports an omnibus test (e.g., an ANOVA), do not extract statistics for the follow-up tests (e.g., t-tests) that are reported in the same paper, as these are not independent tests.
+When a paper reports an omnibus test (e.g., an ANOVA), do not extract statistics for the follow-up tests (e.g., simple main effects, pairwise comparisons, post-hoc tests) that further investigate the same effect, as these are not independent tests.
 Also ignore secondary analyses, for example robustness checks, sensitivity analyses, or meta-analyses.
 
 ## Statistic extraction
