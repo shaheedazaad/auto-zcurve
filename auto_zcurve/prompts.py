@@ -6,11 +6,7 @@ from .schema import ExtractionSchema, build_role_lookup
 
 
 def default_effect_definition() -> str:
-    return (
-        "Extract each article's 'focal' effects. Focal effects are those that support "
-        "the claims in either the title or abstract of the article (a non-focal effect, "
-        "for example, would be a manipulation check)."
-    )
+    return "Include only tests that support the claims in the article's title and/or abstract."
 
 
 def render_text_template(text: str, values: dict[str, str]) -> str:
@@ -31,13 +27,12 @@ def build_system_prompt(
         or lookup["effect"].get("reported_test")
         or "reported_statistic"
     )
-    with instruction_path.open("r", encoding="utf-8") as handle:
-        base_prompt = render_text_template(
-            handle.read(),
-            {"reported_statistic_field": reported_field},
-        )
-
     definition = (effect_definition or default_effect_definition()).strip()
-    if not definition:
-        return base_prompt
-    return f"{base_prompt}\n\n## Effects of interest\n{definition}"
+    with instruction_path.open("r", encoding="utf-8") as handle:
+        return render_text_template(
+            handle.read(),
+            {
+                "reported_statistic_field": reported_field,
+                "effect_definition": definition,
+            },
+        )

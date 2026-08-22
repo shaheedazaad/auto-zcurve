@@ -189,6 +189,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('name="request_delay_sec" type="number" min="0" max="3600" value="30"', page.text)
         self.assertNotIn('value="cloudflare-ai"', page.text)
         self.assertIn('id="key-dialog-title-gemini"', page.text)
+        self.assertIn('id="default-gemini-model"', page.text)
+        self.assertIn('id="default-openrouter-model"', page.text)
+        self.assertIn(f'name="default_gemini_model"', page.text)
 
         saved = self.client.post(
             f"/{TOKEN}/settings",
@@ -199,6 +202,8 @@ class WebAppTests(unittest.TestCase):
                 "request_timeout_sec": "900",
                 "max_upload_size_mb": "64",
                 "reasoning_effort": "low",
+                "default_gemini_model": "gemini-3.1-flash-lite",
+                "default_openrouter_model": "openai/gpt-5",
             },
             headers=ORIGIN,
         )
@@ -206,11 +211,17 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(saved.json()["pdf_parser"], "cloudflare-ai")
         self.assertEqual(saved.json()["reasoning_effort"], "low")
         self.assertEqual(saved.json()["request_delay_sec"], 45)
+        self.assertEqual(saved.json()["default_gemini_model"], "gemini-3.1-flash-lite")
+        self.assertEqual(saved.json()["default_openrouter_model"], "openai/gpt-5")
 
         reopened = self.client.get(f"/{TOKEN}/settings")
+        self.assertIn('value="gemini-3.1-flash-lite"', reopened.text)
+        self.assertIn('value="openai/gpt-5"', reopened.text)
+
         project = create_project("Configured defaults", root=self.root)
         project_page = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
         self.assertIn("up to 64 MB each", project_page.text)
+        self.assertIn('value="gemini-3.1-flash-lite"', project_page.text)
 
     def test_settings_rejects_unknown_parser(self):
         response = self.client.post(
@@ -639,6 +650,7 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
         self.assertEqual(archive_response.status_code, 200)
         with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
             self.assertIn("extraction_schema.yml", archive.namelist())
+            self.assertIn("extraction_instructions.md", archive.namelist())
             self.assertIn("output/report.html", archive.namelist())
             self.assertIn("output/report.qmd", archive.namelist())
             self.assertIn("output/zcurve_reproduction_settings.csv", archive.namelist())
@@ -646,6 +658,9 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
             self.assertIn("output/raw/study.response.txt", archive.namelist())
             self.assertFalse(any(".auto_zcurve" in name for name in archive.namelist()))
             self.assertNotIn("session-key", "\n".join(archive.namelist()))
+            rendered_instructions = archive.read("extraction_instructions.md").decode("utf-8")
+            self.assertNotIn("{{", rendered_instructions)
+            self.assertIn("Effects of interest", rendered_instructions)
 
     def test_instruction_edit_requires_confirmation_and_clears_previous_analysis(self):
         project = create_project("Instruction editing", root=self.root)

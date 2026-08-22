@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}{{ project.name }} · auto-zcurve{% endblock %}
-{% block body_attributes %}data-project-id="{{ project.id }}"{% endblock %}
+{% block body_attributes %}data-project-id="{{ project.id }}" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}"{% endblock %}
 
 {% block page %}
 <div class="page">
@@ -159,6 +159,7 @@
       <form class="js-instructions stack-sm" action="/{{ token }}/projects/{{ project.id }}/instructions" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}">
         <div class="field">
           <label for="extraction-instructions">Instructions</label>
+          <p class="u-sm u-muted">Edit the "Effects of interest" section below to change which effects the model should extract for this project.</p>
           <textarea class="textarea" id="extraction-instructions" name="instructions" rows="14" maxlength="100000" required>{{ project.instructions }}</textarea>
         </div>
         {% if project.has_analysis_results %}
@@ -337,7 +338,7 @@
             <div class="grid-2">
               <div class="field">
                 <label for="provider">Provider</label>
-                <select class="select" id="provider" name="provider">
+                <select class="select" id="provider" name="provider" data-default-gemini-model="{{ project.default_gemini_model }}" data-default-openrouter-model="{{ project.default_openrouter_model }}">
                   {% for name, label in providers %}
                   <option value="{{ name }}" data-key-ready="{{ 'true' if (provider_key_status or {}).get(name, false) else 'false' }}" data-saved-key="{{ 'true' if (provider_saved_key_status or {}).get(name, false) else 'false' }}" {% if project.provider == name %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}

@@ -33,6 +33,8 @@ from .config import (
     RunSettings,
     load_app_settings,
     load_run_settings,
+    normalize_default_gemini_model,
+    normalize_default_openrouter_model,
     normalize_pdf_parser,
     normalize_reasoning_effort,
     normalize_service_tier,
@@ -56,7 +58,9 @@ from .models import (
     resolve_input_mode,
     validate_model_option,
 )
+from .paths import DEFAULT_INSTRUCTIONS
 from .preflight import run_preflight
+from .prompts import build_system_prompt
 from .projects import (
     AnalysisResetRequired,
     ManagedProject,
@@ -66,6 +70,7 @@ from .projects import (
     delete_project,
     get_project,
     list_projects,
+    project_instruction_path,
     project_snapshot,
     read_project_schema,
     rename_project,
@@ -75,6 +80,7 @@ from .projects import (
     update_project_schema,
 )
 from .runner import RunCancelled, regenerate_report, retry_project, run_project
+from .schema import read_extraction_schema
 from .security import redact_secrets
 from .user_facing import classify_error
 from .providers import PROVIDERS, normalize_provider, provider_label
@@ -367,11 +373,13 @@ class WebRuntime:
 
 
 def _project_context(request: Request, runtime: WebRuntime, project: ManagedProject) -> dict:
-    snapshot = project_snapshot(project)
     app_settings = load_app_settings()
+    snapshot = project_snapshot(project, default_model=app_settings.default_gemini_model)
     snapshot["pdf_parser"] = app_settings.pdf_parser
     snapshot["pdf_parser_label"] = PDF_PARSER_LABELS[app_settings.pdf_parser]
     snapshot["max_upload_size_mb"] = app_settings.max_upload_size_mb
+    snapshot["default_gemini_model"] = app_settings.default_gemini_model
+    snapshot["default_openrouter_model"] = app_settings.default_openrouter_model
     selected_provider = normalize_provider(snapshot.get("provider"))
     job = runtime.jobs.get(project.project_id)
     return {
@@ -488,6 +496,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 "pdf_parser_labels": PDF_PARSER_LABELS,
                 "reasoning_effort_labels": REASONING_EFFORT_LABELS,
                 "service_tier_labels": SERVICE_TIER_LABELS,
+                "default_instructions": DEFAULT_INSTRUCTIONS.read_text(encoding="utf-8"),
                 "update_version": runtime.update_version,
             },
         )
@@ -501,6 +510,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         request_delay_sec: int = Form(DEFAULTS["request_delay_sec"]),
         reasoning_effort: str = Form(DEFAULTS["reasoning_effort"]),
         service_tier: str = Form(DEFAULTS["service_tier"]),
+        default_gemini_model: str = Form(DEFAULT_MODEL),
+        default_openrouter_model: str = Form(""),
     ):
         try:
             settings = AppSettings(
@@ -511,6 +522,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 max_upload_size_mb=max(1, min(int(max_upload_size_mb), 512)),
                 reasoning_effort=normalize_reasoning_effort(reasoning_effort),
                 service_tier=normalize_service_tier(service_tier),
+                default_gemini_model=normalize_default_gemini_model(default_gemini_model),
+                default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model),
             )
             save_app_settings(settings)
         except (OSError, TypeError, ValueError) as exc:
@@ -524,6 +537,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "service_tier": settings.service_tier,
             "service_tier_label": SERVICE_TIER_LABELS[settings.service_tier],
             "request_delay_sec": settings.request_delay_sec,
+            "default_gemini_model": settings.default_gemini_model,
+            "default_openrouter_model": settings.default_openrouter_model,
         }
 
     @app.post(f"/{token}/projects")
@@ -656,8 +671,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             project = runtime.project(project_id)
         except ProjectError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        payload = project_snapshot(project)
         app_settings = load_app_settings()
+        payload = project_snapshot(project, default_model=app_settings.default_gemini_model)
         payload["pdf_parser"] = app_settings.pdf_parser
         payload["pdf_parser_label"] = PDF_PARSER_LABELS[app_settings.pdf_parser]
         job = runtime.jobs.get(project_id)
@@ -856,7 +871,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def start_run(
         project_id: str,
         provider: str = Form("gemini"),
-        model: str = Form(DEFAULT_MODEL),
+        model: Optional[str] = Form(None),
         parallel_requests: int | None = Form(None),
         request_delay_sec: int | None = Form(None),
     ):
@@ -865,15 +880,18 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             existing = load_run_settings(project.path)
             app_defaults = load_app_settings()
             selected = normalize_provider(provider)
+            effective_model = model or (
+                app_defaults.default_openrouter_model if selected == "openrouter" else app_defaults.default_gemini_model
+            )
             key = await asyncio.to_thread(runtime._load_key_from_store, selected)
             if key is None:
                 raise ValueError(f"A {provider_label(selected)} API key is required.")
             if selected == "openrouter":
-                validate_model_option(selected, model, key)
-            default_parallel, default_delay = model_request_defaults(model, selected)
+                validate_model_option(selected, effective_model, key)
+            default_parallel, default_delay = model_request_defaults(effective_model, selected)
             use_saved_values = existing is not None and existing.provider == selected
             settings = RunSettings(
-                primary_model=normalize_model_name(model, selected),
+                primary_model=normalize_model_name(effective_model, selected),
                 provider=selected,
                 request_timeout_sec=existing.request_timeout_sec if existing else app_defaults.request_timeout_sec,
                 parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else (existing.parallel_requests if use_saved_values else default_parallel)), 32)),
@@ -903,7 +921,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             app_defaults = load_app_settings()
             if existing is None:
                 existing = RunSettings(
-                    primary_model=DEFAULT_MODEL,
+                    primary_model=app_defaults.default_gemini_model,
                     request_timeout_sec=app_defaults.request_timeout_sec,
                     parallel_requests=app_defaults.parallel_requests,
                     max_upload_size_mb=app_defaults.max_upload_size_mb,
@@ -914,7 +932,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 )
             selected = normalize_provider(provider or existing.provider)
             selected_model = model or (
-                existing.primary_model if existing.provider == selected else ""
+                existing.primary_model if existing.provider == selected
+                else (app_defaults.default_openrouter_model if selected == "openrouter" else app_defaults.default_gemini_model)
             )
             key = await asyncio.to_thread(runtime._load_key_from_store, selected)
             if key is None:
@@ -946,7 +965,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             project = runtime.project(project_id)
             existing = load_run_settings(project.path)
             if existing is None:
-                existing = RunSettings(primary_model=DEFAULT_MODEL)
+                existing = RunSettings(primary_model=load_app_settings().default_gemini_model)
             job = runtime.start_job(project, "report", existing)
         except ProjectError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1036,6 +1055,13 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             schema_path = project.path / "extraction_schema.yml"
             if schema_path.is_file():
                 archive.write(schema_path, "extraction_schema.yml")
+                run_settings = load_run_settings(project.path)
+                rendered_instructions = build_system_prompt(
+                    read_extraction_schema(schema_path),
+                    project_instruction_path(project.path),
+                    run_settings.effect_definition if run_settings else None,
+                )
+                archive.writestr("extraction_instructions.md", rendered_instructions)
             if output.exists():
                 for path in sorted(output.rglob("*")):
                     relative = path.relative_to(output)

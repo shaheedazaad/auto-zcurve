@@ -52,6 +52,8 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(defaults.reasoning_effort, "high")
                 self.assertEqual(defaults.parallel_requests, 1)
                 self.assertEqual(defaults.request_delay_sec, 30)
+                self.assertEqual(defaults.default_gemini_model, "gemini-3.6-flash")
+                self.assertEqual(defaults.default_openrouter_model, "")
 
                 save_app_settings(
                     AppSettings(
@@ -61,6 +63,8 @@ class ConfigTests(unittest.TestCase):
                         request_timeout_sec=900,
                         max_upload_size_mb=64,
                         reasoning_effort="low",
+                        default_gemini_model="gemini-3.1-flash-lite",
+                        default_openrouter_model="openai/gpt-5",
                     )
                 )
                 loaded = load_app_settings()
@@ -71,6 +75,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded.request_timeout_sec, 900)
         self.assertEqual(loaded.max_upload_size_mb, 64)
         self.assertEqual(loaded.reasoning_effort, "low")
+        self.assertEqual(loaded.default_gemini_model, "gemini-3.1-flash-lite")
+        self.assertEqual(loaded.default_openrouter_model, "openai/gpt-5")
 
 
 if __name__ == "__main__":

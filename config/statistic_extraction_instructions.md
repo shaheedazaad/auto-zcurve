@@ -15,6 +15,10 @@ If the paper contains multiple eligible tests, include them all in `effects`.
 When a paper reports an omnibus test (e.g., an ANOVA), do not extract statistics for the follow-up tests (e.g., simple main effects, pairwise comparisons, post-hoc tests) that further investigate the same effect, as these are not independent tests.
 Also ignore secondary analyses, for example robustness checks, sensitivity analyses, or meta-analyses.
 
+## Effects of interest
+
+{{effect_definition}}
+
 ## Statistic extraction
 
 When possible, fill `{{reported_statistic_field}}` with either a t, F, chi, z, or _exact_ p statistic. Results _must_ be in precisely one of the following formats with no additional text: t(38)=2.14, F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.

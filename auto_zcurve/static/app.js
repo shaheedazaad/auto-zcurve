@@ -354,7 +354,8 @@
 
     if (tabPanels.length) {
       const hash = window.location.hash.replace("#", "");
-      activateTab(validTabs.includes(hash) ? hash : "overview");
+      const hasResults = document.body.dataset.hasResults === "true";
+      activateTab(validTabs.includes(hash) ? hash : (hasResults ? "overview" : "sources"));
     }
   }
 
@@ -908,12 +909,14 @@
       modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
       modelInput.placeholder = "Enter a model ID";
       const previousIsCompatible = payload.some((item) => item.id === previousValue);
-      if (preserveValue && previousIsCompatible) {
+      if (preserveValue && previousValue) {
         modelInput.value = previousValue;
-        runMessage.textContent = "";
-      } else if (preserveValue && previousValue) {
-        runMessage.textContent = `The previously selected model (${previousValue}) cannot be used for synchronous PDF extraction. Choose a compatible model.`;
-        setMessageState(runMessage, "form-message run-message warning-text");
+        if (previousIsCompatible) {
+          runMessage.textContent = "";
+        } else {
+          runMessage.textContent = `The previously selected model (${previousValue}) was not found in the current model catalog. It will still be used as entered.`;
+          setMessageState(runMessage, "form-message run-message warning-text");
+        }
       } else {
         runMessage.textContent = "";
       }
@@ -930,7 +933,13 @@
     }
   };
   refreshProviderModels = refreshModels;
-  providerSelect?.addEventListener("change", () => refreshModels());
+  providerSelect?.addEventListener("change", () => {
+    const defaultModel = providerSelect.value === "openrouter"
+      ? providerSelect.dataset.defaultOpenrouterModel
+      : providerSelect.dataset.defaultGeminiModel;
+    if (defaultModel) modelInput.value = defaultModel;
+    refreshModels({ preserveValue: true });
+  });
   modelInput?.addEventListener("input", updateModelHint);
   modelInput?.addEventListener("change", () => {
     updateModelHint();

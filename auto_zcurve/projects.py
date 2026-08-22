@@ -339,7 +339,8 @@ def update_project_schema(
     return {"changed": True, "reset": has_results}
 
 
-def project_snapshot(project: ManagedProject) -> dict:
+def project_snapshot(project: ManagedProject, default_model: str | None = None) -> dict:
+    default_model = default_model or DEFAULT_MODEL
     sources = sorted(project.path.joinpath("sources").glob("*.pdf"))
     records = latest_by_source(load_extractions(project.path))
 
@@ -383,7 +384,7 @@ def project_snapshot(project: ManagedProject) -> dict:
         )
     settings = load_run_settings(project.path)
     default_parallel, default_delay = model_request_defaults(
-        settings.primary_model if settings else DEFAULT_MODEL,
+        settings.primary_model if settings else default_model,
         settings.provider if settings else "gemini",
     )
     successful_count = sum(item["status"] == "ok" for item in articles)
@@ -423,7 +424,7 @@ def project_snapshot(project: ManagedProject) -> dict:
         "report_summary": report_summary,
         "instructions": read_project_instructions(project),
         "provider": settings.provider if settings else "gemini",
-        "model": settings.primary_model if settings else DEFAULT_MODEL,
+        "model": settings.primary_model if settings else default_model,
         "parallel_requests": settings.parallel_requests if settings else default_parallel,
         "request_delay_sec": settings.request_delay_sec if settings else default_delay,
     }

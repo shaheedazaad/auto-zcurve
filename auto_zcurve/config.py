@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .credentials import credentials_dir
+from .models import DEFAULT_MODEL, normalize_model_name
 from .providers import normalize_provider
 
 
@@ -61,6 +62,23 @@ def normalize_service_tier(value: object) -> str:
     return tier
 
 
+def normalize_default_gemini_model(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return DEFAULT_MODEL
+    try:
+        return normalize_model_name(text, "gemini")
+    except ValueError:
+        return DEFAULT_MODEL
+
+
+def normalize_default_openrouter_model(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return normalize_model_name(text, "openrouter")
+
+
 @dataclass(frozen=True)
 class AppSettings:
     pdf_parser: str = DEFAULTS["pdf_parser"]
@@ -70,6 +88,8 @@ class AppSettings:
     parallel_requests: int = DEFAULTS["parallel_requests"]
     request_delay_sec: int = DEFAULTS["request_delay_sec"]
     max_upload_size_mb: int = DEFAULTS["max_upload_size_mb"]
+    default_gemini_model: str = DEFAULT_MODEL
+    default_openrouter_model: str = ""
 
 
 @dataclass
@@ -115,6 +135,8 @@ def load_app_settings() -> AppSettings:
                 1,
                 min(int(raw.get("max_upload_size_mb") or DEFAULTS["max_upload_size_mb"]), 512),
             ),
+            default_gemini_model=normalize_default_gemini_model(raw.get("default_gemini_model")),
+            default_openrouter_model=normalize_default_openrouter_model(raw.get("default_openrouter_model")),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return AppSettings()
@@ -129,6 +151,8 @@ def save_app_settings(settings: AppSettings) -> None:
         parallel_requests=max(1, min(int(settings.parallel_requests), 32)),
         request_delay_sec=max(0, min(int(settings.request_delay_sec), 3600)),
         max_upload_size_mb=max(1, min(int(settings.max_upload_size_mb), 512)),
+        default_gemini_model=normalize_default_gemini_model(settings.default_gemini_model),
+        default_openrouter_model=normalize_default_openrouter_model(settings.default_openrouter_model),
     )
     path = app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,6 +168,8 @@ def save_app_settings(settings: AppSettings) -> None:
                     "parallel_requests": normalized.parallel_requests,
                     "request_delay_sec": normalized.request_delay_sec,
                     "max_upload_size_mb": normalized.max_upload_size_mb,
+                    "default_gemini_model": normalized.default_gemini_model,
+                    "default_openrouter_model": normalized.default_openrouter_model,
                 },
                 indent=2,
             )

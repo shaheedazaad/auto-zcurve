@@ -78,6 +78,16 @@
             <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
             <p>Megabytes. Applied when new files are uploaded.</p>
           </div>
+          <div class="field">
+            <label for="default-gemini-model">Default Gemini model</label>
+            <input class="input" id="default-gemini-model" name="default_gemini_model" type="text" autocomplete="off" spellcheck="false" value="{{ app_settings.default_gemini_model }}" required>
+            <p>Used to prefill new projects' model field.</p>
+          </div>
+          <div class="field">
+            <label for="default-openrouter-model">Default OpenRouter model</label>
+            <input class="input" id="default-openrouter-model" name="default_openrouter_model" type="text" autocomplete="off" spellcheck="false" placeholder="vendor/model" value="{{ app_settings.default_openrouter_model }}">
+            <p>Optional. Used to prefill new projects' model field when OpenRouter is selected.</p>
+          </div>
         </div>
       </div>
       <div class="panel-foot">
@@ -86,6 +96,18 @@
       </div>
     </div>
   </form>
+
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <h2>Default extraction instructions</h2>
+        <p>New projects start from this text. Existing projects keep their own independent copy, editable per-project on the "Extraction instructions" tab.</p>
+      </div>
+    </div>
+    <div class="panel panel-pad">
+      <textarea class="textarea" rows="14" readonly>{{ default_instructions }}</textarea>
+    </div>
+  </section>
 
   <section class="section">
     <div class="section-head">

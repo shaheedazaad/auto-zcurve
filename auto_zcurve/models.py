@@ -135,10 +135,6 @@ def _supports_generate_content(model: object) -> bool:
     return any(str(action).lower() == "generatecontent" for action in actions)
 
 
-def _looks_like_document_model(name: str) -> bool:
-    return name.lower() in MAIN_MODEL_SET
-
-
 def _list_gemini_models(api_key: str) -> list[ModelOption]:
     try:
         from google import genai
@@ -152,7 +148,7 @@ def _list_gemini_models(api_key: str) -> list[ModelOption]:
         if not name:
             continue
         clean_name = strip_models_prefix(name)
-        if not _supports_generate_content(model) or not _looks_like_document_model(clean_name):
+        if not _supports_generate_content(model):
             continue
         display_name = str(_field(model, "display_name") or _field(model, "displayName") or clean_name)
         description = str(_field(model, "description") or "")
@@ -161,7 +157,14 @@ def _list_gemini_models(api_key: str) -> list[ModelOption]:
     unique: dict[str, ModelOption] = {}
     for option in options:
         unique.setdefault(option.name, option)
-    return sorted(unique.values(), key=lambda item: MAIN_MODELS.index(item.name.lower()))
+
+    def _sort_key(option: ModelOption) -> tuple[int, object]:
+        lname = option.name.lower()
+        if lname in MAIN_MODEL_SET:
+            return (0, MAIN_MODELS.index(lname))
+        return (1, lname)
+
+    return sorted(unique.values(), key=_sort_key)
 
 
 def list_live_models(
