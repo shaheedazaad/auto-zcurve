@@ -2,7 +2,7 @@
 
 !!! warning "Important"
     This tool is designed to help you quickly audit a literature for credibility
-    when planning your own studies. It is not suitable for producing publication-quality data.
+    when planning your own studies. It is not suitable for producing publication-quality data without quality-checking.
 
 auto-zcurve helps you build a **z-curve analysis** from a folder of PDF
 journal articles, without writing any code.
