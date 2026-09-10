@@ -125,7 +125,6 @@ def extract_pdf(
     response_schema: dict[str, Any],
     schema_config: ExtractionSchema,
     instruction_path: Path,
-    effect_definition: str | None,
     request_timeout_sec: int = 600,
     input_mode: str = "native_pdf",
     context_length: int | None = None,
@@ -141,7 +140,7 @@ def extract_pdf(
         raise RuntimeError("google-genai is not installed.") from exc
 
     client = genai.Client(api_key=api_key)
-    prompt = build_system_prompt(schema_config, instruction_path, effect_definition)
+    prompt = build_system_prompt(schema_config, instruction_path)
     # Normalize filename to NFC then strip any remaining non-ASCII so the
     # Gemini SDK can encode it in the HTTP Content-Disposition header.
     nfc_name = unicodedata.normalize("NFC", source_path.name)

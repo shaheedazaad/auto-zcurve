@@ -5,10 +5,6 @@ from pathlib import Path
 from .schema import ExtractionSchema, build_role_lookup
 
 
-def default_effect_definition() -> str:
-    return "Include only tests that support the claims in the article's title and/or abstract."
-
-
 def render_text_template(text: str, values: dict[str, str]) -> str:
     out = text
     for name, value in values.items():
@@ -19,7 +15,6 @@ def render_text_template(text: str, values: dict[str, str]) -> str:
 def build_system_prompt(
     config: ExtractionSchema,
     instruction_path: Path,
-    effect_definition: str | None = None,
 ) -> str:
     lookup = build_role_lookup(config)
     reported_field = (
@@ -27,12 +22,10 @@ def build_system_prompt(
         or lookup["effect"].get("reported_test")
         or "reported_statistic"
     )
-    definition = (effect_definition or default_effect_definition()).strip()
     with instruction_path.open("r", encoding="utf-8") as handle:
         return render_text_template(
             handle.read(),
             {
                 "reported_statistic_field": reported_field,
-                "effect_definition": definition,
             },
         )

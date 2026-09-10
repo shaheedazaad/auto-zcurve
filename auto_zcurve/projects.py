@@ -18,7 +18,12 @@ from .artifacts import (
     read_disclosure_summary,
     read_zcurve_summary,
 )
-from .config import DEFAULTS, load_run_settings
+from .config import (
+    DEFAULTS,
+    legacy_effect_definition,
+    load_run_settings,
+    remove_legacy_effect_definition,
+)
 from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
@@ -28,6 +33,10 @@ PROJECT_ID_RE = re.compile(r"^[a-f0-9]{16}$")
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._ -]+")
 PROJECT_INSTRUCTIONS_NAME = "extraction_instructions.md"
 PROJECT_SCHEMA_NAME = "extraction_schema.yml"
+LEGACY_EFFECT_DEFINITION_PLACEHOLDER = "{{effect_definition}}"
+LEGACY_DEFAULT_EFFECT_DEFINITION = (
+    "Include only tests that support the claims in the article's title and/or abstract."
+)
 MAX_INSTRUCTIONS_CHARS = 100_000
 MAX_SCHEMA_CHARS = 200_000
 
@@ -218,7 +227,18 @@ def save_upload(
 
 def project_instruction_path(project_dir: Path) -> Path:
     project_path = project_dir / PROJECT_INSTRUCTIONS_NAME
-    return project_path if project_path.is_file() else DEFAULT_INSTRUCTIONS
+    if not project_path.is_file():
+        return DEFAULT_INSTRUCTIONS
+    instructions = project_path.read_text(encoding="utf-8")
+    if LEGACY_EFFECT_DEFINITION_PLACEHOLDER not in instructions:
+        return project_path
+    definition = legacy_effect_definition(project_dir) or LEGACY_DEFAULT_EFFECT_DEFINITION
+    project_path.write_text(
+        instructions.replace(LEGACY_EFFECT_DEFINITION_PLACEHOLDER, definition),
+        encoding="utf-8",
+    )
+    remove_legacy_effect_definition(project_dir)
+    return project_path
 
 
 def read_project_instructions(project: ManagedProject) -> str:

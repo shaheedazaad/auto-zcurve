@@ -158,7 +158,6 @@ def _settings_from_args(
         max_upload_size_mb=(
             existing.max_upload_size_mb if existing else app_defaults.max_upload_size_mb
         ),
-        effect_definition=existing.effect_definition if existing else None,
         pdf_parser=app_defaults.pdf_parser,
         reasoning_effort=app_defaults.reasoning_effort,
         service_tier=app_defaults.service_tier,

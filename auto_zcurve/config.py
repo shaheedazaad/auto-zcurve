@@ -99,7 +99,6 @@ class RunSettings:
     parallel_requests: int = DEFAULTS["parallel_requests"]
     request_delay_sec: int = DEFAULTS["request_delay_sec"]
     max_upload_size_mb: int = DEFAULTS["max_upload_size_mb"]
-    effect_definition: str | None = None
     provider: str = "gemini"
     pdf_parser: str = DEFAULTS["pdf_parser"]
     reasoning_effort: str = DEFAULTS["reasoning_effort"]
@@ -189,6 +188,45 @@ def settings_path(project_dir: Path) -> Path:
     return project_dir / ".auto_zcurve" / "run_settings.json"
 
 
+def legacy_effect_definition(project_dir: Path) -> str | None:
+    """Read the retired per-run effect-definition setting for migration."""
+
+    path = settings_path(project_dir)
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        if not isinstance(raw, dict):
+            return None
+        legacy_value = raw.get("effect_definition")
+        return legacy_value.strip() if isinstance(legacy_value, str) and legacy_value.strip() else None
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def remove_legacy_effect_definition(project_dir: Path) -> None:
+    """Remove the retired setting after its value has been migrated."""
+
+    path = settings_path(project_dir)
+    if not path.is_file():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        if not isinstance(raw, dict) or "effect_definition" not in raw:
+            return
+        raw.pop("effect_definition")
+        temporary = path.with_suffix(".json.tmp")
+        try:
+            temporary.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return
+
+
 def load_run_settings(project_dir: Path) -> RunSettings | None:
     path = settings_path(project_dir)
     if not path.exists():
@@ -208,7 +246,6 @@ def load_run_settings(project_dir: Path) -> RunSettings | None:
         parallel_requests=int(raw.get("parallel_requests") or DEFAULTS["parallel_requests"]),
         request_delay_sec=max(0, min(int(raw.get("request_delay_sec") if raw.get("request_delay_sec") is not None else DEFAULTS["request_delay_sec"]), 3600)),
         max_upload_size_mb=int(raw.get("max_upload_size_mb") or DEFAULTS["max_upload_size_mb"]),
-        effect_definition=raw.get("effect_definition") or None,
         pdf_parser=normalize_pdf_parser(raw.get("pdf_parser")),
         reasoning_effort=normalize_reasoning_effort(raw.get("reasoning_effort")),
         service_tier=normalize_service_tier(raw.get("service_tier")),
@@ -225,7 +262,6 @@ def save_run_settings(project_dir: Path, settings: RunSettings) -> None:
         "parallel_requests": settings.parallel_requests,
         "request_delay_sec": settings.request_delay_sec,
         "max_upload_size_mb": settings.max_upload_size_mb,
-        "effect_definition": settings.effect_definition,
         "pdf_parser": normalize_pdf_parser(settings.pdf_parser),
         "reasoning_effort": normalize_reasoning_effort(settings.reasoning_effort),
         "service_tier": normalize_service_tier(settings.service_tier),

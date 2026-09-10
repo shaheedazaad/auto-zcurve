@@ -45,7 +45,6 @@ def render_report(
     project_dir: Path,
     schema_path: Path,
     model_name: str,
-    effect_definition: str | None,
     instruction_path: Path = DEFAULT_INSTRUCTIONS,
 ) -> Path:
     out_dir = project_dir / "output"
@@ -78,7 +77,6 @@ def render_report(
             "AUTO_ZCURVE_INSTRUCTIONS_PATH": str(instruction_path.resolve()),
             "AUTO_ZCURVE_MODEL_NAME": model_name,
             "AUTO_ZCURVE_VERSION": __version__,
-            "AUTO_ZCURVE_EFFECT_DEFINITION": effect_definition or "",
             "DENO_DIR": str(cache_dir / "deno"),
             "QUARTO_CACHE": str(cache_dir / "quarto"),
             "XDG_CACHE_HOME": str(cache_dir / "xdg"),

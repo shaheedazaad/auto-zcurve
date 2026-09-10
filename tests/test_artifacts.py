@@ -5,6 +5,7 @@ import unittest
 
 from auto_zcurve.artifacts import (
     append_run_log,
+    load_extractions,
     load_run_log,
     parse_zcurve_summary,
     read_zcurve_summary,
@@ -14,6 +15,27 @@ from auto_zcurve.gemini import ExtractionResult
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_load_extractions_recovers_from_corrupt_aggregate_using_raw_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            raw = project / "output" / "raw"
+            raw.mkdir(parents=True)
+            aggregate = project / "output" / "extractions.json"
+            corrupt_content = '[{"source_name":"study.pdf" "status":"ok"}]'
+            aggregate.write_text(corrupt_content, encoding="utf-8")
+            (raw / "study-12345678.json").write_text(
+                json.dumps({"source_name": "study.pdf", "status": "ok", "effects": 1}),
+                encoding="utf-8",
+            )
+
+            records = load_extractions(project)
+
+            self.assertEqual(records, [{"source_name": "study.pdf", "status": "ok", "effects": 1}])
+            self.assertEqual(json.loads(aggregate.read_text(encoding="utf-8")), records)
+            backups = list((project / "output").glob("extractions.corrupt-*.json"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(encoding="utf-8"), corrupt_content)
+
     def test_upsert_extraction_and_append_run_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)

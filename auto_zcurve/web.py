@@ -857,7 +857,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else default_parallel), 32)),
                 request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else default_delay), 3600)),
                 max_upload_size_mb=current.max_upload_size_mb,
-                effect_definition=current.effect_definition,
                 pdf_parser=current.pdf_parser,
                 reasoning_effort=current.reasoning_effort,
                 service_tier=current.service_tier,
@@ -897,7 +896,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else (existing.parallel_requests if use_saved_values else default_parallel)), 32)),
                 request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else (existing.request_delay_sec if use_saved_values else default_delay)), 3600)),
                 max_upload_size_mb=existing.max_upload_size_mb if existing else app_defaults.max_upload_size_mb,
-                effect_definition=existing.effect_definition if existing else None,
                 pdf_parser=app_defaults.pdf_parser,
                 reasoning_effort=app_defaults.reasoning_effort,
                 service_tier=app_defaults.service_tier,
@@ -949,7 +947,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else (existing.parallel_requests if use_saved_values else default_parallel)), 32)),
                 request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else (existing.request_delay_sec if use_saved_values else default_delay)), 3600)),
                 max_upload_size_mb=existing.max_upload_size_mb,
-                effect_definition=existing.effect_definition,
                 pdf_parser=app_defaults.pdf_parser,
                 reasoning_effort=app_defaults.reasoning_effort,
                 service_tier=app_defaults.service_tier,
@@ -1059,7 +1056,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 rendered_instructions = build_system_prompt(
                     read_extraction_schema(schema_path),
                     project_instruction_path(project.path),
-                    run_settings.effect_definition if run_settings else None,
                 )
                 archive.writestr("extraction_instructions.md", rendered_instructions)
             if output.exists():

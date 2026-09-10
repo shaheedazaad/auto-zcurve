@@ -929,7 +929,6 @@ def run_tui() -> int:
                     request_timeout_sec=timeout_sec,
                     parallel_requests=parallel_requests,
                     max_upload_size_mb=max_upload_mb,
-                    effect_definition=existing.effect_definition if existing else None,
                 )
 
                 if retry:

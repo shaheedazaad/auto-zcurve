@@ -290,7 +290,6 @@ def extract_pdf(
     response_schema: dict[str, Any],
     schema_config: ExtractionSchema,
     instruction_path: Path,
-    effect_definition: str | None,
     request_timeout_sec: int = 600,
     input_mode: str = "native_pdf",
     context_length: int | None = None,
@@ -299,7 +298,7 @@ def extract_pdf(
     endpoint_order: tuple[str, ...] = (),
 ) -> ExtractionResult:
     started = time.monotonic()
-    prompt = build_system_prompt(schema_config, instruction_path, effect_definition)
+    prompt = build_system_prompt(schema_config, instruction_path)
     parsed_document = None
     estimated_input_tokens = None
     if input_mode in {"native_pdf", "cloudflare_pdf"}:

@@ -30,7 +30,6 @@ instruction_path <- Sys.getenv("AUTO_ZCURVE_INSTRUCTIONS_PATH", file.path(repo_d
 model_name <- Sys.getenv("AUTO_ZCURVE_MODEL_NAME")
 provenance_app_version <- Sys.getenv("AUTO_ZCURVE_VERSION", "unknown")
 provenance_run_date <- format(Sys.time(), "%Y-%m-%d")
-effect_definition <- Sys.getenv("AUTO_ZCURVE_EFFECT_DEFINITION")
 
 source(file.path(repo_dir, "R", "utils.R"))
 source(file.path(repo_dir, "R", "schema.R"))
@@ -143,7 +142,7 @@ if (identical(zcurve_bundle$status, "ok")) {
 }
 
 generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
-instructions_text <- build_system_prompt(config, instruction_path, effect_definition)
+instructions_text <- build_system_prompt(config, instruction_path)
 
 truncate_report_text <- function(x, max_chars = 180) {
   if (is.null(x)) {

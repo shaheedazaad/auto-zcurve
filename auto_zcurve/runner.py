@@ -238,7 +238,6 @@ def _process_one(
             response_schema=response_schema,
             schema_config=config,
             instruction_path=project_instruction_path(project_dir),
-            effect_definition=settings.effect_definition,
             request_timeout_sec=settings.request_timeout_sec,
             input_mode=model_option.input_mode,
             context_length=model_option.context_length,
@@ -460,7 +459,6 @@ def run_project(
             project_dir=project_dir,
             schema_path=project_dir / "extraction_schema.yml",
             model_name=settings.primary_model,
-            effect_definition=settings.effect_definition,
             instruction_path=project_instruction_path(project_dir),
         )
         try:
@@ -536,7 +534,6 @@ def retry_project(
             project_dir=project_dir,
             schema_path=project_dir / "extraction_schema.yml",
             model_name=settings.primary_model,
-            effect_definition=settings.effect_definition,
             instruction_path=project_instruction_path(project_dir),
         )
         try:
@@ -562,7 +559,6 @@ def regenerate_report(
             project_dir=project_dir,
             schema_path=project_dir / "extraction_schema.yml",
             model_name=settings.primary_model,
-            effect_definition=settings.effect_definition,
             instruction_path=project_instruction_path(project_dir),
         )
         progress.advance("Report rendered")

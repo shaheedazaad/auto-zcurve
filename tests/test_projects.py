@@ -12,6 +12,7 @@ from auto_zcurve.projects import (
     create_project,
     get_project,
     list_projects,
+    read_project_instructions,
     safe_upload_name,
     save_upload,
     update_project_instructions,
@@ -20,6 +21,35 @@ from auto_zcurve.projects import (
 
 
 class ManagedProjectTests(unittest.TestCase):
+    def test_legacy_effect_definition_is_migrated_into_project_instructions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = create_project("Legacy instructions", root=Path(tmp))
+            instruction_path = project.path / "extraction_instructions.md"
+            instruction_path.write_text("## Effects of interest\n\n{{effect_definition}}\n", encoding="utf-8")
+            settings_path = project.path / ".auto_zcurve" / "run_settings.json"
+            settings_path.parent.mkdir(exist_ok=True)
+            settings_path.write_text(
+                '{"primary_model":"legacy-model","effect_definition":"Extract primary outcomes only."}\n',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                read_project_instructions(project),
+                "## Effects of interest\n\nExtract primary outcomes only.\n",
+            )
+            self.assertNotIn("effect_definition", settings_path.read_text(encoding="utf-8"))
+
+    def test_legacy_instruction_without_saved_value_uses_historical_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = create_project("Legacy default", root=Path(tmp))
+            instruction_path = project.path / "extraction_instructions.md"
+            instruction_path.write_text("{{effect_definition}}\n", encoding="utf-8")
+
+            self.assertEqual(
+                read_project_instructions(project),
+                "Include only tests that support the claims in the article's title and/or abstract.\n",
+            )
+
     def test_create_reopen_and_list_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

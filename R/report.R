@@ -932,30 +932,15 @@ build_reference_table <- function(results, config) {
   dplyr::distinct(refs)
 }
 
-default_effect_definition <- function() {
-  paste(
-    "Extract each article's 'focal' effects.",
-    "Focal effects are those that support the claims in either the title or abstract of the article",
-    "(a non-focal effect, for example, would be a manipulation check)."
-  )
-}
-
-build_system_prompt <- function(config, instruction_path, effect_definition = NULL) {
+build_system_prompt <- function(config, instruction_path) {
   lookup <- build_role_lookup(config)
   reported_field <- lookup$effect$reported_statistic %||% lookup$effect$reported_test %||% "reported_statistic"
 
-  base_prompt <- render_text_template(
+  render_text_template(
     read_text_file(instruction_path),
     list(
       reported_statistic_field = reported_field
     )
   )
 
-  effect_definition <- trimws(safe_character(effect_definition %||% default_effect_definition()))
-
-  if (!is.na(effect_definition) && nzchar(effect_definition)) {
-    paste(base_prompt, "", "## Effects of interest", effect_definition, sep = "\n")
-  } else {
-    base_prompt
-  }
 }

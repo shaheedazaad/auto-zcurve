@@ -17,7 +17,7 @@ Also ignore secondary analyses, for example robustness checks, sensitivity analy
 
 ## Effects of interest
 
-{{effect_definition}}
+Include only tests that are presented by the authors as support for the claims in the article's title and/or abstract. All extracted claims must be present in the title or abstract.
 
 ## Statistic extraction
 

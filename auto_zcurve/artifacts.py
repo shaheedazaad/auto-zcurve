@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -82,12 +84,75 @@ def extraction_record(result: ExtractionResult) -> dict[str, Any]:
     }
 
 
+def _atomic_json_dump(path: Path, value: Any) -> None:
+    """Write JSON without exposing a partially-written file to readers."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _corrupt_backup_path(path: Path) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    candidate = path.with_name(f"{path.stem}.corrupt-{timestamp}{path.suffix}")
+    counter = 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}.corrupt-{timestamp}-{counter}{path.suffix}")
+        counter += 1
+    return candidate
+
+
+def _raw_extraction_records(project_dir: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for path in sorted(raw_dir(project_dir).glob("*.json")):
+        if path.name.endswith(".provider-response.json"):
+            continue
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(loaded, dict) and str(loaded.get("source_name") or "").strip():
+            records.append(loaded)
+    return records
+
+
+def _recover_corrupt_extractions(project_dir: Path, path: Path) -> list[dict[str, Any]]:
+    """Preserve a broken aggregate and rebuild it from individual saved records."""
+    records = _raw_extraction_records(project_dir)
+    try:
+        path.replace(_corrupt_backup_path(path))
+        save_extractions(project_dir, records)
+    except OSError:
+        # Returning recovered records still keeps the app usable when the output
+        # directory cannot be repaired (for example, a read-only backup volume).
+        pass
+    return records
+
+
 def load_extractions(project_dir: Path) -> list[dict[str, Any]]:
     path = output_dir(project_dir) / "extractions.json"
     if not path.exists():
         return []
-    with path.open("r", encoding="utf-8") as handle:
-        loaded = json.load(handle)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _recover_corrupt_extractions(project_dir, path)
     if isinstance(loaded, list):
         return loaded
     raise ValueError(f"Expected a JSON array in {path}")
@@ -96,9 +161,7 @@ def load_extractions(project_dir: Path) -> list[dict[str, Any]]:
 def save_extractions(project_dir: Path, records: list[dict[str, Any]]) -> None:
     ensure_output_dirs(project_dir)
     path = output_dir(project_dir) / "extractions.json"
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(records, handle, indent=2, ensure_ascii=False)
-        handle.write("\n")
+    _atomic_json_dump(path, records)
 
 
 def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[str, Any]]:
@@ -139,10 +202,8 @@ def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[
     if not replaced:
         records.append(record)
 
+    _atomic_json_dump(raw_path(project_dir, result.source_name), record)
     save_extractions(project_dir, records)
-    with raw_path(project_dir, result.source_name).open("w", encoding="utf-8") as handle:
-        json.dump(record, handle, indent=2, ensure_ascii=False)
-        handle.write("\n")
     return records
 
 

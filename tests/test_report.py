@@ -30,7 +30,6 @@ class ReportRenderTests(unittest.TestCase):
                     project_dir=project,
                     schema_path=schema,
                     model_name="gemini-3.1-pro-preview",
-                    effect_definition=None,
                 )
 
             self.assertEqual(report_path, project / "output" / "report.html")

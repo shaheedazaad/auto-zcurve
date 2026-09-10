@@ -132,7 +132,6 @@ class OpenRouterTests(unittest.TestCase):
                     response_schema=response_schema,
                     schema_config=config,
                     instruction_path=Path(tmp) / "unused.md",
-                    effect_definition=None,
                     reasoning_effort="high",
                 )
 
@@ -173,7 +172,6 @@ class OpenRouterTests(unittest.TestCase):
                     response_schema=build_response_schema(config),
                     schema_config=config,
                     instruction_path=Path(tmp) / "unused.md",
-                    effect_definition=None,
                     endpoint_order=("google-vertex/global", "deepinfra/fp8"),
                 )
 
@@ -211,7 +209,6 @@ class OpenRouterTests(unittest.TestCase):
                     response_schema=build_response_schema(config),
                     schema_config=config,
                     instruction_path=root / "unused.md",
-                    effect_definition=None,
                     input_mode="cloudflare_pdf",
                     context_length=1_048_576,
                     project_dir=root,

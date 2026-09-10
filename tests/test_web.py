@@ -81,6 +81,25 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertIn("Could not open the project folder", response.json()["detail"])
 
+    def test_project_status_recovers_from_corrupt_extractions_file(self):
+        project = create_project("Corrupt extraction recovery", root=self.root)
+        (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
+        output = project.path / "output"
+        (output / "extractions.json").write_text(
+            '[{"source_name":"study.pdf" "status":"ok"}]',
+            encoding="utf-8",
+        )
+        (output / "raw" / "study-12345678.json").write_text(
+            '{"source_name":"study.pdf","status":"ok","effects":1}',
+            encoding="utf-8",
+        )
+
+        response = self.client.get(f"/{TOKEN}/api/projects/{project.project_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["articles"][0]["status"], "ok")
+        self.assertEqual(len(list(output.glob("extractions.corrupt-*.json"))), 1)
+
     def test_vendored_ui_assets_are_served_from_the_local_allowlist(self):
         for filename, content_type in (
             ("app.css", "text/css"),
@@ -148,7 +167,10 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("<h1>Projects</h1>", response.text)
         self.assertIn('data-variant="warning"', response.text)
-        self.assertIn("It is not suitable for producing publication-quality data.", response.text)
+        self.assertIn(
+            "It is not suitable for producing publication-quality data without quality-checking.",
+            response.text,
+        )
         self.assertIn("Search projects", response.text)
         self.assertIn("/static/vendor/basecoat.min.css", response.text)
         self.assertNotIn("cdn.jsdelivr.net", response.text)
