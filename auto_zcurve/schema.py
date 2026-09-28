@@ -157,7 +157,7 @@ def build_response_schema(config: ExtractionSchema) -> dict[str, Any]:
     properties: dict[str, Any] = {
         "effects": {
             "type": "array",
-            "description": "One entry per extracted focal effect or statistical test.",
+            "description": "One entry per extracted statistical test, including ineligible tests and tests reported in tables and figures.",
             "items": effect_schema,
         }
     }

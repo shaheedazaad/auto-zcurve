@@ -17,7 +17,7 @@ Keep this file in the same directory as `disclosure_table.csv` and
 ## Load and filter the disclosed results
 
 The filter is the same one used for the generated analysis: an effect must be
-marked as usable, have a non-empty decoded input, and have a finite z-value.
+eligible and marked as usable, have a non-empty decoded input, and have a finite z-value.
 Excluded effects remain in the CSV for audit purposes.
 
 ```{r}
@@ -28,8 +28,12 @@ library(zcurve)
 disclosure <- read_csv("disclosure_table.csv", show_col_types = FALSE)
 settings <- read_csv("zcurve_reproduction_settings.csv", show_col_types = FALSE)
 
+# Older disclosure files predate explicit eligibility coding.
+if (!"eligible" %in% names(disclosure)) disclosure$eligible <- TRUE
+
 analysis_rows <- disclosure |>
   filter(
+    eligible %in% TRUE,
     usable_for_zcurve %in% TRUE,
     !is.na(analysis_input),
     nzchar(trimws(analysis_input)),

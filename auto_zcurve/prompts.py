@@ -27,5 +27,7 @@ def build_system_prompt(
             handle.read(),
             {
                 "reported_statistic_field": reported_field,
+                "eligible_field": lookup["effect"].get("eligible") or "eligible",
+                "eligibility_explanation_field": lookup["effect"].get("eligibility_explanation") or "eligibility_explanation",
             },
         )

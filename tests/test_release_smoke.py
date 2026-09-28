@@ -57,6 +57,20 @@ class ReleaseSmokeTests(unittest.TestCase):
                 }
             )
 
+            for effect in effects:
+                effect["eligible"] = True
+                effect["eligibility_explanation"] = "Supports a fixture abstract claim."
+            effects.append(
+                {
+                    "claim": "Secondary analysis fixture",
+                    "reported_statistic": "z=2.41",
+                    "eligible": False,
+                    "eligibility_explanation": "Secondary analysis unrelated to abstract claims.",
+                    "significant": True,
+                    "one_sided": False,
+                }
+            )
+
             result = ExtractionResult(
                 source_path=pdf,
                 source_name=pdf.name,
@@ -101,6 +115,11 @@ class ReleaseSmokeTests(unittest.TestCase):
             self.assertEqual(excluded["analysis_p"], "0")
             self.assertEqual(excluded["analysis_z"], "NA")
             self.assertIn("non-finite z-value", excluded["zcurve_exclusion_reason"])
+            ineligible = next(row for row in rows if row["claim"] == "Secondary analysis fixture")
+            self.assertEqual(ineligible["eligible"], "FALSE")
+            self.assertEqual(ineligible["usable_for_zcurve"], "FALSE")
+            self.assertIn("Not eligible for z-curve", ineligible["zcurve_exclusion_reason"])
+            self.assertEqual(sum(row["usable_for_zcurve"] == "TRUE" for row in rows), 10)
 
             reproduction_cache = project / "output" / ".reproduction-cache"
             reproduction_home = reproduction_cache / "home"

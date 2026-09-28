@@ -13,6 +13,7 @@ from auto_zcurve.projects import (
     get_project,
     list_projects,
     read_project_instructions,
+    read_project_schema,
     safe_upload_name,
     save_upload,
     update_project_instructions,
@@ -21,6 +22,25 @@ from auto_zcurve.projects import (
 
 
 class ManagedProjectTests(unittest.TestCase):
+    def test_legacy_project_reopens_without_rewriting_inputs_or_results(self):
+        from auto_zcurve.schema import read_extraction_schema, validate_extracted_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = create_project("Legacy extraction", root=root)
+            schema_text = "effects:\n  reported_statistic:\n    type: string\n"
+            (project.path / "extraction_schema.yml").write_text(schema_text)
+            instructions = "Extract primary outcomes only.\n"
+            (project.path / "extraction_instructions.md").write_text(instructions)
+            result_path = project.path / "output" / "raw" / "saved.json"
+            result_path.write_text('{"effects": [{"reported_statistic": "z=2.41"}]}')
+            reopened = get_project(project.project_id, root=root)
+            self.assertEqual(read_project_schema(reopened), schema_text)
+            self.assertEqual(read_project_instructions(reopened), instructions)
+            self.assertTrue(result_path.is_file())
+            schema = read_extraction_schema(reopened.path / "extraction_schema.yml")
+            validate_extracted_json({"effects": [{"reported_statistic": "z=2.41"}]}, schema)
+
     def test_legacy_effect_definition_is_migrated_into_project_instructions(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = create_project("Legacy instructions", root=Path(tmp))

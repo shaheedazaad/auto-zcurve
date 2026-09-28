@@ -311,6 +311,20 @@ class WebAppTests(unittest.TestCase):
             response.text,
         )
 
+    def test_slow_extraction_warning_uses_a_paragraph_body(self):
+        project = create_project("Slow extraction notice", root=self.root)
+
+        response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            '<div class="alert" data-variant="warning" data-slow-extraction-warning hidden>\n'
+            '            <h2>This paper is taking longer than a minute.</h2>\n'
+            '            <section>\n'
+            '              <p>Flex tier can queue requests to reduce cost.',
+            response.text,
+        )
+
     def test_project_credential_prompt_links_to_central_settings(self):
         project = create_project("Provider credentials", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")

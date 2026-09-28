@@ -198,3 +198,55 @@ stopifnot(
   identical(probe_result$execution$mode, "sequential_fallback"),
   grepl("local sockets blocked", probe_result$execution$message, fixed = TRUE)
 )
+
+# Eligibility filtering retains every disclosed row and maps duplicate inputs
+# back only to the eligible row. Avoid an expensive bootstrap in this test.
+source(file.path("R", "schema.R"))
+eligibility_config <- read_extraction_config("config/extraction_schema.yml")
+original_fit <- fit_zcurve_with_parallel_fallback
+captured_inputs <- NULL
+fit_zcurve_with_parallel_fallback <- function(parsed) {
+  captured_inputs <<- parsed$precise$input
+  list(fit = simpleError("test: stop before bootstrap"))
+}
+effects <- tibble::tibble(
+  source_name = rep("article.pdf", 4),
+  reported_statistic = c("z=2.41", "z=2.41", "z=3.1", NA_character_),
+  eligible = c(FALSE, TRUE, NA, TRUE),
+  eligibility_explanation = c("Follow-up test", "Abstract claim", NA, "Focal test")
+)
+result <- run_zcurve_analysis(effects, eligibility_config)
+stopifnot(
+  nrow(result$disclosure_table) == 4L,
+  identical(result$disclosure_table$usable_for_zcurve, c(FALSE, TRUE, FALSE, FALSE)),
+  length(captured_inputs) == 1L,
+  grepl("Follow-up test", result$disclosure_table$zcurve_exclusion_reason[[1]]),
+  !is.na(result$disclosure_table$zcurve_exclusion_reason[[3]]),
+  !is.na(result$disclosure_table$zcurve_exclusion_reason[[4]])
+)
+all_excluded <- run_zcurve_analysis(effects[c(1, 3), ], eligibility_config)
+stopifnot(nrow(all_excluded$disclosure_table) == 2L,
+          !any(all_excluded$disclosure_table$usable_for_zcurve))
+legacy_config <- eligibility_config
+legacy_config$effects$eligible <- NULL
+legacy_config$effects$eligibility_explanation <- NULL
+legacy_effects <- effects[1:2, c("source_name", "reported_statistic")]
+legacy <- run_zcurve_analysis(legacy_effects, legacy_config)
+stopifnot(all(legacy$disclosure_table$eligible),
+          all(legacy$disclosure_table$usable_for_zcurve),
+          all(grepl("Legacy project", legacy$disclosure_table$eligibility_explanation)))
+# New schemas with missing eligibility never use the legacy fallback.
+missing <- run_zcurve_analysis(legacy_effects, eligibility_config)
+stopifnot(!any(missing$disclosure_table$eligible))
+# Role aliases work with custom schemas.
+aliased_config <- eligibility_config
+aliased_config$effects$include <- aliased_config$effects$eligible
+aliased_config$effects$eligible <- NULL
+aliased_config$effects$reason <- aliased_config$effects$eligibility_explanation
+aliased_config$effects$eligibility_explanation <- NULL
+names(effects)[names(effects) == "eligible"] <- "include"
+names(effects)[names(effects) == "eligibility_explanation"] <- "reason"
+aliased <- run_zcurve_analysis(effects, aliased_config)
+stopifnot(identical(aliased$disclosure_table$eligible, c(FALSE, TRUE, FALSE, TRUE)),
+          aliased$disclosure_table$eligibility_explanation[[1]] == "Follow-up test")
+fit_zcurve_with_parallel_fallback <- original_fit

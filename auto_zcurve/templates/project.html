@@ -402,7 +402,9 @@
           </div>
           <div class="alert" data-variant="warning" data-slow-extraction-warning hidden>
             <h2>This paper is taking longer than a minute.</h2>
-            <section>Flex tier can queue requests to reduce cost. For faster processing, change the Gemini usage tier in <a href="/{{ token }}/settings">Settings</a>.</section>
+            <section>
+              <p>Flex tier can queue requests to reduce cost. For faster processing, change the Gemini usage tier in <a href="/{{ token }}/settings">Settings</a>.</p>
+            </section>
           </div>
 
           <div class="alert" data-variant="success" data-run-result {% if not project.has_report %}hidden{% endif %}>

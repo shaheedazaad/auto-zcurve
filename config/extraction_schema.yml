@@ -11,6 +11,16 @@ meta_data:
     description: A brief description of the study, including its main research question, design, and conclusions.
 
 effects:
+  eligible:
+    type: boolean
+    role: eligible
+    required: true
+    description: Whether this test meets the instructions' effects-of-interest criteria for inclusion in z-curve. Retain ineligible tests in effects too.
+  eligibility_explanation:
+    type: string
+    role: eligibility_explanation
+    required: true
+    description: Explain why this test is eligible or ineligible, referring to the eligibility criteria and article evidence. Explain uncertainty when eligibility cannot be established.
   claim:
     type: string
     description: Short description of the substantive claim tied to the effect.
@@ -29,7 +39,7 @@ effects:
     type: string
     role: reported_statistic
     description: >
-      A statistical result. That can either be a t, F, chi, z, or *exact* p value. Results *must* be precisely in one of the following
+      A statistical result; use null if no supported statistic can be recovered, but retain the test and its original result in reported_statistic_quote. That can either be a t, F, chi, z, or *exact* p value. Results *must* be precisely in one of the following
       formats with no additional text: t(38)=2.14, F(1,98)=4.10, chi(2)=5.21, z=2.41, or p=0.012.
   reported_statistic_quote:
     type: string

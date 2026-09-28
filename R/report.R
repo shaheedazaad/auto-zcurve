@@ -815,15 +815,48 @@ prepare_zcurve_results <- function(parsed, row_map, disclosure_table) {
   )
 }
 
+# Old projects selected effects at extraction time and have no eligibility field.
+# Preserve that behavior without rewriting their schema, prompts, or raw results.
+normalize_effect_eligibility <- function(effect_table, config) {
+  lookup <- build_role_lookup(config)
+  available <- union(names(config$effects), names(effect_table))
+  eligible_field <- lookup_field(lookup$effect, c("eligible"), available)
+  explanation_field <- lookup_field(lookup$effect, c("eligibility_explanation"), available)
+  legacy <- is.null(eligible_field)
+  values <- if (!legacy && eligible_field %in% names(effect_table)) {
+    effect_table[[eligible_field]]
+  } else {
+    rep(if (legacy) TRUE else NA, nrow(effect_table))
+  }
+  # Only an explicit boolean true qualifies in schemas that code eligibility.
+  effect_table$eligible <- vapply(seq_len(nrow(effect_table)), function(i) {
+    isTRUE(values[[i]])
+  }, logical(1))
+  explanation <- if (!is.null(explanation_field) && explanation_field %in% names(effect_table)) {
+    as.character(effect_table[[explanation_field]])
+  } else {
+    rep(NA_character_, nrow(effect_table))
+  }
+  missing <- is.na(explanation) | !nzchar(trimws(explanation))
+  explanation[missing] <- if (legacy) {
+    "Legacy project: eligibility was not coded; retained under the original extraction criteria."
+  } else {
+    "No eligibility explanation was provided."
+  }
+  effect_table$eligibility_explanation <- explanation
+  effect_table
+}
+
 run_zcurve_analysis <- function(effect_table, config) {
   if (!nrow(effect_table)) {
     return(list(status = "error", message = "No extracted effects are available yet."))
   }
 
+  effect_table <- normalize_effect_eligibility(effect_table, config)
   effect_table <- validate_extracted_statistics(effect_table, config)
   analysis_input <- build_analysis_input(effect_table, config)
   cluster_id <- build_zcurve_cluster_id(effect_table, config)
-  valid <- !is.na(analysis_input) & nzchar(trimws(analysis_input))
+  valid <- effect_table$eligible & !is.na(analysis_input) & nzchar(trimws(analysis_input))
 
   disclosure_table <- dplyr::mutate(
     effect_table,
@@ -832,13 +865,17 @@ run_zcurve_analysis <- function(effect_table, config) {
     usable_for_zcurve = FALSE,
     analysis_p = NA_real_,
     analysis_z = NA_real_,
-    zcurve_exclusion_reason = NA_character_
+    zcurve_exclusion_reason = ifelse(
+      !eligible,
+      paste0("Not eligible for z-curve: ", eligibility_explanation),
+      ifelse(!valid, "No supported statistic could be decoded.", NA_character_)
+    )
   )
 
   if (!any(valid)) {
     return(list(
       status = "error",
-      message = "No effect rows contain a `reported_statistic`, `p_value`, or `z_value` field usable for z-curve.",
+      message = "No eligible effect rows contain a `reported_statistic`, `p_value`, or `z_value` field usable for z-curve.",
       disclosure_table = disclosure_table
     ))
   }
@@ -939,7 +976,9 @@ build_system_prompt <- function(config, instruction_path) {
   render_text_template(
     read_text_file(instruction_path),
     list(
-      reported_statistic_field = reported_field
+      reported_statistic_field = reported_field,
+      eligible_field = lookup$effect$eligible %||% "eligible",
+      eligibility_explanation_field = lookup$effect$eligibility_explanation %||% "eligibility_explanation"
     )
   )
 

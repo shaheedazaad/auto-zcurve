@@ -28,6 +28,8 @@ class SchemaTests(unittest.TestCase):
                 "effects": [
                     {
                         "claim": "Claim",
+                        "eligible": True,
+                        "eligibility_explanation": "Supports the abstract claim.",
                         "claim_quote": "Quote",
                         "test_description": "Test",
                         "test_description_quote": "Quote",
@@ -45,6 +47,31 @@ class SchemaTests(unittest.TestCase):
             },
             schema,
         )
+
+    def test_default_schema_requires_eligibility_but_retains_unusable_tests(self):
+        schema = read_extraction_schema(Path("config/extraction_schema.yml"))
+        payload = {"meta_data": {}, "effects": [{
+            "eligible": False,
+            "eligibility_explanation": "Secondary analysis reported only in Figure 2.",
+            "reported_statistic": None,
+        }]}
+        validate_extracted_json(payload, schema)
+        del payload["effects"][0]["eligible"]
+        with self.assertRaisesRegex(ValueError, "Missing required field.*eligible"):
+            validate_extracted_json(payload, schema)
+
+    def test_default_prompt_renders_custom_eligibility_roles(self):
+        from auto_zcurve.prompts import build_system_prompt
+
+        schema = parse_extraction_schema(
+            "effects:\n"
+            "  include:\n    type: boolean\n    role: eligible\n"
+            "  reason:\n    type: string\n    role: eligibility_explanation\n"
+        )
+        prompt = build_system_prompt(schema, Path("config/statistic_extraction_instructions.md"))
+        self.assertIn("`include`", prompt)
+        self.assertIn("`reason`", prompt)
+        self.assertNotIn("{{", prompt)
 
     def test_invalid_schema_rejects_unknown_type(self):
         with tempfile.TemporaryDirectory() as tmp:
