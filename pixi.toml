@@ -1,6 +1,6 @@
 [workspace]
 name = "auto-zcurve"
-version = "0.12.8"
+version = "0.12.9"
 description = "Local browser app for extracting PDF statistics and generating z-curve reports"
 channels = ["conda-forge"]
 platforms = [
