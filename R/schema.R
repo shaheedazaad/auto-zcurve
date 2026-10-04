@@ -18,7 +18,9 @@ validate_field_spec <- function(field_name, spec, section_name) {
   role <- safe_character(spec$role)
 
   if (identical(type, "ARRAY")) {
-    item_type <- normalize_schema_type(spec$items$type %||% spec$items_type %||% "")
+    items <- spec[["items", exact = TRUE]]
+    items_type <- spec[["items_type", exact = TRUE]]
+    item_type <- normalize_schema_type(items[["type", exact = TRUE]] %||% items_type %||% "")
 
     if (identical(item_type, "ARRAY")) {
       stop(section_name, ".", field_name, " cannot be an array of arrays.", call. = FALSE)

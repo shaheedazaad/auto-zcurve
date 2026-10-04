@@ -35,7 +35,7 @@ normalize_for_table <- function(value) {
   }
 
   if (is.list(value) || length(value) > 1) {
-    return(jsonlite::toJSON(json_ready(value), auto_unbox = TRUE, null = "null"))
+    return(as.character(jsonlite::toJSON(json_ready(value), auto_unbox = TRUE, null = "null")))
   }
 
   if (is.logical(value)) {
@@ -76,13 +76,29 @@ read_text_file <- function(path) {
 }
 
 replace_fixed_text <- function(text, needle, replacement) {
-  parts <- strsplit(text, needle, fixed = TRUE)[[1]]
-
-  if (length(parts) <= 1) {
+  if (!nzchar(needle)) {
     return(text)
   }
 
-  paste(parts, collapse = replacement)
+  positions <- gregexpr(needle, text, fixed = TRUE)[[1]]
+  if (positions[[1]] < 0) {
+    return(text)
+  }
+
+  width <- nchar(needle)
+  cursor <- 1L
+  pieces <- character(length(positions) * 2L + 1L)
+  piece <- 1L
+
+  for (position in positions) {
+    pieces[[piece]] <- substring(text, cursor, position - 1L)
+    pieces[[piece + 1L]] <- replacement
+    piece <- piece + 2L
+    cursor <- position + width
+  }
+
+  pieces[[piece]] <- substring(text, cursor)
+  paste0(pieces[seq_len(piece)], collapse = "")
 }
 
 render_text_template <- function(text, values = list()) {

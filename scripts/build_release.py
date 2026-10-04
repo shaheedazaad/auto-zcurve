@@ -21,6 +21,8 @@ INCLUDE = (
     "pixi.lock",
     "install.sh",
     "install.ps1",
+    "uninstall.sh",
+    "uninstall.ps1",
     "README.md",
     "LEGACY.md",
     "LICENSE",

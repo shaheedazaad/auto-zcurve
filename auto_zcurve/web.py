@@ -13,7 +13,7 @@ import urllib.request
 import webbrowser
 import zipfile
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -35,6 +35,8 @@ from .config import (
     load_run_settings,
     normalize_default_gemini_model,
     normalize_default_openrouter_model,
+    normalize_endpoint_url,
+    normalize_response_format,
     normalize_pdf_parser,
     normalize_reasoning_effort,
     normalize_service_tier,
@@ -109,7 +111,20 @@ def _static_media_type(filename: str) -> str | None:
 
 class LocalSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        host = request.headers.get("host", "").split(":", 1)[0].lower()
+        authority = request.headers.get("host", "").lower()
+        if authority.startswith("["):
+            closing_bracket = authority.find("]")
+            host = authority[: closing_bracket + 1] if closing_bracket >= 0 else ""
+            suffix = authority[closing_bracket + 1 :] if closing_bracket >= 0 else "invalid"
+            valid_port = not suffix or (
+                suffix.startswith(":") and suffix[1:].isdigit()
+            )
+            if not valid_port:
+                host = ""
+        else:
+            host, separator, port = authority.partition(":")
+            if separator and (":" in port or not port.isdigit()):
+                host = ""
         if host not in ALLOWED_HOSTS:
             return JSONResponse({"detail": "Invalid Host header."}, status_code=400)
 
@@ -313,7 +328,7 @@ class WebRuntime:
         job.emit("status", status="running", message=f"{label} started")
         try:
             api_key = self.api_key(settings.provider)
-            if action != "report" and not api_key:
+            if action != "report" and not api_key and settings.provider != "openai_compatible":
                 raise RuntimeError(f"A {provider_label(settings.provider)} API key is required.")
             console = WebConsole(job, api_key)
             run_preflight(project.path, interactive=False, console=console)
@@ -387,6 +402,7 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
         "token": runtime.token,
         "version": __version__,
         "project": snapshot,
+        "app_settings": app_settings,
         "job": job.snapshot() if job else None,
         "schema_text": read_project_schema(project),
         "models": fallback_models(selected_provider),
@@ -509,9 +525,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         max_upload_size_mb: int = Form(DEFAULTS["max_upload_size_mb"]),
         request_delay_sec: int = Form(DEFAULTS["request_delay_sec"]),
         reasoning_effort: str = Form(DEFAULTS["reasoning_effort"]),
-        service_tier: str = Form(DEFAULTS["service_tier"]),
-        default_gemini_model: str = Form(DEFAULT_MODEL),
-        default_openrouter_model: str = Form(""),
+        service_tier: Optional[str] = Form(None),
+        default_gemini_model: Optional[str] = Form(None),
+        default_openrouter_model: Optional[str] = Form(None),
+        openai_base_url: Optional[str] = Form(None),
+        openai_response_format: Optional[str] = Form(None),
     ):
         try:
             settings = AppSettings(
@@ -521,9 +539,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 request_timeout_sec=max(30, min(int(request_timeout_sec), 3600)),
                 max_upload_size_mb=max(1, min(int(max_upload_size_mb), 512)),
                 reasoning_effort=normalize_reasoning_effort(reasoning_effort),
-                service_tier=normalize_service_tier(service_tier),
-                default_gemini_model=normalize_default_gemini_model(default_gemini_model),
-                default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model),
+                service_tier=normalize_service_tier(service_tier if service_tier is not None else load_app_settings().service_tier),
+                default_gemini_model=normalize_default_gemini_model(default_gemini_model if default_gemini_model is not None else load_app_settings().default_gemini_model),
+                default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model if default_openrouter_model is not None else load_app_settings().default_openrouter_model),
+                openai_base_url=normalize_endpoint_url(openai_base_url if openai_base_url is not None else load_app_settings().openai_base_url),
+                openai_response_format=normalize_response_format(openai_response_format or load_app_settings().openai_response_format),
             )
             save_app_settings(settings)
         except (OSError, TypeError, ValueError) as exc:
@@ -540,6 +560,45 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "default_gemini_model": settings.default_gemini_model,
             "default_openrouter_model": settings.default_openrouter_model,
         }
+
+    @app.post(f"/{token}/settings/providers/{{provider}}")
+    async def update_provider_settings(
+        provider: str,
+        service_tier: Optional[str] = Form(None),
+        default_gemini_model: str = Form(""),
+        default_openrouter_model: str = Form(""),
+    ):
+        try:
+            current = load_app_settings()
+            if provider == "gemini":
+                settings = replace(
+                    current,
+                    default_gemini_model=normalize_default_gemini_model(default_gemini_model),
+                    service_tier=normalize_service_tier(service_tier if service_tier is not None else current.service_tier),
+                )
+            elif provider == "openrouter":
+                settings = replace(current, default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model))
+            else:
+                raise ValueError("Unsupported provider settings.")
+            save_app_settings(settings)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"saved": True}
+
+    @app.post(f"/{token}/settings/endpoint")
+    async def update_endpoint(
+        openai_base_url: str = Form(""),
+        openai_response_format: str = Form("json_schema"),
+    ):
+        try:
+            save_app_settings(replace(
+                load_app_settings(),
+                openai_base_url=normalize_endpoint_url(openai_base_url),
+                openai_response_format=normalize_response_format(openai_response_format),
+            ))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"saved": True}
 
     @app.post(f"/{token}/projects")
     async def new_project(name: str = Form(...)):
@@ -880,11 +939,16 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             app_defaults = load_app_settings()
             selected = normalize_provider(provider)
             effective_model = model or (
-                app_defaults.default_openrouter_model if selected == "openrouter" else app_defaults.default_gemini_model
+                app_defaults.default_openrouter_model if selected == "openrouter" else ("" if selected == "openai_compatible" else app_defaults.default_gemini_model)
             )
             key = await asyncio.to_thread(runtime._load_key_from_store, selected)
-            if key is None:
+            if key is None and selected != "openai_compatible":
                 raise ValueError(f"A {provider_label(selected)} API key is required.")
+            if selected == "openai_compatible":
+                if key is None and saved_api_key_configured(selected):
+                    raise ValueError("The saved endpoint key could not be unlocked. Unlock or remove it in Settings.")
+                if not normalize_endpoint_url(app_defaults.openai_base_url):
+                    raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
             if selected == "openrouter":
                 validate_model_option(selected, effective_model, key)
             default_parallel, default_delay = model_request_defaults(effective_model, selected)
@@ -931,11 +995,16 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             selected = normalize_provider(provider or existing.provider)
             selected_model = model or (
                 existing.primary_model if existing.provider == selected
-                else (app_defaults.default_openrouter_model if selected == "openrouter" else app_defaults.default_gemini_model)
+                else (app_defaults.default_openrouter_model if selected == "openrouter" else ("" if selected == "openai_compatible" else app_defaults.default_gemini_model))
             )
             key = await asyncio.to_thread(runtime._load_key_from_store, selected)
-            if key is None:
+            if key is None and selected != "openai_compatible":
                 raise ValueError(f"A {provider_label(selected)} API key is required.")
+            if selected == "openai_compatible":
+                if key is None and saved_api_key_configured(selected):
+                    raise ValueError("The saved endpoint key could not be unlocked. Unlock or remove it in Settings.")
+                if not normalize_endpoint_url(app_defaults.openai_base_url):
+                    raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
             if selected == "openrouter":
                 validate_model_option(selected, selected_model, key)
             default_parallel, default_delay = model_request_defaults(selected_model, selected)

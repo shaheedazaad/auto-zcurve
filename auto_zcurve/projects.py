@@ -141,6 +141,8 @@ def get_project(project_id: str, *, root: Path | None = None) -> ManagedProject:
         raw = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ProjectError("Project metadata could not be read.") from exc
+    if not isinstance(raw, dict):
+        raise ProjectError("Project metadata could not be read.")
     return ManagedProject(
         project_id=project_id,
         name=str(raw.get("name") or "Untitled project"),

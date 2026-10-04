@@ -175,7 +175,7 @@ def list_live_models(
     timeout_sec: int = 30,
 ) -> list[ModelOption]:
     selected = normalize_provider(provider)
-    if selected == "openrouter":
+    if selected in {"openrouter", "openai_compatible"}:
         # Experimental OpenRouter models are intentionally manual-entry only.
         return []
     return _apply_model_allowlist(selected, _list_gemini_models(api_key))
@@ -190,6 +190,11 @@ def validate_model_option(
 ) -> ModelOption:
     selected = normalize_provider(provider)
     normalized = normalize_model_name(model, selected)
+    if selected == "openai_compatible":
+        from .config import load_app_settings
+        from .openai_compatible import normalize_base_url
+        normalize_base_url(load_app_settings().openai_base_url)
+        return ModelOption(normalized, normalized, provider=selected, input_mode="local_text", request_delay_sec=0)
     if selected == "openrouter":
         from .openrouter import list_models, model_input_mode
 
@@ -251,12 +256,14 @@ def resolve_input_mode(
     pdf_parser: str,
 ) -> str:
     selected = normalize_provider(provider)
+    if selected == "openai_compatible":
+        return "local_text"
     return "cloudflare_pdf" if selected == "openrouter" else "native_pdf"
 
 
 def fallback_models(provider: str = "gemini") -> list[ModelOption]:
     selected = normalize_provider(provider)
-    if selected == "openrouter":
+    if selected in {"openrouter", "openai_compatible"}:
         return []
     return _apply_model_allowlist(selected, [
         ModelOption(name=model, display_name=model, description="Bundled fallback", provider="gemini")
@@ -266,7 +273,7 @@ def fallback_models(provider: str = "gemini") -> list[ModelOption]:
 
 def model_request_defaults(model: str, provider: str = "gemini") -> tuple[int, int]:
     normalized = normalize_model_name(model, provider)
-    if normalize_provider(provider) == "openrouter":
+    if normalize_provider(provider) in {"openrouter", "openai_compatible"}:
         return OPENROUTER_DEFAULT_PARALLEL_REQUESTS, OPENROUTER_DEFAULT_REQUEST_DELAY_SEC
     for option in fallback_models(provider):
         if option.name == normalized:

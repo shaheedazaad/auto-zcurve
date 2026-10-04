@@ -1,6 +1,7 @@
 (() => {
   let syncProviderCredentialState = () => {};
   let refreshProviderModels = () => {};
+  let isRunning = false;
 
   const themeStorageKey = "auto-zcurve-theme";
   const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -143,7 +144,7 @@
   const escapeHtml = (value) => {
     const div = document.createElement("div");
     div.textContent = String(value);
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   };
   const highlightJson = (value) => {
     const escaped = escapeHtml(value);
@@ -177,8 +178,23 @@
   if (!token) return;
 
   if (page === "settings") {
-    const settingsForm = document.querySelector(".js-app-settings");
-    settingsForm?.addEventListener("submit", async (event) => {
+    const settingsLinks = Array.from(document.querySelectorAll(".settings-nav a"));
+    const syncSettingsNavigation = () => {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target?.matches("details.provider-settings")) target.open = true;
+      settingsLinks.forEach((link) => {
+        if (link.hash === (location.hash || "#provider-connections")) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      });
+    };
+    settingsLinks.forEach((link) => link.addEventListener("click", () => {
+      const target = document.getElementById(link.hash.slice(1));
+      if (target?.matches("details.provider-settings")) target.open = true;
+    }));
+    window.addEventListener("hashchange", syncSettingsNavigation);
+    syncSettingsNavigation();
+    document.querySelectorAll(".js-app-settings").forEach((settingsForm) => {
+    settingsForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!settingsForm.reportValidity()) return;
       const button = settingsForm.querySelector("button[type=submit]");
@@ -196,6 +212,8 @@
       } finally {
         button.disabled = false;
       }
+    });
+
     });
 
     document.querySelectorAll(".js-delete-credentials").forEach((form) => {
@@ -235,6 +253,7 @@
     const search = document.querySelector(".js-project-search");
     const pagination = document.querySelector("[data-project-pagination]");
     const count = document.querySelector("[data-project-count]");
+    const sort = document.querySelector("#project-sort");
     const pageSize = 10;
     let projects = [];
     let filteredProjects = [];
@@ -251,7 +270,8 @@
       }
       const articleLabel = project.pdf_count === 1 ? "article" : "articles";
       return `
-        <a class="row" data-project-row href="/${encodeURIComponent(token)}/projects/${encodeURIComponent(project.id)}">
+        <a class="row project-home-row" data-project-row href="/${encodeURIComponent(token)}/projects/${encodeURIComponent(project.id)}">
+<span class="project-folder-icon"><svg class="workflow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3V7Z" /></svg></span>
           <span class="row-main">
             <strong class="row-title">${escapeHtml(project.name)}</strong>
             <span class="row-meta">${project.pdf_count} ${articleLabel} · ${project.total_tokens} tokens</span>
@@ -266,10 +286,10 @@
       const visible = filteredProjects.slice((page - 1) * pageSize, page * pageSize);
       list.innerHTML = visible.length
         ? visible.map(projectRow).join("")
-        : '<div class="empty"><p class="empty-title">No matching projects</p><p class="empty-text">Try a different project name.</p></div>';
+        : `<div class="empty"><p class="empty-title">${projects.length ? 'No matching projects' : 'No projects yet'}</p><p class="empty-text">${projects.length ? 'Try a different project name.' : 'Create a project to add journal articles and start extracting results.'}</p></div>`;
       count.textContent = `${filteredProjects.length} project${filteredProjects.length === 1 ? "" : "s"}`;
-      pagination.hidden = filteredProjects.length <= pageSize;
-      pagination.querySelector("[data-project-page]").textContent = `Page ${page} of ${totalPages}`;
+      pagination.hidden = filteredProjects.length === 0;
+      pagination.querySelector("[data-project-page]").textContent = `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, filteredProjects.length)} of ${filteredProjects.length} · Page ${page} of ${totalPages}`;
       pagination.querySelector(".js-project-previous").disabled = page <= 1;
       pagination.querySelector(".js-project-next").disabled = page >= totalPages;
     };
@@ -277,11 +297,14 @@
     const applyProjectSearch = () => {
       const query = search.value.trim().toLocaleLowerCase();
       filteredProjects = projects.filter((project) => project.name.toLocaleLowerCase().includes(query));
+      if (sort?.value === "name") filteredProjects.sort((a, b) => a.name.localeCompare(b.name));
+      else if (sort?.value === "oldest") filteredProjects.reverse();
       page = 1;
       renderProjects();
     };
 
     search?.addEventListener("input", applyProjectSearch);
+    sort?.addEventListener("change", applyProjectSearch);
     pagination?.querySelector(".js-project-previous")?.addEventListener("click", () => {
       if (page > 1) page -= 1;
       renderProjects();
@@ -750,6 +773,7 @@
   let articleRefreshTimer;
 
   const setRunning = (running) => {
+    isRunning = running;
     runButton.disabled = running;
     retryButton.disabled = running;
     regenerateButton.disabled = running;
@@ -763,6 +787,7 @@
     if (!running && slowExtractionWarning) slowExtractionWarning.hidden = true;
     if (articleRefreshTimer) window.clearInterval(articleRefreshTimer);
     articleRefreshTimer = running ? window.setInterval(() => refreshProject(), 2500) : undefined;
+    if (!running) syncProviderCredentialState();
   };
 
   const watchEvents = () => {
@@ -838,6 +863,8 @@
     const selectedModel = currentModelCatalog.find((item) => item.id === modelInput.value.trim());
     if (providerSelect.value === "gemini") {
       modelHint.textContent = "Gemini receives the original PDF and returns schema-validated structured data.";
+    } else if (providerSelect.value === "openai_compatible") {
+      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text; scanned pages need OCR.";
     } else {
       modelHint.textContent = "Enter an exact OpenRouter model ID. It must be validated before it can run.";
     }
@@ -852,19 +879,22 @@
     // A saved key doesn't need a manual "Unlock" click: pressing Run/Retry loads it
     // from the OS credential store on demand, so those actions are available whenever
     // either a session key or a saved key exists.
-    const canRun = keyReady || savedKey;
+    const isEndpoint = selected.value === "openai_compatible";
+    const canRun = isEndpoint ? providerSelect.dataset.endpointReady === "true" : keyReady || savedKey;
     if (providerLabel) providerLabel.textContent = label;
     if (credentialPrompt) credentialPrompt.hidden = canRun;
     if (runActions) runActions.hidden = !canRun;
-    if (keyHeading) keyHeading.textContent = `Add a ${label} API key to run`;
-    if (keyPromptCopy) keyPromptCopy.textContent = `No ${label} key is configured for this session.`;
+    if (keyHeading) keyHeading.textContent = isEndpoint ? "Configure your endpoint to run" : `Add a ${label} API key to run`;
+    if (keyPromptCopy) keyPromptCopy.textContent = isEndpoint ? "Set an API base URL in Settings. A key is optional for servers that allow keyless requests." : `No ${label} key is configured for this session.`;
+    const settingsLink = credentialPrompt?.querySelector("a");
+    if (settingsLink) settingsLink.textContent = isEndpoint ? "Configure endpoint in Settings" : "Enter API key in Settings";
     if (keyInput) keyInput.placeholder = `Paste ${label} API key`;
     document.querySelectorAll("[data-credential-provider]").forEach((input) => {
       input.value = selected.value;
     });
     if (macosKeyNote) macosKeyNote.hidden = !savedKey;
-    runButton.disabled = runButton.dataset.hasPdfs !== "true" || !canRun;
-    retryButton.disabled = retryButton.dataset.hasFailures !== "true" || !canRun;
+    runButton.disabled = isRunning || runButton.dataset.hasPdfs !== "true" || !canRun;
+    retryButton.disabled = isRunning || retryButton.dataset.hasFailures !== "true" || !canRun;
   };
 
   const refreshModels = async ({ preserveValue = false } = {}) => {
@@ -875,16 +905,16 @@
     syncProviderCredentialState();
     if (openRouterWarning) openRouterWarning.hidden = !isOpenRouter;
     modelInput.removeAttribute("list");
-    if (!isOpenRouter) modelInput.setAttribute("list", "gemini-model-options");
-    if (isOpenRouter) {
+    if (provider === "gemini") modelInput.setAttribute("list", "gemini-model-options");
+    if (provider !== "gemini") {
       currentModelCatalog = [];
       modelOptions.innerHTML = "";
-      modelInput.placeholder = "vendor/model";
+      modelInput.placeholder = isOpenRouter ? "vendor/model" : "Exact model ID";
       if (!projectSettingsTouched && parallelInput && delayInput) {
         parallelInput.value = "1";
         delayInput.value = "0";
       }
-      if (modelValidation) modelValidation.textContent = "Validation checks OpenRouter's live model metadata when you save or run.";
+      if (modelValidation) modelValidation.textContent = isOpenRouter ? "Validation checks OpenRouter's live model metadata when you save or run." : "Configure your endpoint in Settings. No model catalog is required.";
       updateModelHint();
       return;
     }
@@ -936,8 +966,8 @@
   providerSelect?.addEventListener("change", () => {
     const defaultModel = providerSelect.value === "openrouter"
       ? providerSelect.dataset.defaultOpenrouterModel
-      : providerSelect.dataset.defaultGeminiModel;
-    if (defaultModel) modelInput.value = defaultModel;
+      : (providerSelect.value === "gemini" ? providerSelect.dataset.defaultGeminiModel : "");
+    modelInput.value = defaultModel || "";
     refreshModels({ preserveValue: true });
   });
   modelInput?.addEventListener("input", updateModelHint);

@@ -90,6 +90,8 @@ class AppSettings:
     max_upload_size_mb: int = DEFAULTS["max_upload_size_mb"]
     default_gemini_model: str = DEFAULT_MODEL
     default_openrouter_model: str = ""
+    openai_base_url: str = ""
+    openai_response_format: str = "json_schema"
 
 
 @dataclass
@@ -103,6 +105,17 @@ class RunSettings:
     pdf_parser: str = DEFAULTS["pdf_parser"]
     reasoning_effort: str = DEFAULTS["reasoning_effort"]
     service_tier: str = DEFAULTS["service_tier"]
+
+
+def normalize_endpoint_url(value: str) -> str:
+    from .openai_compatible import normalize_base_url
+    return normalize_base_url(value) if value.strip() else ""
+
+
+def normalize_response_format(value: str) -> str:
+    if value not in {"json_schema", "json_object", "none"}:
+        raise ValueError("Unknown JSON output mode.")
+    return value
 
 
 def app_settings_path() -> Path:
@@ -136,6 +149,8 @@ def load_app_settings() -> AppSettings:
             ),
             default_gemini_model=normalize_default_gemini_model(raw.get("default_gemini_model")),
             default_openrouter_model=normalize_default_openrouter_model(raw.get("default_openrouter_model")),
+            openai_base_url=normalize_endpoint_url(str(raw.get("openai_base_url") or "")),
+            openai_response_format=normalize_response_format(raw.get("openai_response_format", "json_schema")),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return AppSettings()
@@ -152,6 +167,8 @@ def save_app_settings(settings: AppSettings) -> None:
         max_upload_size_mb=max(1, min(int(settings.max_upload_size_mb), 512)),
         default_gemini_model=normalize_default_gemini_model(settings.default_gemini_model),
         default_openrouter_model=normalize_default_openrouter_model(settings.default_openrouter_model),
+        openai_base_url=normalize_endpoint_url(settings.openai_base_url),
+        openai_response_format=normalize_response_format(settings.openai_response_format),
     )
     path = app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +186,8 @@ def save_app_settings(settings: AppSettings) -> None:
                     "max_upload_size_mb": normalized.max_upload_size_mb,
                     "default_gemini_model": normalized.default_gemini_model,
                     "default_openrouter_model": normalized.default_openrouter_model,
+                    "openai_base_url": normalized.openai_base_url,
+                    "openai_response_format": normalized.openai_response_format,
                 },
                 indent=2,
             )

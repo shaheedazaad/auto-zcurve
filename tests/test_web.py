@@ -165,7 +165,8 @@ class WebAppTests(unittest.TestCase):
 
         response = self.client.get(f"/{TOKEN}/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("<h1>Projects</h1>", response.text)
+        self.assertIn("Projects</h1>", response.text)
+        self.assertIn('id="project-sort"', response.text)
         self.assertIn('data-variant="warning"', response.text)
         self.assertIn(
             "It is not suitable for producing publication-quality data without quality-checking.",
@@ -292,7 +293,8 @@ class WebAppTests(unittest.TestCase):
         self.assertLess(response.text.index('data-tab-panel="overview"'), response.text.index('data-tab-panel="sources"'))
         self.assertIn('id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" data-tab-panel="overview">', response.text)
         self.assertIn('id="panel-extraction-setup" role="tabpanel" aria-labelledby="tab-extraction-setup" data-tab-panel="extraction-setup" hidden>', response.text)
-        self.assertIn(">Extraction instructions</button>", response.text)
+        self.assertIn(">Extraction instructions</span></button>", response.text)
+        self.assertIn('aria-orientation="vertical"', response.text)
         self.assertIn('id="panel-schema" role="tabpanel" aria-labelledby="tab-schema" data-tab-panel="schema" hidden>', response.text)
         self.assertIn("article-09.pdf", response.text)
         self.assertNotIn("article-10.pdf", response.text)
@@ -472,7 +474,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(project_response.status_code, 200)
         self.assertIn(">Unlock<", response.text)
-        self.assertIn("never read until you explicitly unlock", response.text)
+        self.assertIn("Keys are loaded when you unlock them or start an action that needs them", response.text)
         self.assertNotIn('placeholder="••••••••••••"', response.text)
 
     def test_settings_explains_when_a_provider_has_no_saved_key(self):

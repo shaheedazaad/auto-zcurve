@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% from "_icons.html" import workflow_icon %}
+{% from "_help.html" import docs_link %}
 
 {% block title %}Settings · auto-zcurve{% endblock %}
 {% block body_attributes %}data-page="settings"{% endblock %}
 
 {% block page %}
-<div class="page page-narrow">
+<div class="page settings-page">
   <nav class="breadcrumb" aria-label="Breadcrumb">
     <ol>
       <li><a href="/{{ token }}/">Projects</a></li>
@@ -15,113 +17,45 @@
 
   <div class="page-head">
     <div>
-      <h1>Settings</h1>
+      <h1 class="icon-heading">{{ workflow_icon("manage") }}Settings</h1>
       <p>Defaults for new runs, and the API keys used to reach each provider.</p>
+      {{ docs_link("settings/", "Settings guide") }}
     </div>
   </div>
 
-  <form class="js-app-settings section" action="/{{ token }}/settings">
+  <div class="project-layout settings-layout">
+    <aside class="project-sidebar">
+      <nav class="settings-nav" aria-label="Settings navigation">
+        <a href="#provider-connections">{{ workflow_icon("key") }}Provider connections</a>
+        {% for credential in credential_providers %}
+        <a class="settings-provider-link" href="#provider-{{ credential.name }}">{{ credential.label }}</a>
+        {% endfor %}
+        <a href="#run-defaults">{{ workflow_icon("run") }}Run defaults</a>
+        <a href="#extraction-instructions">{{ workflow_icon("manual") }}Extraction instructions</a>
+      </nav>
+    </aside>
+    <div class="project-content">
+  <section class="section accent-section" id="provider-connections">
     <div class="section-head">
       <div>
-        <h2>Execution</h2>
-        <p>Applies to every new run and retry, across all projects. Individual projects can override throughput.</p>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-pad stack">
-        <div class="grid-2">
-          <div class="field">
-            <label for="parallel-pdfs">Parallel PDFs</label>
-            <input class="input" id="parallel-pdfs" name="parallel_requests" type="number" min="1" max="32" value="{{ app_settings.parallel_requests }}" required>
-            <p>How many articles are processed at once. Default 1.</p>
-          </div>
-          <div class="field">
-            <label for="request-delay">Delay between requests</label>
-            <input class="input" id="request-delay" name="request_delay_sec" type="number" min="0" max="3600" value="{{ app_settings.request_delay_sec }}" required>
-            <p>Seconds between provider requests. Default 30.</p>
-          </div>
-          <div class="field">
-            <label for="request-timeout">Request timeout</label>
-            <input class="input" id="request-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="{{ app_settings.request_timeout_sec }}" required>
-            <p>Seconds allowed for a single provider request.</p>
-          </div>
-          <div class="field">
-            <label for="service-tier">Gemini service tier</label>
-            <select class="select" id="service-tier" name="service_tier">
-              {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if app_settings.service_tier == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="pdf-parser">PDF parser</label>
-            {# cloudflare-ai is being retired: tests/test_web.py asserts it is not
-               offered here. It still renders if a project already has it set, so
-               an existing setting is never silently rewritten. #}
-            <select class="select" id="pdf-parser" name="pdf_parser">
-              {% for value, label in pdf_parser_labels.items() %}
-              {% if value != 'cloudflare-ai' or app_settings.pdf_parser == value %}
-              <option value="{{ value }}" {% if app_settings.pdf_parser == value %}selected{% endif %}>{{ label }}</option>
-              {% endif %}
-              {% endfor %}
-            </select>
-            <p>How PDF content is prepared before it reaches the model.</p>
-          </div>
-          <div class="field">
-            <label for="reasoning-effort">Reasoning effort</label>
-            <select class="select" id="reasoning-effort" name="reasoning_effort">
-              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if app_settings.reasoning_effort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select>
-            <p>Higher effort can improve accuracy, at more cost and latency.</p>
-          </div>
-          <div class="field">
-            <label for="max-upload-size">Maximum PDF size</label>
-            <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
-            <p>Megabytes. Applied when new files are uploaded.</p>
-          </div>
-          <div class="field">
-            <label for="default-gemini-model">Default Gemini model</label>
-            <input class="input" id="default-gemini-model" name="default_gemini_model" type="text" autocomplete="off" spellcheck="false" value="{{ app_settings.default_gemini_model }}" required>
-            <p>Used to prefill new projects' model field.</p>
-          </div>
-          <div class="field">
-            <label for="default-openrouter-model">Default OpenRouter model</label>
-            <input class="input" id="default-openrouter-model" name="default_openrouter_model" type="text" autocomplete="off" spellcheck="false" placeholder="vendor/model" value="{{ app_settings.default_openrouter_model }}">
-            <p>Optional. Used to prefill new projects' model field when OpenRouter is selected.</p>
-          </div>
-        </div>
-      </div>
-      <div class="panel-foot">
-        <p class="form-message u-sm" role="status"></p>
-        <button class="btn" type="submit">Save settings</button>
-      </div>
-    </div>
-  </form>
-
-  <section class="section">
-    <div class="section-head">
-      <div>
-        <h2>Default extraction instructions</h2>
-        <p>New projects start from this text. Existing projects keep their own independent copy, editable per-project on the "Extraction instructions" tab.</p>
-      </div>
-    </div>
-    <div class="panel panel-pad">
-      <textarea class="textarea" rows="14" readonly>{{ default_instructions }}</textarea>
-    </div>
-  </section>
-
-  <section class="section">
-    <div class="section-head">
-      <div>
-        <h2>API keys</h2>
-        <p>Stored in your operating-system credential store. A saved key is never read until you explicitly unlock it for the session.</p>
+        <h2 class="icon-heading">{{ workflow_icon("key") }}Provider connections</h2>
+        <p>Stored in your operating-system credential store. Keys are loaded when you unlock them or start an action that needs them.</p>
       </div>
     </div>
 
     <div class="panel rows">
       {% for credential in credential_providers %}
-      <div class="row" data-credential-row="{{ credential.name }}">
+      <details class="provider-settings" id="provider-{{ credential.name }}" data-credential-row="{{ credential.name }}">
+        <summary>
+          <strong class="icon-heading">{{ workflow_icon("key") }}{{ credential.label }}</strong>
+          <span class="badge" data-variant="{{ 'success' if credential.has_api_key else 'warning' if credential.has_saved_api_key else 'outline' }}">{{ 'Ready' if credential.has_api_key else 'Locked' if credential.has_saved_api_key else 'Not set' }}</span>
+          <span class="provider-chevron" aria-hidden="true">›</span>
+        </summary>
+        <div class="provider-settings-body stack">
+          {{ docs_link("settings/#" ~ ("openai-compatible" if credential.name == "openai_compatible" else credential.name), "Provider setup guide") }}
+      <div class="row provider-key-row">
         <span class="row-main">
-          <strong class="row-title">{{ credential.label }}</strong>
+          <strong class="row-title">API key{{ " (optional)" if credential.name == "openai_compatible" else "" }}</strong>
           <span class="row-meta form-message" role="status">
             {%- if credential.has_api_key %}Unlocked for this session
             {%- elif credential.has_saved_api_key %}Saved on this computer, locked
@@ -156,6 +90,57 @@
           {% endif %}
         </span>
       </div>
+      {% if credential.name == "openai_compatible" %}
+      <form class="js-app-settings stack" action="/{{ token }}/settings/endpoint">
+      <div class="field">
+        <label for="openai-base-url">API base URL</label>
+        <input class="input" type="url" id="openai-base-url" name="openai_base_url" value="{{ app_settings.openai_base_url }}" placeholder="http://localhost:8000/v1">
+        <p>Include the API prefix (such as /v1), without /chat/completions. When switching endpoints, replace or remove the saved key above too.</p>
+      </div>
+      <div class="field">
+        <label for="openai-response-format">JSON output mode</label>
+        <select class="select" id="openai-response-format" name="openai_response_format">
+          {% for value, label in [('json_schema', 'Strict JSON schema'), ('json_object', 'JSON object'), ('none', 'Prompt only')] %}
+          <option value="{{ value }}" {% if app_settings.openai_response_format == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included.</p>
+      </div>
+      <div class="section-head-actions">
+        <p class="form-message u-sm" role="status"></p>
+        <button class="btn" type="submit">Save endpoint</button>
+      </div>
+
+</form>
+      {% else %}
+      <form class="js-app-settings stack" action="/{{ token }}/settings/providers/{{ credential.name }}">
+        {% if credential.name == "gemini" %}
+          <div class="field">
+            <label for="default-gemini-model">Default Gemini model</label>
+            <input class="input" id="default-gemini-model" name="default_gemini_model" type="text" autocomplete="off" spellcheck="false" value="{{ app_settings.default_gemini_model }}" required>
+            <p>Used to prefill new projects' model field.</p>
+          </div>
+          <div class="field">
+            <label for="service-tier">Gemini service tier</label>
+            <select class="select" id="service-tier" name="service_tier">
+              {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if app_settings.service_tier == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+        {% else %}
+          <div class="field">
+            <label for="default-openrouter-model">Default OpenRouter model</label>
+            <input class="input" id="default-openrouter-model" name="default_openrouter_model" type="text" autocomplete="off" spellcheck="false" placeholder="vendor/model" value="{{ app_settings.default_openrouter_model }}">
+            <p>Optional. Used to prefill new projects' model field when OpenRouter is selected.</p>
+          </div>
+        {% endif %}
+        <div class="section-head-actions">
+          <p class="form-message u-sm" role="status"></p>
+          <button class="btn" type="submit">Save {{ credential.label }} settings</button>
+        </div>
+      </form>
+      {% endif %}
+        </div>
+      </details>
       {% endfor %}
     </div>
 
@@ -169,6 +154,87 @@
     {% endif %}
   </section>
 
+  <form class="js-app-settings section" id="run-defaults" action="/{{ token }}/settings">
+    <div class="section-head">
+      <div>
+        <h2 class="icon-heading">{{ workflow_icon("run") }}Run defaults</h2>
+        <p>Applies to every new run and retry, across all projects. Individual projects can override throughput.</p>
+        {{ docs_link("settings/#run-defaults", "Run defaults guide") }}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-pad stack">
+        <fieldset class="settings-group"><legend>Throughput and uploads</legend><div class="grid-2">
+          <div class="field">
+            <label for="parallel-pdfs">Parallel PDFs</label>
+            <input class="input" id="parallel-pdfs" name="parallel_requests" type="number" min="1" max="32" value="{{ app_settings.parallel_requests }}" required>
+            <p>How many articles are processed at once. Default 1.</p>
+          </div>
+          <div class="field">
+            <label for="request-delay">Delay between requests</label>
+            <input class="input" id="request-delay" name="request_delay_sec" type="number" min="0" max="3600" value="{{ app_settings.request_delay_sec }}" required>
+            <p>Seconds between provider requests. Default 30.</p>
+          </div>
+          <div class="field">
+            <label for="request-timeout">Request timeout</label>
+            <input class="input" id="request-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="{{ app_settings.request_timeout_sec }}" required>
+            <p>Seconds allowed for a single provider request.</p>
+          </div>
+          <div class="field">
+            <label for="max-upload-size">Maximum PDF size</label>
+            <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
+            <p>Megabytes. Applied when new files are uploaded.</p>
+          </div>
+        </div></fieldset>
+        <fieldset class="settings-group"><legend>Extraction preferences</legend><div class="grid-2">
+          <div class="field">
+            <label for="pdf-parser">PDF parser</label>
+            {# cloudflare-ai is being retired: tests/test_web.py asserts it is not
+               offered here. It still renders if a project already has it set, so
+               an existing setting is never silently rewritten. #}
+            <select class="select" id="pdf-parser" name="pdf_parser">
+              {% for value, label in pdf_parser_labels.items() %}
+              {% if value != 'cloudflare-ai' or app_settings.pdf_parser == value %}
+              <option value="{{ value }}" {% if app_settings.pdf_parser == value %}selected{% endif %}>{{ label }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            <p>How PDF content is prepared before it reaches the model.</p>
+          </div>
+          <div class="field">
+            <label for="reasoning-effort">Reasoning effort</label>
+            <select class="select" id="reasoning-effort" name="reasoning_effort">
+              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if app_settings.reasoning_effort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <p>Higher effort can improve accuracy, at more cost and latency.</p>
+          </div>
+
+        </div></fieldset>
+
+      </div>
+      <div class="panel-foot">
+        <p class="form-message u-sm" role="status"></p>
+        <button class="btn" type="submit">Save settings</button>
+      </div>
+    </div>
+  </form>
+
+  <section class="section" id="extraction-instructions">
+    <div class="section-head">
+      <div>
+        <h2 class="icon-heading">{{ workflow_icon("manual") }}Default extraction instructions</h2>
+        <p>New projects start from this text. Existing projects keep their own independent copy, editable per-project on the "Extraction instructions" tab.</p>
+      </div>
+    </div>
+    <details class="panel panel-pad"><summary>View bundled extraction instructions</summary>
+      <textarea class="textarea" rows="14" readonly>{{ default_instructions }}</textarea>
+    </details>
+  </section>
+
+  </div>
+  </div>
+
   {% for credential in credential_providers %}
   <dialog class="dialog" id="key-dialog-{{ credential.name }}" aria-labelledby="key-dialog-title-{{ credential.name }}">
       {# The form is the dialog's direct child: Basecoat styles `.dialog > * >
@@ -178,6 +244,7 @@
         <header>
           <h2 id="key-dialog-title-{{ credential.name }}">{{ credential.label }} API key</h2>
           <p>The key is sent only to {{ credential.label }} during extraction.</p>
+          {{ docs_link("api-key/", "API keys and privacy") }}
         </header>
         <section>
           <div class="field">
@@ -203,6 +270,7 @@
   <footer class="app-foot">
     <span>auto-zcurve {{ version }}</span>
     <span>Settings stay on this computer and are never included in project downloads.</span>
+    {{ docs_link("installation/#uninstalling", "Uninstalling") }}
   </footer>
 </div>
 {% endblock %}

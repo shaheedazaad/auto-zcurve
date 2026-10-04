@@ -7,7 +7,8 @@ your results.
 ## 1. Create a project
 
 Open auto-zcurve in your browser. The **Projects** page lists everything
-you've created so far.
+you've created so far. Search by name, sort newest first, oldest first, or
+A–Z, and use **Previous** and **Next** to move through pages of ten projects.
 
 ![Projects list, showing two existing projects](assets/screenshots/projects-list.png)
 
@@ -16,7 +17,9 @@ it later from the project page.
 
 ![The New project dialog, with a name field](assets/screenshots/new-project-dialog.png)
 
-You land on the new project's page, with an empty **Overview** tab.
+You land on the new project's page, with an empty **Overview** tab. Use the
+left-hand navigation to move through the workflow. On narrow screens, these
+controls appear above the content.
 
 ![An empty project overview, prompting to add sources and run analysis](assets/screenshots/project-overview.png)
 
@@ -37,7 +40,9 @@ Nothing is sent anywhere yet — this just registers the files in your project.
 The **Extraction instructions** tab holds the plain-language instructions the
 AI model follows when deciding what counts as an eligible statistic in your
 articles. Sensible defaults are pre-filled; read through them and adjust the
-wording if you want to extract the test for a particular phenomenon.
+wording if you want to extract the test for a particular phenomenon. Saving
+changed instructions after a run clears its current outputs so the PDFs can
+be processed again; the source PDFs remain.
 
 ![The Extraction instructions tab, showing the default guidance text](assets/screenshots/project-instructions.png)
 
@@ -49,15 +54,18 @@ becomes a column. The default schema already includes a
 `reported_statistic` field, which is what feeds the z-curve analysis, so you
 usually don't need to change this for a first run. Add fields here if you
 also want the AI model to record something else about every effect (for
-example, the sample size or the exact page number).
+example, the sample size or the exact page number). Saving a changed schema
+also clears existing extraction outputs and reports while keeping the PDFs.
 
 ![The Schema tab, with the YAML schema editor and an explanation of what each part means](assets/screenshots/project-schema.png)
 
 ## 5. Add your API key
 
-Before you can run anything, open **Settings** from the top bar and add a
-Gemini API key — see [Getting an API key](api-key.md) if you don't have one
-yet.
+Open **Settings** from the top bar, expand **Gemini** under **Provider
+connections**, and click **Add key**. See [API keys and privacy](api-key.md)
+for key setup. You can also configure OpenRouter or an
+[OpenAI-compatible endpoint](settings.md#openai-compatible); a keyless server
+does not require an API key.
 
 ![The Settings page with a dialog for entering a Gemini API key](assets/screenshots/settings-api-key-dialog.png)
 
@@ -68,7 +76,8 @@ next time. Once saved, the Gemini row shows **Ready** for this session.
 
 Back in your project, open the **Run analysis** tab. Pick a Gemini model,
 adjust **Parallel PDFs** if you have many articles and want them processed
-faster, and click **Run**.
+faster, and click **Run analysis**. Provider defaults and connection options
+are described in [Settings and providers](settings.md).
 
 ![The Run analysis tab, showing provider and model settings](assets/screenshots/project-run-analysis.png)
 

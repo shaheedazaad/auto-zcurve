@@ -14,6 +14,7 @@ SAVED_API_KEY_KEY = "saved_api_key_configured"
 SAVED_API_KEY_KEYS = {
     "gemini": SAVED_API_KEY_KEY,
     "openrouter": "openrouter_saved_api_key_configured",
+    "openai_compatible": "openai_compatible_saved_api_key_configured",
 }
 
 

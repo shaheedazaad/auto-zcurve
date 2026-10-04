@@ -11,6 +11,33 @@ from pathlib import Path
 class RParallelTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
     def test_zcurve_parallel_detection_and_fallbacks(self):
+        self.run_r_script("tests/r/test_report_parallel.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_schema_and_utilities(self):
+        self.run_r_script("tests/r/test_foundations.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_report_statistics(self):
+        self.run_r_script("tests/r/test_report_statistics.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_report_tables(self):
+        self.run_r_script("tests/r/test_report_tables.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_report_execution(self):
+        self.run_r_script("tests/r/test_report_execution.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_report_outcomes(self):
+        self.run_r_script("tests/r/test_report_outcomes.R")
+
+    @unittest.skipUnless(shutil.which("Rscript"), "Rscript is not installed")
+    def test_dependency_probe(self):
+        self.run_r_script("tests/r/test_preflight.R")
+
+    def run_r_script(self, script):
         root = Path(__file__).resolve().parents[1]
         env = os.environ.copy()
         conda_prefix = os.environ.get("CONDA_PREFIX", "").strip()
@@ -21,7 +48,7 @@ class RParallelTests(unittest.TestCase):
             env["R_LIBS_USER"] = str(library)
             env["R_LIBS_SITE"] = str(library)
         completed = subprocess.run(
-            ["Rscript", "tests/r/test_report_parallel.R"],
+            ["Rscript", script],
             cwd=root,
             text=True,
             capture_output=True,
@@ -31,7 +58,7 @@ class RParallelTests(unittest.TestCase):
         self.assertEqual(
             completed.returncode,
             0,
-            msg=f"R parallel tests failed.\n{completed.stdout}\n{completed.stderr}",
+            msg=f"R test {script} failed.\n{completed.stdout}\n{completed.stderr}",
         )
 
 

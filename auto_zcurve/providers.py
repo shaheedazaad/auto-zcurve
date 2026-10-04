@@ -34,6 +34,11 @@ PROVIDER_REGISTRY = {
         adapter_module="auto_zcurve.openrouter",
     ),
 }
+PROVIDER_REGISTRY["openai_compatible"] = ProviderDefinition(
+    name="openai_compatible", label="OpenAI-compatible",
+    environment_key="OPENAI_COMPATIBLE_API_KEY", credential_key="openai_compatible_api_key",
+    adapter_module="auto_zcurve.openai_compatible",
+)
 PROVIDERS = tuple(PROVIDER_REGISTRY)
 PROVIDER_LABELS = {name: definition.label for name, definition in PROVIDER_REGISTRY.items()}
 

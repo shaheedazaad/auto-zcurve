@@ -1,0 +1,11 @@
+{
+  "name": "auto-zcurve-client-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/js/*.test.cjs",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-include=**/auto_zcurve/static/app.js --test-coverage-lines=100 --test tests/js/*.test.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

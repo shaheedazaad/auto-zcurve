@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_icons.html" import workflow_icon %}
+{% from "_help.html" import docs_link %}
 
 {% block title %}{{ project.name }} · auto-zcurve{% endblock %}
 {% block body_attributes %}data-project-id="{{ project.id }}" data-has-results="{{ 'true' if project.has_analysis_results else 'false' }}"{% endblock %}
@@ -51,20 +53,25 @@
   </div>
   {% endif %}
 
-  <div class="tabbar" role="tablist" aria-label="Project sections" aria-orientation="horizontal" data-project-tabs>
-    <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab-target="overview" aria-selected="false">Overview</button>
-    <button type="button" role="tab" id="tab-sources" aria-controls="panel-sources" data-tab-target="sources" aria-selected="false">Sources</button>
-    <button type="button" role="tab" id="tab-extraction-setup" aria-controls="panel-extraction-setup" data-tab-target="extraction-setup" aria-selected="false">Extraction instructions</button>
-    <button type="button" role="tab" id="tab-schema" aria-controls="panel-schema" data-tab-target="schema" aria-selected="false">Schema</button>
-    <button type="button" role="tab" id="tab-articles" aria-controls="panel-articles" data-tab-target="articles" aria-selected="false">Articles</button>
-    <button type="button" role="tab" id="tab-run-analysis" aria-controls="panel-run-analysis" data-tab-target="run-analysis" aria-selected="false">Run analysis</button>
+  <div class="project-layout">
+  <aside class="project-sidebar" aria-label="Project navigation">
+  <div class="tabbar project-tabs" role="tablist" aria-label="Project sections" aria-orientation="vertical" data-project-tabs>
+    <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab-target="overview" aria-selected="false">{{ workflow_icon("analysis") }}<span>Overview</span></button>
+    <button type="button" role="tab" id="tab-sources" aria-controls="panel-sources" data-tab-target="sources" aria-selected="false">{{ workflow_icon("sources") }}<span>Sources</span></button>
+    <button type="button" role="tab" id="tab-extraction-setup" aria-controls="panel-extraction-setup" data-tab-target="extraction-setup" aria-selected="false">{{ workflow_icon("manual") }}<span>Extraction instructions</span></button>
+    <button type="button" role="tab" id="tab-schema" aria-controls="panel-schema" data-tab-target="schema" aria-selected="false">{{ workflow_icon("coding-sheet") }}<span>Schema</span></button>
+    <button type="button" role="tab" id="tab-articles" aria-controls="panel-articles" data-tab-target="articles" aria-selected="false">{{ workflow_icon("identify") }}<span>Articles</span></button>
+    <button type="button" role="tab" id="tab-run-analysis" aria-controls="panel-run-analysis" data-tab-target="run-analysis" aria-selected="false">{{ workflow_icon("run") }}<span>Run analysis</span></button>
   </div>
 
+  </aside>
+  <div class="project-content">
   <section class="tab-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" data-tab-panel="overview">
+    <p>{{ docs_link("results/", "Understanding your results") }}</p>
     {% if project.report_summary %}
     <div class="section-head">
       <div>
-        <h2>Analysis summary</h2>
+        <h2 class="icon-heading">{{ workflow_icon("analysis") }}Analysis summary</h2>
       </div>
       <div class="section-head-actions">
         <span class="badge" data-variant="success">Report ready</span>
@@ -131,7 +138,8 @@
   <section class="tab-panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" data-tab-panel="sources" hidden>
     <div class="section-head">
       <div>
-        <h2>Add PDF articles</h2>
+        <h2 class="icon-heading">{{ workflow_icon("sources") }}Add PDF articles</h2>
+        {{ docs_link("quickstart/#2-add-your-pdf-articles", "Adding PDFs") }}
       </div>
       <span class="badge" data-variant="outline" data-pdf-count>{{ project.pdf_count }} PDFs</span>
     </div>
@@ -151,7 +159,8 @@
   <section class="tab-panel" id="panel-extraction-setup" role="tabpanel" aria-labelledby="tab-extraction-setup" data-tab-panel="extraction-setup" hidden>
     <div class="section-head">
       <div>
-        <h2>Extraction instructions</h2>
+        <h2 class="icon-heading">{{ workflow_icon("manual") }}Extraction instructions</h2>
+        {{ docs_link("quickstart/#3-check-the-extraction-instructions", "Writing extraction instructions") }}
         <p>These project-specific instructions tell the selected LLM how to identify and extract eligible statistics.</p>
       </div>
     </div>
@@ -178,7 +187,8 @@
   <section class="tab-panel" id="panel-schema" role="tabpanel" aria-labelledby="tab-schema" data-tab-panel="schema" hidden>
     <div class="section-head">
       <div>
-        <h2>Extraction schema</h2>
+        <h2 class="icon-heading">{{ workflow_icon("coding-sheet") }}Extraction schema</h2>
+        {{ docs_link("quickstart/#4-check-the-extraction-schema", "Schema guide") }}
         <p>The schema defines the information the selected LLM returns for each article and each statistical effect.</p>
       </div>
       <span class="badge u-mono" data-variant="outline">extraction_schema.yml</span>
@@ -252,7 +262,8 @@
     <div data-articles-table-view>
     <div class="section-head">
       <div>
-        <h2>Review</h2>
+        <h2 class="icon-heading">{{ workflow_icon("identify") }}Review</h2>
+        {{ docs_link("results/#when-an-article-fails", "Reviewing results") }}
       </div>
       <div class="cluster" aria-label="Article statuses">
         <span class="badge" data-variant="outline">Ready</span>
@@ -338,7 +349,7 @@
             <div class="grid-2">
               <div class="field">
                 <label for="provider">Provider</label>
-                <select class="select" id="provider" name="provider" data-default-gemini-model="{{ project.default_gemini_model }}" data-default-openrouter-model="{{ project.default_openrouter_model }}">
+                <select class="select" id="provider" name="provider" data-endpoint-ready="{{ 'true' if app_settings.openai_base_url else 'false' }}" data-default-gemini-model="{{ project.default_gemini_model }}" data-default-openrouter-model="{{ project.default_openrouter_model }}">
                   {% for name, label in providers %}
                   <option value="{{ name }}" data-key-ready="{{ 'true' if (provider_key_status or {}).get(name, false) else 'false' }}" data-saved-key="{{ 'true' if (provider_saved_key_status or {}).get(name, false) else 'false' }}" {% if project.provider == name %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
@@ -358,6 +369,7 @@
                 <option value="{{ model.name }}"></option>
                 {% endfor %}
               </datalist>
+              <p>{{ docs_link("settings/#provider-connections", "Provider and model setup") }}</p>
               <p class="u-sm u-muted" data-model-hint>Select a compatible model. PDF handling follows the application-wide parser setting.</p>
               <p class="u-sm" data-model-validation role="status"></p>
             </div>
@@ -427,6 +439,9 @@
       Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser and provider configured in Settings.
     </p>
   </section>
+
+  </div>
+  </div>
 
   <dialog class="dialog" id="rename-project-dialog" aria-labelledby="rename-project-title">
     <form class="js-rename-project" action="/{{ token }}/projects/{{ project.id }}/rename">

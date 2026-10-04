@@ -48,6 +48,9 @@ def resolve_api_key(
     if saved_key:
         return saved_key
 
+    if selected == "openai_compatible":
+        return ""
+
     raise RuntimeError(
         f"{environment_name} is required. Enter a {provider_label(selected)} key in the CLI, "
         "set it in the environment or .env, or save it in the browser app."

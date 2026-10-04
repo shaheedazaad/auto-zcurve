@@ -401,15 +401,20 @@ validate_statistic_row <- function(row, config) {
     notes <- c(notes, "z_value is not finite.")
   }
 
-  if (!is.null(reported_value) && nzchar(trimws(as.character(reported_value)))) {
+  has_reported_value <- !is.null(reported_value) && length(reported_value) > 0 &&
+    !is.na(reported_value[[1]]) && nzchar(trimws(as.character(reported_value[[1]])))
+
+  if (has_reported_value) {
     if (is.null(parsed)) {
       status <- "warning"
       notes <- c(notes, "reported_statistic could not be parsed.")
-    } else {
+    } else if (!identical(status, "warning")) {
       status <- "ok"
     }
   } else if (!is.na(extracted_p) || !is.na(extracted_z)) {
-    status <- "ok"
+    if (!identical(status, "warning")) {
+      status <- "ok"
+    }
   }
 
   if (!is.null(parsed) && identical(parsed$type, "p")) {

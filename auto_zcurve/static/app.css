@@ -739,3 +739,81 @@
   .yaml-comment { color: var(--muted-foreground); font-style: italic; }
   .yaml-punctuation { color: var(--muted-foreground); }
 }
+
+/* Workflow layout ported from MetaCoder, using auto-zcurve's existing palette. */
+@layer app {
+  .workflow-icon { width: var(--sp-4); height: var(--sp-4); flex-shrink: 0; color: var(--workflow-color, currentColor); }
+  .icon-heading { display: flex; align-items: center; gap: var(--sp-2); }
+  h1.icon-heading > .workflow-icon, h2.icon-heading > .workflow-icon { width: var(--sp-6); height: var(--sp-6); }
+  .project-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .project-sidebar { position: sticky; top: calc(var(--bar-height) + var(--sp-6)); }
+  .project-content { min-width: 0; }
+  .project-tabs { display: flex; flex-direction: column; gap: var(--sp-1); border: 0; margin: 0; overflow: visible; }
+  .project-tabs button { display: flex; align-items: center; gap: var(--sp-2); text-align: left; white-space: normal; border: 0; border-radius: var(--radius-md); padding: var(--sp-3); min-height: var(--sp-8); }
+  :is([data-tab-target="overview"], [data-tab-panel="overview"], [data-tab-target="schema"], [data-tab-panel="schema"]) { --workflow-color: var(--info-subtle-foreground); }
+  :is([data-tab-target="sources"], [data-tab-panel="sources"]) { --workflow-color: var(--warning-subtle-foreground); }
+  :is([data-tab-target="articles"], [data-tab-panel="articles"], [data-tab-target="run-analysis"], [data-tab-panel="run-analysis"]) { --workflow-color: var(--success-subtle-foreground); }
+  .project-tabs button:hover { background: color-mix(in srgb, var(--workflow-color, var(--primary)) 8%, var(--background)); }
+  .project-tabs button[aria-selected="true"] { color: var(--workflow-color, var(--primary)); background: color-mix(in srgb, var(--workflow-color, var(--primary)) 12%, var(--background)); box-shadow: inset 3px 0 var(--workflow-color, var(--primary)); }
+  .project-content .tab-panel > .panel { border-top: 2px solid color-mix(in srgb, var(--workflow-color, var(--primary)) 60%, var(--border)); }
+  .project-content .tab-panel > .section-head h2 { color: var(--workflow-color, var(--foreground)); }
+  .project-content .dropzone { border-color: color-mix(in srgb, var(--warning-subtle-foreground) 50%, var(--border)); background: color-mix(in srgb, var(--warning-subtle-foreground) 5%, var(--card)); }
+  .project-home-row:nth-child(3n + 1) { --workflow-color: var(--info-subtle-foreground); }
+  .project-home-row:nth-child(3n + 2) { --workflow-color: var(--success-subtle-foreground); }
+  .project-home-row:nth-child(3n) { --workflow-color: var(--warning-subtle-foreground); }
+  .project-folder-icon { display: grid; place-items: center; flex-shrink: 0; width: var(--sp-8); height: var(--sp-8); border-radius: var(--radius-md); background: color-mix(in srgb, var(--workflow-color) 12%, var(--card)); }
+  .project-home-row:hover { background: color-mix(in srgb, var(--workflow-color) 7%, var(--card)); }
+  .project-search-controls { flex-wrap: wrap; }
+  .project-search-controls .input { min-width: 0; width: 16rem; }
+  .project-search-controls .select { width: auto; }
+  .project-pagination { flex-wrap: wrap; }
+  .project-pagination > :first-child { margin-right: auto; }
+  .accent-section > .panel { border-top: 2px solid var(--info-subtle-foreground); }
+  .settings-group { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .settings-group + .settings-group { border-top: 1px solid var(--border); padding-top: var(--sp-4); }
+  .settings-group legend { font-weight: 600; color: var(--info-subtle-foreground); margin-bottom: var(--sp-4); }
+  .settings-page details > summary { cursor: pointer; font-weight: 500; }
+  .settings-page details > textarea { margin-top: var(--sp-4); }
+  @media (max-width: 48rem) {
+    .project-layout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+    .project-sidebar { position: static; }
+    .project-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .project-search-controls { width: 100%; }
+    .project-search-controls .input { width: 100%; }
+  }
+}
+
+@layer app {
+  .app-bar-brand { white-space: nowrap; flex-shrink: 0; }
+}
+
+@layer app {
+  .settings-nav { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .settings-nav a { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); border-radius: var(--radius-md); color: var(--muted-foreground); font-weight: 500; }
+  .settings-nav a:hover, .settings-nav a[aria-current] { background: var(--info-subtle); color: var(--info-subtle-foreground); }
+  .settings-nav a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .settings-nav .settings-provider-link { padding-left: var(--sp-8); font-size: var(--text-xs); }
+  .settings-layout :is(section[id], form[id], details[id]) { scroll-margin-top: calc(var(--bar-height) + var(--sp-6)); }
+  .provider-settings + .provider-settings { border-top: 1px solid var(--border); }
+  .provider-settings > summary { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4); list-style: none; }
+  .provider-settings > summary::-webkit-details-marker { display: none; }
+  .provider-settings > summary > strong { flex: 1; }
+  .provider-chevron { font-size: var(--text-xl); transition: transform .15s; }
+  .provider-settings[open] > summary .provider-chevron { transform: rotate(90deg); }
+  .provider-settings[open] > summary { background: var(--info-subtle); color: var(--info-subtle-foreground); }
+  .provider-settings-body { padding: var(--sp-4); }
+  .provider-key-row { padding: 0 0 var(--sp-4); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  @media (max-width: 48rem) {
+    .settings-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .settings-nav .settings-provider-link { padding-left: var(--sp-3); }
+  }
+}
+
+@layer app {
+  .provider-settings::details-content { transition: none; overflow: clip; }
+}
+
+@layer app {
+  .docs-help { color: var(--info-subtle-foreground); text-underline-offset: var(--sp-1); }
+  .docs-help:hover { text-decoration: underline; }
+}

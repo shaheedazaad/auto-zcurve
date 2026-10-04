@@ -12,6 +12,10 @@ dist/
 build/
 .eggs/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 .venv/
 .venv-docs/
 .pixi/
@@ -35,3 +39,6 @@ renv/
 output/
 sources/
 .auto_zcurve/
+
+# JavaScript test dependencies
+node_modules/

@@ -345,13 +345,10 @@ def extract_pdf(
         )
     if reasoning_effort is not None:
         payload["reasoning"] = {"effort": normalize_reasoning_effort(reasoning_effort)}
-    if input_mode in {"native_pdf", "cloudflare_pdf"}:
-        engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]
-        payload["plugins"] = [{"id": "file-parser", "pdf": {"engine": engine}}]
-        if input_mode == "cloudflare_pdf":
-            payload["max_tokens"] = LOCAL_OUTPUT_TOKEN_RESERVE
-    else:
-        raise RuntimeError(f"Unsupported OpenRouter input mode: {input_mode}")
+    engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]
+    payload["plugins"] = [{"id": "file-parser", "pdf": {"engine": engine}}]
+    if input_mode == "cloudflare_pdf":
+        payload["max_tokens"] = LOCAL_OUTPUT_TOKEN_RESERVE
     usage: dict[str, int | None] = {
         "input_tokens": None,
         "output_tokens": None,

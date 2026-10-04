@@ -12,11 +12,9 @@ what that involves.
 
 ## Does this cost money?
 
-auto-zcurve itself is free. Running an analysis uses your own AI provider
-API key, which will incur costs depending on the provider, model, and
-number/length of articles — check current Gemini pricing if that matters
-for your budget. Gemini's free tier is usually enough for trying the app out
-on a handful of articles.
+auto-zcurve itself is free. Hosted providers may charge for requests; check
+your account's pricing and quota. Local endpoint costs and hardware needs
+depend on the server you run. auto-zcurve does not supply a model service.
 
 ## The browser link stopped working
 
@@ -48,12 +46,30 @@ Try **Retry failed** after fixing the underlying PDF or schema. If several
 unrelated articles fail with the same error, it's more likely a settings or
 schema issue than a problem with any one PDF.
 
-## "Unlock or add a Gemini API key to run"
+## The app asks for an API key
 
-You either haven't added a key yet, or you added one previously, saved it,
-and need to unlock it again for this session (saved keys are never
-automatically loaded — see [Getting an API key](api-key.md)). Go to
-**Settings**, or use the shortcut button on the **Run analysis** tab.
+Open **Settings → Provider connections**, expand the selected provider, and
+add its key. A saved key can be unlocked there or loaded when you start a
+run. See [API keys and privacy](api-key.md).
+
+## My OpenAI-compatible endpoint will not run
+
+Check the [endpoint settings](settings.md#openai-compatible):
+
+- Use the API base URL, including `/v1` if required, without `/chat/completions`.
+- Make sure the server is running and the project's model ID matches a model it serves.
+- Add or replace the key if the server requires authentication.
+- If it rejects `response_format`, select a supported JSON output mode and save.
+- If a PDF has no extractable text, run OCR first. This provider does not send figures.
+
+A successful connection does not guarantee valid extraction output. All JSON
+modes still undergo schema validation. Check the article's failure message
+before retrying.
+
+## How do I uninstall?
+
+Follow [Uninstalling](installation.md#uninstalling). Projects and saved
+credentials are preserved; the scripts remove the app and launcher.
 
 ## macOS asks for a Keychain password and shows "Python"
 

@@ -9,7 +9,8 @@ theme:
 nav:
   - Welcome: index.md
   - Install: installation.md
-  - Getting an API key: api-key.md
+  - API keys and privacy: api-key.md
+  - Settings and providers: settings.md
   - Your first project: quickstart.md
   - Understanding your results: results.md
   - FAQ and troubleshooting: faq.md

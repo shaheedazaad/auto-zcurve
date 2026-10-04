@@ -195,7 +195,9 @@ def _validate_scalar(value: object, field_type: str, field_path: str) -> None:
         return
     if field_type == "STRING" and not isinstance(value, str):
         raise ValueError(f"{field_path} must be a string.")
-    if field_type == "NUMBER" and not isinstance(value, (int, float)):
+    if field_type == "NUMBER" and (
+        not isinstance(value, (int, float)) or isinstance(value, bool)
+    ):
         raise ValueError(f"{field_path} must be a number.")
     if field_type == "INTEGER" and not (isinstance(value, int) and not isinstance(value, bool)):
         raise ValueError(f"{field_path} must be an integer.")

@@ -1,14 +1,17 @@
 {% extends "base.html" %}
+{% from "_icons.html" import workflow_icon %}
+{% from "_help.html" import docs_link %}
 
 {% block page %}
-<div class="page">
+<div class="page home-page">
   <div class="page-head">
     <div>
-      <h1>Projects</h1>
+      <h1 class="icon-heading">{{ workflow_icon("folder") }}Projects</h1>
       <p>PDF extraction and z-curve analyses stored on this computer.</p>
     </div>
     <div class="section-head-actions">
-      <button class="btn" type="button" data-new-project-toggle>New project</button>
+      {{ docs_link("quickstart/", "First project guide") }}
+      <button class="btn" type="button" data-new-project-toggle>{{ workflow_icon("plus") }}New project</button>
     </div>
   </div>
 
@@ -19,15 +22,17 @@
     </section>
   </aside>
 
-  <section class="section">
+  <section class="section accent-section">
     <div class="section-head">
       <div>
         <h2><span data-project-count>{{ projects|length }} project{% if projects|length != 1 %}s{% endif %}</span></h2>
       </div>
-      <div class="section-head-actions">
+      <div class="section-head-actions project-search-controls">
         <label class="u-visually-hidden" for="project-search-input">Search projects</label>
         <input class="input js-project-search" type="search" id="project-search-input"
-               placeholder="Search projects" autocomplete="off" style="width:16rem">
+               placeholder="Search projects" autocomplete="off">
+        <label class="u-visually-hidden" for="project-sort">Sort projects</label>
+        <select class="select" id="project-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select>
       </div>
     </div>
 
@@ -36,7 +41,8 @@
         {# Kept byte-identical to projectRow() in app.js: the client re-renders
            this list on load, so any divergence shows up as a visual flicker. #}
         {% for project in projects[:10] %}
-        <a class="row" data-project-row href="/{{ token }}/projects/{{ project.id }}">
+        <a class="row project-home-row" data-project-row href="/{{ token }}/projects/{{ project.id }}">
+          <span class="project-folder-icon">{{ workflow_icon("folder") }}</span>
           <span class="row-main">
             <strong class="row-title">{{ project.name }}</strong>
             <span class="row-meta">{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.total_tokens }} tokens</span>
@@ -53,11 +59,11 @@
         {% endfor %}
       </div>
 
-      <div class="panel-foot" data-project-pagination {% if projects|length <= 10 %}hidden{% endif %}>
-        <span class="u-muted u-sm" data-project-page>Page 1 of {% if projects %}{{ ((projects|length - 1) // 10) + 1 }}{% else %}1{% endif %}</span>
+      <nav class="panel-foot project-pagination" aria-label="Project pages" data-project-pagination {% if projects|length <= 10 %}hidden{% endif %}>
+        <span class="u-muted u-sm" role="status" aria-live="polite" data-project-page>Page 1 of {% if projects %}{{ ((projects|length - 1) // 10) + 1 }}{% else %}1{% endif %}</span>
         <button class="btn js-project-previous" data-variant="outline" data-size="sm" type="button" disabled>Previous</button>
         <button class="btn js-project-next" data-variant="outline" data-size="sm" type="button" {% if projects|length <= 10 %}disabled{% endif %}>Next</button>
-      </div>
+      </nav>
     </div>
   </section>
 
@@ -83,7 +89,7 @@
 
   <footer class="app-foot">
     <span>auto-zcurve {{ version }}</span>
-    <span>To update, rerun the installer command from the release page.</span>
+    {{ docs_link("installation/#updating", "Update instructions") }}
   </footer>
 </div>
 {% endblock %}

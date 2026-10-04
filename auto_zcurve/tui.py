@@ -126,6 +126,8 @@ def request_terminal_resize(
         min_rows=min_rows,
     )
     if target is None:
+        if close_output:
+            output.close()
         return False
 
     columns, rows = target
@@ -701,7 +703,8 @@ def run_tui() -> int:
             api_key = self.query_one("#api_key", Input).value.strip()
             model = self.query_one("#model", Select).value
             _count, message = article_summary(project_dir)
-            readiness = check_project_readiness(project_dir, api_key=api_key, model=str(model or ""))
+            selected_model = "" if model is None or model is Select.NULL else str(model)
+            readiness = check_project_readiness(project_dir, api_key=api_key, model=selected_model)
             self.article_widget.update(message)
             if self.busy:
                 return
@@ -794,7 +797,7 @@ def run_tui() -> int:
             if not api_key:
                 self.update_status("Enter a Gemini API key or save one permanently before running.")
                 return
-            if not model:
+            if model is None or model is Select.NULL:
                 self.update_status("Choose a Gemini model before running.")
                 return
 

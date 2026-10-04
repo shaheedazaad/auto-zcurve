@@ -1,0 +1,18 @@
+{% macro workflow_icon(section) -%}
+  {% set paths = {
+    'analysis': 'M9 3h6m-5 0v6l-6 10a1 1 0 0 0 1 2h14a1 1 0 0 0 1-2L14 9V3M8 15h8',
+    'manual': 'M4 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H4V4Zm9 3a3 3 0 0 1 3-3h5v15h-4a4 4 0 0 0-4 2',
+    'coding-sheet': 'M3 4h18v16H3V4Zm0 5h18M3 14h18M9 4v16',
+    'sources': 'M14 3H5v18h14V8l-5-5Zm0 0v5h5M8 12h8M8 16h6',
+    'identify': 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6M7 10l2 2 4-4',
+    'run': 'm7 4 14 8-14 8V4Z',
+    'results': 'M4 3v18h17M8 17v-5m5 5V7m5 10V4',
+    'folder': 'M3 7V5h6l2 2h10v13H3V7Z',
+    'plus': 'M12 5v14M5 12h14',
+    'key': 'M9 3a6 6 0 1 0 4 10l4 4h3v3h3v-5l-7-7A6 6 0 0 0 9 3Z',
+    'spark': 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6Z',
+    'search': 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6',
+    'manage': 'M4 7h16M4 17h16M8 4v6m8 4v6'
+  } %}
+  <svg class="workflow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ paths[section] }}" /></svg>
+{%- endmacro %}

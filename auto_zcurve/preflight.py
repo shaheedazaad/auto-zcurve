@@ -31,7 +31,11 @@ class PreflightError(RuntimeError):
 def missing_python_dependencies() -> list[str]:
     missing: list[str] = []
     for module, package in PYTHON_DEPS.items():
-        if importlib.util.find_spec(module) is None:
+        try:
+            spec = importlib.util.find_spec(module)
+        except ModuleNotFoundError:
+            spec = None
+        if spec is None:
             missing.append(package)
     return missing
 

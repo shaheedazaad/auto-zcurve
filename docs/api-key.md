@@ -1,60 +1,75 @@
-# Getting an API key
+# API keys and privacy
 
-auto-zcurve doesn't run its own AI model — it sends each PDF to an AI
-provider's servers and asks for the statistics back. To do that, it needs an
-**API key**: a private password-like string that identifies your account with
-that provider and lets them bill you for what you use.
-
-The default and recommended provider is **Google Gemini**.
+Gemini and OpenRouter require an **API key**, a private password-like string
+that identifies your account with the provider. An OpenAI-compatible server
+may require a key or allow keyless requests. You supply the provider account
+or server; auto-zcurve does not supply an AI service.
 
 ## Create a Gemini API key
 
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey) and sign
-   in with a Google account.
-2. Create a new API key.
-3. Copy it — it's a long string of letters and numbers.
-
-Gemini's free tier is usually enough to try auto-zcurve out on a handful of
-articles. Larger projects or heavier models may incur small costs on Google's
-side; check current Gemini pricing if that matters for your budget.
+Go to [Google AI Studio](https://aistudio.google.com/app/apikey), sign in,
+and create and copy a key. Check your provider account for current pricing,
+quotas, and available models before running a large project.
 
 ## Add the key to auto-zcurve
 
-Open **Settings** in the app and paste the key into the **Gemini** row (see
-[Your first project](quickstart.md) for a screenshot of this screen). Tick
-**Store securely on this computer** if you want auto-zcurve to remember it
-between sessions.
+1. Open **Settings** from the top bar.
+2. Expand the provider under **Provider connections**, or select it in the sidebar.
+3. Click **Add key**, paste the key, and click **Save key**.
+4. Tick **Store securely on this computer** to save it between sessions.
+
+The provider shows **Ready** when its key is available for the current
+session. Default model settings live in the same provider section but have
+their own save button. See [Settings and providers](settings.md).
 
 ## What "store securely" actually means
 
-When you check that box, auto-zcurve saves the key using your operating
-system's built-in credential store (macOS Keychain, Windows Credential
-Manager, or the Linux secret service, when one is available). It is **never**
-written to a plain text file, and it is **never** included in a project's
-files, logs, downloads, or reports.
+Saved keys use the operating system's credential store, such as macOS
+Keychain, Windows Credential Manager, or an available Linux secret service.
+The app does not save them in its settings file or include them in project
+downloads. If no usable credential store is available, keys can be used in
+memory for the current app session.
 
-A saved key is not automatically loaded the next time you open the app — you
-choose to unlock it each session, so a key never sits "on" without your
-knowledge.
+Starting the app or opening Settings does not read saved keys. **Unlock**
+loads a key explicitly. **Run analysis** and **Retry failed** also load the
+selected provider's saved key when needed; OpenRouter model validation can
+load its key too. The operating system may ask for authorisation.
+
+**Replace** changes the key. **Remove** deletes the saved key and forgets the
+session copy. For a keyless endpoint, leave its key unset.
 
 !!! note "macOS Keychain prompt"
-    macOS may ask you to authorize access and identify the app as "Python,"
-    sometimes with a version number, rather than "auto-zcurve." This is
-    expected — auto-zcurve runs on Python underneath.
+    The prompt may identify the bundled runtime as “Python” rather than
+    “auto-zcurve.” Approve it when you intend to use the saved key.
 
 ## What gets sent to the provider
 
-During a run, each PDF (or its parsed text, depending on your parser setting)
-is sent to the provider along with your extraction instructions and schema.
-That's it — no other project files, filenames, or personal information leave
-your computer as part of that request.
+Extraction sends the project instructions and schema, together with the
+article content:
+
+- **Gemini:** the original PDF.
+- **OpenRouter:** the PDF, including its filename, for processing through its
+  file-parser service and selected model.
+- **OpenAI-compatible:** locally extracted text with page numbers, sent to
+  the API base URL you configured. A local server can keep that request on
+  your computer; a remote server receives the text.
+
+Article content may itself contain author names or other personal information.
+Provider credentials are sent for authentication. Projects and reports are
+stored on your computer; the app does not upload the entire project folder.
 
 ## An alternative provider: OpenRouter
 
-OpenRouter is available as an experimental backup if you want to try a
-different model. It requires you to type in an exact OpenRouter model ID
-yourself (there's no built-in list, and quality/reliability varies by model),
-so it's best treated as a fallback rather than a first choice.
+Create a key through your OpenRouter account, then add it to the
+**OpenRouter (Experimental)** section. Enter the exact model ID in the
+project. See [OpenRouter settings](settings.md#openrouter) for validation and
+PDF handling.
+
+## OpenAI-compatible endpoints
+
+For a hosted or local Chat Completions server, follow the
+[endpoint setup instructions](settings.md#openai-compatible). A key is optional
+only when the server permits unauthenticated requests.
 
 ## Next step
 

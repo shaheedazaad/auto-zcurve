@@ -42,10 +42,18 @@ irm https://raw.githubusercontent.com/shaheedazaad/auto-zcurve/main/install.ps1 
 
 The installer supports Apple Silicon and Intel macOS 14 or newer, Windows x64,
 and mainstream glibc-based Linux x64. It downloads the latest versioned release
-bundle, installs its committed `pixi.lock`, and downloads the local layout and
-table models used for PDF parsing. To update, run the same command again. It
+bundle and installs its committed `pixi.lock`. To update, run the same command again. It
 also adds the auto-zcurve launcher directory to your user `PATH` if needed;
 open a new terminal after the first installation.
+
+## Uninstall
+
+Use [`uninstall.sh`](uninstall.sh) on macOS/Linux or
+[`uninstall.ps1`](uninstall.ps1) on Windows. Preview with `sh uninstall.sh --dry-run`
+or `.\uninstall.ps1 -WhatIf`, then run without the preview option to confirm.
+Projects, settings, keys, and Pixi are preserved. See the
+[uninstall guide](docs/installation.md#uninstalling) for download commands and
+custom installation paths.
 
 ## Use the browser app
 
@@ -64,14 +72,16 @@ In the app:
 1. Create a named project.
 2. Add several PDF articles by dragging or choosing files.
 3. Review or customize the project’s extraction instructions and extraction schema.
-4. Open **Settings** to add a Gemini API key and set execution defaults.
+4. Open **Settings**, expand a provider to configure its connection and default model, and set run defaults.
 5. Select a Gemini model for the project.
 6. Run the analysis and follow its live progress.
 7. Review the summary, view or regenerate the report, retry failed articles, open the project
    folder, or download a ZIP of the result files.
 
 Gemini accepts an exact Gemini API model ID and receives the original PDF. The
-app never falls back to prompt-only JSON or response healing.
+Gemini integration never falls back to prompt-only JSON or response healing.
+OpenAI-compatible endpoints offer explicit JSON schema, JSON object, and
+prompt-only modes; all responses are validated against the project schema.
 
 ### Model allowlist
 
@@ -95,6 +105,17 @@ not listed in `models.yml`: enter an exact OpenRouter model ID manually and the
 app validates live support for PDF/file input and structured output before a run.
 Quality, latency, and reliability can vary by model and provider route.
 
+OpenAI-compatible Chat Completions endpoints can be configured under
+**Settings → Provider connections → OpenAI-compatible**. Set the API base URL
+and JSON output mode, optionally add a key, and enter the exact model ID in
+the project. This provider sends locally extracted PDF text with page numbers;
+scanned pages need OCR and figures are not sent. See the
+[settings guide](docs/settings.md) for details.
+
+Projects have left-hand workflow navigation. The project library supports
+name search, sorting, and pagination. Settings has its own sidebar, with
+expandable provider sections and independent save buttons.
+
 Projects are stored in the normal per-user application-data directory:
 
 - macOS: `~/Library/Application Support/Auto Z-Curve/projects`
@@ -112,8 +133,8 @@ When “Remember securely” is selected, auto-zcurve uses the operating system�
 credential store through Python Keyring. If Linux has no usable secret-service
 backend, the app clearly marks the key as session-only. It never falls back to
 a plaintext file. Saved keys are not read
-automatically when the app starts; choose the corresponding unlock action when
-you want to use one. On macOS, the authorization
+automatically when the app starts. Unlock them in Settings or let the app
+load the selected provider's key when you run, retry, or validate an OpenRouter model. On macOS, the authorization
 dialog may identify auto-zcurve's bundled runtime as “Python,” sometimes with
 a version number.
 
@@ -197,6 +218,55 @@ Run the test suite and the real R/Quarto release smoke test with:
 pixi run test
 pixi run release-smoke
 ```
+
+Browser behavior tests require Node.js 24 and use a simulated DOM with mocked
+network requests; they do not call model providers or access credentials:
+
+```sh
+npm ci
+npm test
+npm run test:coverage
+```
+
+The browser coverage command measures `auto_zcurve/static/app.js` and fails if
+line coverage falls below 100%. CI runs this separately from the Python/R
+matrix. Branch and function coverage are also reported.
+The Python suite also runs the client script against real server-rendered home,
+settings, and project pages when Node.js and these dependencies are installed.
+CI installs them for every supported platform in the test matrix.
+
+The client retains defensive fallbacks for missing message elements, empty
+message-state inputs, and empty provider responses, plus two initial no-op
+callbacks. Current page flows cannot invoke those paths; they remain visible
+as uncovered branches/functions rather than being excluded from measurement.
+
+For Python coverage, install the `test` extra in your development environment
+(`python -m pip install -e '.[test]'`), then run:
+
+```sh
+python -m coverage run -m unittest discover -s tests
+python -m coverage report
+```
+
+This measures Python application and release-tooling coverage. R regression
+scripts run through unittest when `Rscript` is available; they are not included
+in the Python coverage percentage. Use the managed Pixi environment to run them
+with the project libraries. The real R/Quarto render is opt-in through
+`pixi run release-smoke` and is skipped in the ordinary suite.
+
+Python's coverage report fails below 100% measured line and branch coverage.
+To measure the R sources, install the R package `covr` in your active R library
+and run from the repository root:
+
+```sh
+Rscript scripts/check_r_coverage.R
+# Optionally export the expression-level counts for inspection:
+Rscript scripts/check_r_coverage.R /tmp/auto-zcurve-r-coverage.csv
+```
+
+The R check runs every `tests/r/test_*.R` script and enforces 100% coverage of
+`R/*.R`. R's expression coverage and JavaScript/Python branch coverage are
+different measurements; the real render smoke test remains a separate check.
 
 For Python-only development without managed R or Quarto:
 

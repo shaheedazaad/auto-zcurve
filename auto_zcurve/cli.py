@@ -59,9 +59,9 @@ def prompt_api_key(
 
 def prompt_model(api_key: str, console: CliConsole, provider: str = "gemini") -> str:
     selected_provider = normalize_provider(provider)
-    if selected_provider == "openrouter":
-        primary = input("OpenRouter model ID (for example vendor/model): ").strip()
-        return validate_model_option("openrouter", primary, api_key).name
+    if selected_provider in {"openrouter", "openai_compatible"}:
+        primary = input(f"{provider_label(selected_provider)} model ID: ").strip()
+        return validate_model_option(selected_provider, primary, api_key).name
     try:
         options = list_live_models(api_key, selected_provider)
         if not options:
@@ -89,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run extraction for a project directory.")
     run.add_argument("project_dir", type=Path)
     run.add_argument("--yes", action="store_true", help="Accept setup defaults and do not prompt.")
-    run.add_argument("--provider", choices=("gemini", "openrouter"), help="LLM provider (default: saved setting or gemini).")
+    run.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="LLM provider (default: saved setting or gemini).")
     run.add_argument("--model", help="Primary provider model ID.")
     run.add_argument("--api-key", help="Selected provider's API key for this run. Not stored.")
     run.add_argument("--parallel", type=int, help="Number of PDFs to process at the same time.")
@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     retry = subparsers.add_parser("retry", help="Retry failed files from the latest project outputs.")
     retry.add_argument("project_dir", type=Path)
     retry.add_argument("--yes", action="store_true", help="Retry all failed files without prompting.")
-    retry.add_argument("--provider", choices=("gemini", "openrouter"), help="Override the saved LLM provider.")
+    retry.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="Override the saved LLM provider.")
     retry.add_argument("--model", help="Override the saved provider model.")
     retry.add_argument("--api-key", help="Selected provider's API key for this retry. Not stored.")
     retry.add_argument("--parallel", type=int, help="Number of PDFs to retry at the same time.")
@@ -352,12 +352,9 @@ def main(argv: list[str] | None = None) -> int:
             return run_command(args, args.project_dir, interactive=False, console=console)
         if args.command == "retry":
             return retry_command(args, console)
-        if args.command in {"tui", "gui"}:
-            from .tui import run_tui
+        from .tui import run_tui
 
-            return run_tui()
-        parser.print_help()
-        return 2
+        return run_tui()
     except PreflightError as exc:
         console.error(classify_error(exc).compact())
         return 2
