@@ -18,6 +18,8 @@ quotas, and available models before running a large project.
 3. Click **Add key**, paste the key, and click **Save key**.
 4. Tick **Store securely on this computer** to save it between sessions.
 
+![Gemini API key dialog with an empty key field and Store securely on this computer selected](assets/screenshots/settings-api-key-dialog.png)
+
 The provider shows **Ready** when its key is available for the current
 session. Default model settings live in the same provider section but have
 their own save button. See [Settings and providers](settings.md).

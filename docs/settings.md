@@ -4,6 +4,8 @@ Open **Settings** in the top bar. The sidebar links to provider connections,
 run defaults, and the bundled extraction instructions. On a narrow screen,
 this navigation appears above the settings.
 
+![Settings overview with sidebar links, collapsed provider connections, and run defaults](assets/screenshots/settings.png)
+
 ## Provider connections
 
 Each provider has an expandable section. Click its heading to open or close
@@ -20,6 +22,8 @@ Expand **Gemini** to manage its key, **Default Gemini model**, and
 **Gemini service tier**. Save the model and tier with **Save Gemini settings**;
 the API key dialog has its own save button.
 
+![Expanded Gemini settings with Add key, default model, service tier, and Save Gemini settings](assets/screenshots/settings-gemini.png)
+
 The default model prefills the model field for new projects. A project can
 choose another allowed Gemini model on **Run analysis**. Gemini receives the
 original PDF. Its model choices are controlled by the installed `models.yml`.
@@ -29,6 +33,8 @@ original PDF. Its model choices are controlled by the installed `models.yml`.
 Expand **OpenRouter (Experimental)** to manage its key and optional
 **Default OpenRouter model**. Click **Save OpenRouter (Experimental) settings**
 after changing the default.
+
+![Expanded OpenRouter settings with Add key and the optional default model field](assets/screenshots/settings-openrouter.png)
 
 Enter an exact model ID, such as the ID shown by your provider, on
 **Run analysis**. There is no built-in OpenRouter model picker. The app checks
@@ -50,6 +56,11 @@ Chat Completions:
 5. In a project's **Run analysis** section, choose **OpenAI-compatible** and
    enter the exact model ID served by that endpoint. Save the project settings
    or start the run.
+
+![Expanded OpenAI-compatible settings with an example local API base URL and Strict JSON schema selected](assets/screenshots/settings-openai-compatible.png)
+
+The screenshot uses an example local address. Enter the address of your own
+server and select an output mode it supports before saving.
 
 | JSON output mode | What the app requests |
 | --- | --- |
@@ -78,6 +89,8 @@ request timeout, and maximum PDF upload size. **Extraction preferences**
 groups the PDF parser and reasoning setting. Click **Save settings** to save
 these controls. Provider settings are saved separately and remain unchanged.
 
+![Run defaults showing parallel PDFs, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
+
 Projects can save their own parallel-request and delay values on **Run
 analysis**. Model defaults may also prefill these fields. The PDF parser
 control does not change the OpenAI-compatible provider's local text input.
@@ -89,4 +102,4 @@ This view is read-only. Each project has an independent editable copy under
 **Extraction instructions** in its left-hand navigation. See
 [customising the extraction instructions](quickstart.md#3-check-the-extraction-instructions).
 
-![Settings with expandable provider connections and sidebar navigation](assets/screenshots/settings.png)
+![Expanded read-only bundled extraction instructions in Settings](assets/screenshots/settings-extraction-instructions.png)
