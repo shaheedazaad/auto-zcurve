@@ -11,12 +11,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: npm run test:coverage
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:coverage
 
   install-and-smoke:
     name: ${{ matrix.name }}
@@ -35,12 +36,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
+          cache: pnpm
       - name: Install browser integration test dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - uses: prefix-dev/setup-pixi@v0.8.1
         with:
           frozen: true

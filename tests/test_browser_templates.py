@@ -21,7 +21,7 @@ class BrowserTemplateTests(unittest.TestCase):
             raise unittest.SkipTest('Node.js is required for template integration tests')
         available = subprocess.run([cls.node, '-e', "require('jsdom')"], cwd=cls.root, capture_output=True)
         if available.returncode:
-            raise unittest.SkipTest('Run npm ci to install browser test dependencies')
+            raise unittest.SkipTest('Run pnpm install --frozen-lockfile to install browser test dependencies')
 
     def test_rendered_pages_work_with_the_real_client_script(self):
         with tempfile.TemporaryDirectory() as directory:

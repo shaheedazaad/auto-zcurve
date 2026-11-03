@@ -219,13 +219,14 @@ pixi run test
 pixi run release-smoke
 ```
 
-Browser behavior tests require Node.js 24 and use a simulated DOM with mocked
+Browser behavior tests require Node.js 24 and pnpm 10.12.1 (pinned in
+`package.json`) and use a simulated DOM with mocked
 network requests; they do not call model providers or access credentials:
 
 ```sh
-npm ci
-npm test
-npm run test:coverage
+pnpm install --frozen-lockfile
+pnpm test
+pnpm run test:coverage
 ```
 
 The browser coverage command measures `auto_zcurve/static/app.js` and fails if
