@@ -1,8 +1,26 @@
 ZCURVE_BOOTSTRAP_ITERATIONS <- 1000L
 ZCURVE_BOOTSTRAP_SEED <- 20260802L
 
+# Extraction statuses whose values are analysed. `needs_review` extractions are
+# included but marked in the disclosure table so readers can tell which
+# statistics were not cleanly extracted.
+EXTRACTED_STATUSES <- c("ok", "needs_review")
+
+is_extracted_result <- function(item) {
+  is.character(item$status) && length(item$status) == 1L && item$status %in% EXTRACTED_STATUSES
+}
+
+review_reasons_text <- function(item) {
+  reasons <- as.character(unlist(item$review_reasons %||% list()))
+  reasons <- reasons[nzchar(trimws(reasons))]
+  if (!length(reasons)) {
+    return(if (identical(item$status, "needs_review")) "No reason was recorded." else NA_character_)
+  }
+  paste(reasons, collapse = "; ")
+}
+
 flatten_results <- function(results, config) {
-  successful <- purrr::keep(results, ~ identical(.x$status, "ok"))
+  successful <- purrr::keep(results, is_extracted_result)
 
   if (!length(successful)) {
     return(tibble::tibble())
@@ -25,7 +43,9 @@ flatten_results <- function(results, config) {
 
     purrr::map_dfr(effects, function(effect) {
       row <- list(
-        source_name = item$file_name
+        source_name = item$file_name,
+        extraction_status = item$status,
+        extraction_review_reasons = review_reasons_text(item)
       )
 
       for (field_name in meta_fields) {
@@ -949,7 +969,7 @@ run_zcurve_analysis <- function(effect_table, config) {
 }
 
 build_reference_table <- function(results, config) {
-  successful <- purrr::keep(results, ~ identical(.x$status, "ok"))
+  successful <- purrr::keep(results, is_extracted_result)
 
   if (!length(successful)) {
     return(tibble::tibble())

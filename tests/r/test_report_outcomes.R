@@ -55,4 +55,22 @@ fit_zcurve_with_parallel_fallback <- original_fit
 stopifnot(identical(result$status, "ok"), is.null(result$message), identical(result$execution, execution), identical(result$fit, fixture_fit))
 stopifnot(identical(names(result$metrics), c("metric", "Estimate")), identical(result$metrics$metric, c("(Intercept)", "x")))
 stopifnot(isTRUE(all.equal(result$metrics$Estimate, unname(stats::coef(fixture_fit)))), result$disclosure_table$usable_for_zcurve)
+
+# Statistics from needs_review extractions enter the z-curve and stay marked.
+review_results <- list(
+  list(status = "ok", file_name = "clean.pdf", data = list(effects = list(list(reported_statistic = "z=2.4")))),
+  list(status = "needs_review", file_name = "truncated.pdf", review_reasons = list("finish reason: MAX_TOKENS"), data = list(effects = list(list(reported_statistic = "z=3.1")))),
+  list(status = "error", file_name = "failed.pdf")
+)
+review_config <- list(meta_data = list(), effects = list(reported_statistic = list(role = "reported_statistic")))
+fit_zcurve_with_parallel_fallback <- function(parsed) {
+  stopifnot(nrow(parsed$precise) + nrow(parsed$censored) == 2L)
+  list(fit = fixture_fit, execution = execution)
+}
+result <- run_zcurve_analysis(flatten_results(review_results, review_config), review_config)
+fit_zcurve_with_parallel_fallback <- original_fit
+disclosure <- result$disclosure_table
+stopifnot(identical(result$status, "ok"), identical(disclosure$source_name, c("clean.pdf", "truncated.pdf")))
+stopifnot(all(disclosure$usable_for_zcurve), identical(disclosure$extraction_status, c("ok", "needs_review")))
+stopifnot(identical(disclosure$extraction_review_reasons, c(NA_character_, "finish reason: MAX_TOKENS")))
 cat("R report outcome tests passed\n")

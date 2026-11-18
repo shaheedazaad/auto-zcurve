@@ -219,7 +219,7 @@ def run_tui() -> int:
             label = description or "Processed"
             status, sep, name = label.partition(": ")
             if sep:
-                color = "green" if status == "ok" else "red"
+                color = {"ok": "green", "needs_review": "yellow"}.get(status, "red")
                 msg = f"  [{color}]{escape(status)}[/{color}] [dim]{escape(name)} ({self.done}/{self.total})[/dim]"
             else:
                 msg = f"  [dim]{escape(label)} ({self.done}/{self.total})[/dim]"
@@ -889,7 +889,7 @@ def run_tui() -> int:
             save_last_project_dir(project_dir)
             self.progress_widget.update(total=1, progress=0)
             self.progress_status_widget.update("Gemini processing: starting")
-            self.update_status("Running..." if not retry else "Retrying failed files...")
+            self.update_status("Running..." if not retry else "Retrying failed and needs-review files...")
             count, message = article_summary(project_dir)
             label = "↺ Retry" if retry else "▶ Run"
             self.log_widget.write("")
@@ -976,6 +976,7 @@ def run_tui() -> int:
                             else "not rendered",
                         ),
                         ("Successful PDFs", summary.successful_pdfs),
+                        ("Needs review PDFs", summary.needs_review_pdfs),
                         ("Failed PDFs", summary.failed_pdfs),
                         ("Extracted effects", summary.extracted_effects),
                         ("Usable z-curve inputs", summary.usable_zcurve_inputs),
@@ -994,8 +995,8 @@ def run_tui() -> int:
                 rows = failed_pdf_rows(project_dir)
                 if rows:
                     console.table(
-                        "Failed Articles",
-                        ["Source", "Error"],
+                        "Failed and Needs-Review Articles",
+                        ["Source", "Problem"],
                         rows,
                     )
 
@@ -1006,7 +1007,7 @@ def run_tui() -> int:
                 self.call_from_thread(self.set_busy, False)
                 self.call_from_thread(
                     self.update_status,
-                    "Finished. Open the report or retry failed PDFs." if summary.failed_pdfs else "Finished. Open the report when ready.",
+                    "Finished. Open the report or retry failed and needs-review PDFs." if summary.failed_pdfs or summary.needs_review_pdfs else "Finished. Open the report when ready.",
                 )
             except Exception as exc:
                 summary = classify_error(exc)

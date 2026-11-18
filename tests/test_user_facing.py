@@ -70,7 +70,7 @@ class ErrorPresentationTests(unittest.TestCase):
             self.assertEqual(u.failed_pdf_rows(Path('.'), limit=0), [])
 
     def test_result_paths_and_metrics(self):
-        summary = SimpleNamespace(report_path=None, successful_pdfs=2, failed_pdfs=1, extracted_effects=4, usable_zcurve_inputs=3, input_tokens=10, output_tokens=5, total_tokens=15)
+        summary = SimpleNamespace(report_path=None, successful_pdfs=2, needs_review_pdfs=0, failed_pdfs=1, extracted_effects=4, usable_zcurve_inputs=3, input_tokens=10, output_tokens=5, total_tokens=15)
         for report, expected in [(None, 'not rendered'), (Path('/project/output/report.html'), 'output/report.html'), (Path('/elsewhere/report.html'), '/elsewhere/report.html')]:
             summary.report_path = report
             result = u.format_run_result(summary, Path('/project'))

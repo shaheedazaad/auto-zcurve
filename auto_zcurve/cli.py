@@ -11,7 +11,7 @@ from .models import fallback_models, list_live_models, model_request_defaults, n
 from .preflight import PreflightError, run_preflight
 from .runner import ensure_project_layout, retry_project, run_project
 from .env import resolve_api_key
-from .user_facing import classify_error, format_run_result
+from .user_facing import classify_error, format_run_result, needs_review_pdf_rows, retry_reason
 from .providers import normalize_provider, provider_label
 
 
@@ -97,9 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     run.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
 
-    retry = subparsers.add_parser("retry", help="Retry failed files from the latest project outputs.")
+    retry = subparsers.add_parser("retry", help="Retry failed and needs-review files from the latest project outputs.")
     retry.add_argument("project_dir", type=Path)
-    retry.add_argument("--yes", action="store_true", help="Retry all failed files without prompting.")
+    retry.add_argument("--yes", action="store_true", help="Retry all failed and needs-review files without prompting.")
     retry.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="Override the saved LLM provider.")
     retry.add_argument("--model", help="Override the saved provider model.")
     retry.add_argument("--api-key", help="Selected provider's API key for this retry. Not stored.")
@@ -215,7 +215,7 @@ def run_command(args: argparse.Namespace, project_dir: Path, interactive: bool, 
     if summary is None:
         return 0
     print_summary(summary, console, project_dir)
-    if interactive and summary.failed_pdfs:
+    if interactive and (summary.failed_pdfs or summary.needs_review_pdfs):
         retry_summary = offer_interactive_retry(args, project_dir, settings, console, api_key)
         if retry_summary:
             print_summary(retry_summary, console, project_dir)
@@ -255,6 +255,7 @@ def print_summary(summary, console: CliConsole, project_dir: Path | None = None)
     rows = [
         ("Report", str(summary.report_path) if summary.report_path else "not rendered"),
         ("Successful PDFs", summary.successful_pdfs),
+        ("Needs review PDFs", summary.needs_review_pdfs),
         ("Failed PDFs", summary.failed_pdfs),
         ("Extracted effects", summary.extracted_effects),
         ("Usable z-curve inputs", summary.usable_zcurve_inputs),
@@ -264,6 +265,9 @@ def print_summary(summary, console: CliConsole, project_dir: Path | None = None)
     ]
     console.table("Run Summary", ["Metric", "Value"], rows)
     if project_dir is not None:
+        review_rows = needs_review_pdf_rows(project_dir)
+        if review_rows:
+            console.table("PDFs Needing Review", ["Source", "Reasons"], review_rows)
         rendered = format_run_result(summary, project_dir)
         if "Z-Curve Summary:" in rendered:
             console.print("Z-Curve Summary")
@@ -286,24 +290,18 @@ def offer_interactive_retry(
         return None
 
     console.table(
-        "Failed PDFs",
-        ["Source", "Error"],
-        [
-            (
-                record.get("source_name", ""),
-                classify_error(str(record.get("error") or "")).compact(),
-            )
-            for record in failures
-        ],
+        "Failed and Needs-Review PDFs",
+        ["Source", "Problem"],
+        [(record.get("source_name", ""), retry_reason(record)) for record in failures],
     )
 
     q = _questionary()
     if q:
         action = q.select(
-            "Retry failed files now?",
+            "Retry failed and needs-review files now?",
             choices=[
-                {"name": "Retry all failed files", "value": "all"},
-                {"name": "Choose failed files", "value": "selected"},
+                {"name": "Retry all failed and needs-review files", "value": "all"},
+                {"name": "Choose files to retry", "value": "selected"},
                 {"name": "Do not retry", "value": "no"},
             ],
             default="no",
@@ -319,7 +317,7 @@ def offer_interactive_retry(
             if not selected_sources:
                 return None
     else:
-        answer = input("Retry all failed files now? [y/N] ").strip().lower()
+        answer = input("Retry all failed and needs-review files now? [y/N] ").strip().lower()
         if answer not in {"y", "yes"}:
             return None
         selected_sources = None

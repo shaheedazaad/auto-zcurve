@@ -58,6 +58,7 @@ def extraction_record(result: ExtractionResult) -> dict[str, Any]:
         "source_name": result.source_name,
         "file_name": result.source_name,
         "status": result.status,
+        "review_reasons": list(result.review_reasons),
         "error": result.error,
         "provider_used": result.provider_used,
         "model_used": result.model_used,
@@ -286,6 +287,7 @@ def write_run_log_csv(project_dir: Path, rows: list[dict[str, Any]]) -> None:
         "source_name",
         "source_file",
         "status",
+        "review_reasons",
         "effects",
         "provider",
         "model",
@@ -318,9 +320,10 @@ def write_run_log_csv(project_dir: Path, rows: list[dict[str, Any]]) -> None:
         writer.writeheader()
         for row in rows:
             csv_row = dict(row)
-            warnings = csv_row.get("parser_warnings")
-            if isinstance(warnings, (list, tuple)):
-                csv_row["parser_warnings"] = " | ".join(str(item) for item in warnings)
+            for key in ("parser_warnings", "review_reasons"):
+                values = csv_row.get(key)
+                if isinstance(values, (list, tuple)):
+                    csv_row[key] = " | ".join(str(item) for item in values)
             writer.writerow(csv_row)
 
 

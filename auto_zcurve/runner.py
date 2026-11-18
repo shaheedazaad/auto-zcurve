@@ -21,7 +21,7 @@ from .artifacts import (
 )
 from .config import RunSettings, load_run_settings, save_run_settings
 from .console import CliConsole
-from .llm import ExtractionResult
+from .llm import EXTRACTED_STATUSES, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .models import ModelOption, resolve_input_mode, validate_model_option
 from .paths import DEFAULT_SCHEMA
 from .providers import extract_pdf, normalize_provider
@@ -85,6 +85,7 @@ class RunSummary:
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    needs_review_pdfs: int = 0
 
 
 def discover_pdfs(project_dir: Path) -> list[Path]:
@@ -157,6 +158,7 @@ def _log_result(
             "source_name": result.source_name,
             "source_file": str(result.source_path),
             "status": result.status,
+            "review_reasons": list(result.review_reasons),
             "effects": result.effect_count,
             "provider": normalize_provider(result.provider_used or "gemini"),
             "model": primary_model,
@@ -410,13 +412,16 @@ def run_project(
         for path in pdfs
         if force
         or provider_or_model_changed
-        or existing.get(source_name(project_dir, path), {}).get("status") != "ok"
+        or existing.get(source_name(project_dir, path), {}).get("status") not in EXTRACTED_STATUSES
     ]
     if provider_or_model_changed:
         console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all PDFs will be reprocessed.")
     skipped = len(pdfs) - len(to_process)
     if skipped:
-        console.info(f"Skipping {skipped} PDF(s) with existing successful extractions. Use --force to rerun them.")
+        console.info(
+            f"Skipping {skipped} PDF(s) with existing extractions. "
+            "Use retry for PDFs that need review, or --force to rerun them all."
+        )
 
     run_id = str(uuid.uuid4())
     model_option = validate_model_option(
@@ -485,11 +490,12 @@ def retry_project(
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
     latest = latest_by_source(load_extractions(project_dir))
-    failures = [name for name, record in latest.items() if record.get("status") != "ok"]
+    # Retry re-extracts failed PDFs and those whose extraction needs review.
+    failures = [name for name, record in latest.items() if record.get("status") != STATUS_OK]
     if selected_sources:
         failures = [name for name in failures if name in set(selected_sources)]
     if not failures:
-        console.success("No failed PDFs to retry.")
+        console.success("No failed or needs-review PDFs to retry.")
         existing_report = project_dir / "output" / "report.html"
         return summarize(project_dir, existing_report if existing_report.exists() else None)
 
@@ -512,7 +518,7 @@ def retry_project(
     worker_label = "worker" if workers == 1 else "workers"
     with console.progress(
         len(paths),
-        f"Retrying failed PDFs with {workers} parallel {worker_label}",
+        f"Retrying failed and needs-review PDFs with {workers} parallel {worker_label}",
     ) as progress:
         _process_paths(
             paths=paths,
@@ -571,9 +577,12 @@ def regenerate_report(
 
 def summarize(project_dir: Path, report_path: Path | None) -> RunSummary:
     records = load_extractions(project_dir)
-    successful = sum(record.get("status") == "ok" for record in records)
-    failed = sum(record.get("status") != "ok" for record in records)
-    effects = sum(int(record.get("effects") or 0) for record in records if record.get("status") == "ok")
+    successful = sum(record.get("status") == STATUS_OK for record in records)
+    needs_review = sum(record.get("status") == STATUS_NEEDS_REVIEW for record in records)
+    failed = sum(record.get("status") not in EXTRACTED_STATUSES for record in records)
+    effects = sum(
+        int(record.get("effects") or 0) for record in records if record.get("status") in EXTRACTED_STATUSES
+    )
     disclosure_rows, usable = read_disclosure_summary(project_dir)
     input_tokens = sum(int(record.get("input_tokens") or 0) for record in records)
     output_tokens = sum(int(record.get("output_tokens") or 0) for record in records)
@@ -582,6 +591,7 @@ def summarize(project_dir: Path, report_path: Path | None) -> RunSummary:
         report_path=report_path,
         successful_pdfs=successful,
         failed_pdfs=failed,
+        needs_review_pdfs=needs_review,
         extracted_effects=effects or disclosure_rows,
         usable_zcurve_inputs=usable,
         input_tokens=input_tokens,

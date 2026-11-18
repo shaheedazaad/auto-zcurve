@@ -42,7 +42,7 @@ causes:
 - The extraction schema doesn't match what's actually in the article (for
   example, `required: true` on a field that isn't always reported).
 
-Try **Retry failed** after fixing the underlying PDF or schema. If several
+Try **Retry** after fixing the underlying PDF or schema. If several
 unrelated articles fail with the same error, it's more likely a settings or
 schema issue than a problem with any one PDF.
 
