@@ -969,6 +969,7 @@
       openRouterProviderStatus.textContent = "Choose a model to see which providers serve it.";
       return;
     }
+    renderOpenRouterProviders([], selectedValue);
     openRouterProviderStatus.textContent = "Loading providers…";
     try {
       const response = await fetch(`/${token}/api/models/openrouter/endpoints?model=${encodeURIComponent(model)}`, { cache: "no-store" });

@@ -39,6 +39,7 @@ class WebProjectSettingsTests(unittest.TestCase):
                     settings = load_run_settings(project.path)
                     self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', False))
                     response = client.post(url, data={'provider': 'openrouter', 'model': 'vendor/model'})
+                    self.assertEqual(response.status_code, 200, response.text)
                     settings = load_run_settings(project.path)
                     self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', False))
                     for bad in [{'openrouter_fallbacks': 'maybe'}, {'openrouter_provider': 'bad slug!'}]:

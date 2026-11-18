@@ -429,7 +429,7 @@
                   <option value="">Automatic (OpenRouter chooses)</option>
                   {% if project.openrouter_provider %}<option value="{{ project.openrouter_provider }}" selected>{{ project.openrouter_provider }}</option>{% endif %}
                 </select>
-                <p class="u-sm u-muted" data-openrouter-provider-status>Providers serving this model with structured output.</p>
+                <p class="u-sm u-muted" data-openrouter-provider-status role="status">Providers serving this model with structured output.</p>
               </div>
               <div class="field">
                 <label for="openrouter-fallbacks">Fallbacks</label>

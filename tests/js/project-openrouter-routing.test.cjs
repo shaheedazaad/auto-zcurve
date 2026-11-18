@@ -51,6 +51,7 @@ test('changing the OpenRouter model reloads providers and reports empty, single,
   assert.equal(status(), '1 provider serves this model with structured output.');
   h.input('#model', 'vendor/two', 'change'); await flush();
   assert.equal(status(), 'OpenRouter is down');
+  assert.deepEqual([...h.document.querySelectorAll('#openrouter-provider option')].map(node => node.value), ['']);
   h.input('#model', 'vendor/three', 'change'); await flush();
   assert.equal(status(), 'Providers could not be loaded.');
   h.input('#model', '', 'change'); await flush();

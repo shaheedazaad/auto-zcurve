@@ -710,7 +710,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     @app.get(f"/{token}/api/models/openrouter/endpoints")
     async def openrouter_model_endpoints(model: str):
-        key = await asyncio.to_thread(runtime._load_key_from_store, "openrouter")
+        # The listing is public: send only a key already unlocked this session, never read the store.
+        key = runtime.api_key("openrouter")
         try:
             normalized = normalize_model_name(model, "openrouter")
             return await asyncio.to_thread(list_model_endpoints, normalized, api_key=key)

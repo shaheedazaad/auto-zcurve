@@ -47,6 +47,9 @@ Two more choices appear on **Run analysis** when OpenRouter is selected:
   with structured output, such as `DeepInfra (fp8)`. Leave it on
   **Automatic** to let OpenRouter choose. Providers can run different
   quantizations of the same model, so pinning one keeps results consistent.
+  If the provider you saved stops serving the model, it stays selected and
+  is marked **(not listed for this model)**. Pick another provider or
+  **Automatic** if requests start failing.
 - **Fallbacks** controls what happens when that provider is unavailable.
   **Allow other providers** retries elsewhere. **Don't fall back** fails the
   request instead, so every result comes from the provider you chose. With

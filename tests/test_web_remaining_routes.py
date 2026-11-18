@@ -85,10 +85,14 @@ class RemainingRouteTests(unittest.TestCase):
                 self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('saved/tag', False))
             self.assertEqual(self.client.post(self.base + '/run', data={'provider': 'openrouter', 'model': 'vendor/new', 'openrouter_fallbacks': 'nope'}).status_code, 409)
         listing = [{'tag': 'deepinfra/fp8', 'name': 'DeepInfra (fp8)'}]
-        with patch.object(self.runtime, '_load_key_from_store', return_value=None), patch.object(w, 'list_model_endpoints', return_value=listing) as endpoints:
+        with patch.object(self.runtime, '_load_key_from_store') as store, patch.object(w, 'list_model_endpoints', return_value=listing) as endpoints:
             response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
-        self.assertEqual((response.status_code, response.json()), (200, listing))
-        endpoints.assert_called_once_with('vendor/model', api_key=None)
+            self.assertEqual((response.status_code, response.json()), (200, listing))
+            endpoints.assert_called_once_with('vendor/model', api_key=None)
+            self.runtime.session_api_keys['openrouter'] = 'session-key'
+            self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
+            endpoints.assert_called_with('vendor/model', api_key='session-key')
+        store.assert_not_called()
         with patch.object(w, 'list_model_endpoints', side_effect=RuntimeError('OpenRouter is down')):
             response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
         self.assertEqual((response.status_code, response.json()['detail']), (503, 'OpenRouter is down'))
