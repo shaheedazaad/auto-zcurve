@@ -120,6 +120,17 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
             if mode == 'cloudflare_pdf':
                 self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
 
+    def test_malformed_success_body_is_retried_with_the_fallback_parser(self):
+        for body in (b'[]', b'not json'):
+            engines = []
+            def urlopen(request, timeout):
+                engines.append(json.loads(request.data)['plugins'][0]['pdf']['engine'])
+                return io.BytesIO(body if len(engines) == 1 else json.dumps(self.success()).encode())
+            with self.subTest(body=body), patch.object(p.urllib.request, 'urlopen', side_effect=urlopen):
+                result = p.extract_pdf(**self.kwargs, input_mode='cloudflare_pdf')
+            self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
+            self.assertEqual(result.model_used, 'actual/model')
+
     def test_response_failures_retry_and_preserve_all_attempts(self):
         cases = [({'error': {'code': 503, 'message': 'busy'}}, 'generation failed'), ({'choices': [{'finish_reason': 'length'}], 'usage': {'completion_tokens': 10, 'completion_tokens_details': {'reasoning_tokens': 9}}}, 'reasoning tokens: 9'), ({'choices': [{'message': {'content': 'bad json'}}]}, 'invalid JSON'), ({'choices': [{'message': {'content': '{"effects":[{}]}'}}]}, 'Missing required field')]
         for response, message in cases:

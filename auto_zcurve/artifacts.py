@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .llm import STATUS_NEEDS_REVIEW, ExtractionResult
+from .spreadsheet import large_csv_fields
 
 
 def utc_now() -> str:
@@ -353,13 +354,8 @@ def read_disclosure_summary(project_dir: Path) -> tuple[int, int]:
     path = output_dir(project_dir) / "disclosure_table.csv"
     if not path.exists():
         return 0, 0
-    with path.open("r", newline="", encoding="utf-8") as handle:
-        previous_limit = csv.field_size_limit()
-        try:
-            csv.field_size_limit(max(previous_limit, 16 * 1024 * 1024))
-            rows = list(csv.DictReader(handle))
-        finally:
-            csv.field_size_limit(previous_limit)
+    with path.open("r", newline="", encoding="utf-8") as handle, large_csv_fields():
+        rows = list(csv.DictReader(handle))
     usable = sum(str(row.get("usable_for_zcurve", "")).strip().lower() in {"true", "t", "1"} for row in rows)
     return len(rows), usable
 

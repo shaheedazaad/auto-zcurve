@@ -32,12 +32,14 @@ class SharedRetryHelperTests(unittest.TestCase):
 
     def test_gemini_does_not_import_openrouter(self):
         tree = ast.parse(Path(gemini.__file__).read_text(encoding="utf-8"))
-        imported = {
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module
-        }
-        self.assertNotIn("openrouter", imported)
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported.add(node.module or "")
+                imported.update(f"{node.module or ''}.{alias.name}" for alias in node.names)
+        self.assertFalse([name for name in imported if "openrouter" in name.split(".")], imported)
         self.assertIs(gemini.retry_delay, llm.retry_delay)
         self.assertIs(gemini.retryable_status, llm.retryable_status)
 

@@ -99,8 +99,10 @@ def _request_json(
         ) from exc
     except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
         raise _OpenRouterRequestError(f"OpenRouter request failed: {exc}") from exc
+    except ValueError as exc:  # malformed JSON body on a 2xx response
+        raise _OpenRouterRequestError("OpenRouter returned an invalid response payload.") from exc
     if not isinstance(parsed, dict):
-        raise RuntimeError("OpenRouter returned an invalid response payload.")
+        raise _OpenRouterRequestError("OpenRouter returned an invalid response payload.")
     return parsed
 
 
