@@ -27,8 +27,9 @@ section with copies of the disclosure table, the run log, and the
 reproduction settings:
 
 - Any cell that could be read as a formula starts with an apostrophe (`'`),
-  headers included. The spreadsheet shows the text as it is and doesn't run
-  it.
+  headers included, so the spreadsheet treats it as text and doesn't run it.
+  The apostrophe is part of the file, so depending on the application and how
+  you import the file, it may stay visible at the start of the cell.
 - Plain signed numbers such as `-1.25` or `-1.25e-3` are left alone, so they
   stay numeric.
 - The files are saved as UTF-8 with a byte-order mark and Windows (CRLF) line
