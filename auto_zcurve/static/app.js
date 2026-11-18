@@ -177,11 +177,13 @@
   };
   const articleMessage = (article) => {
     if (article.error) return `<small class="article-message u-error">${escapeHtml(article.error)}</small>`;
+    const parserWarning = article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
     if (article.status === "needs_review") {
       const reasons = (article.review_reasons || []).join("; ") || "no reason was recorded";
-      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons)}</small>`;
+      const retry = article.retry_error ? ` · Last retry failed: ${article.retry_error}` : "";
+      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons + retry)}</small>${parserWarning}`;
     }
-    return article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
+    return parserWarning;
   };
   const articleRowState = (status) => ({ ok: "ok", error: "error", needs_review: "needs-review" })[status] || "ready";
   const articleFileIcon = '<span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>';
@@ -657,9 +659,15 @@
     renderSourcePage();
     document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} PDFs`;
     document.querySelector("[data-token-count]").textContent = project.total_tokens;
+    const extracted = project.successful_count + (project.needs_review_count || 0);
+    const articleCount = document.querySelector("[data-article-count]");
+    if (articleCount) articleCount.textContent = `${project.pdf_count} article${project.pdf_count === 1 ? "" : "s"}`;
+    const processedCount = document.querySelector("[data-processed-count]");
+    if (processedCount) {
+      processedCount.textContent = `${extracted} processed${project.needs_review_count ? ` (${project.needs_review_count} need review)` : ""}`;
+    }
     const currentRunButton = document.querySelector(".js-run");
     currentRunButton.dataset.hasPdfs = project.pdf_count > 0 ? "true" : "false";
-    const extracted = project.successful_count + (project.needs_review_count || 0);
     const remaining = Math.max(0, project.pdf_count - extracted);
     currentRunButton.innerHTML = extracted > 0 && remaining > 0
       ? `Continue processing ${remaining} PDF${remaining === 1 ? "" : "s"} <span>→</span>`

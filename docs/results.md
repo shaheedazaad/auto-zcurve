@@ -17,8 +17,8 @@ straight there, or **Download results** to get a ZIP copy.
 ## Spreadsheet-safe downloads
 
 The disclosure table holds text quoted from articles. Excel and LibreOffice
-treat a cell that starts with `=`, `+`, `-` or `@` (or a tab or carriage
-return, even after leading spaces) as a formula. Text quoted from a PDF
+treat a cell that starts with `=`, `+`, `-` or `@` (or a tab, carriage
+return or line feed, even after leading spaces) as a formula. Text quoted from a PDF
 could then display wrongly or, in the worst case, run a formula that a
 malicious PDF planted.
 
@@ -27,8 +27,9 @@ section with copies of the disclosure table, the run log, and the
 reproduction settings:
 
 - Any cell that could be read as a formula starts with an apostrophe (`'`),
-  headers included. The spreadsheet shows the text as it is and doesn't run
-  it.
+  headers included, so the spreadsheet treats it as text and doesn't run it.
+  The apostrophe is part of the file, so depending on the application and how
+  you import the file, it may stay visible at the start of the cell.
 - Plain signed numbers such as `-1.25` or `-1.25e-3` are left alone, so they
   stay numeric.
 - The files are saved as UTF-8 with a byte-order mark and Windows (CRLF) line
@@ -74,9 +75,9 @@ An extraction is marked **Needs review** instead of **Done** when:
 
 - **"JSON was repaired"**: the model's output was not valid JSON and
   auto-zcurve had to repair it before reading it. A repair can silently drop
-  the end of a response. (Gemini and OpenAI-compatible endpoints only;
-  OpenRouter retries invalid JSON instead, and fails if every attempt is
-  invalid.)
+  the end of a response. (If OpenRouter's output can't be repaired, the
+  request is retried instead, and the article fails if no attempt can be
+  read.)
 - **"finish reason: …"**: the model stopped for a reason other than finishing
   normally. `MAX_TOKENS` (Gemini) or `length` (OpenRouter and
   OpenAI-compatible endpoints) means it ran out of output space, so effects at

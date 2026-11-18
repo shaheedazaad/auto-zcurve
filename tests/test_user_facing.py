@@ -69,6 +69,14 @@ class ErrorPresentationTests(unittest.TestCase):
             self.assertEqual(u.failed_pdf_rows(Path('.'))[-1], ('', u.classify_error('').compact()))
             self.assertEqual(u.failed_pdf_rows(Path('.'), limit=0), [])
 
+    def test_failed_pdf_rows_returns_every_retryable_pdf_by_default(self):
+        records = [{'source_name': 'ok.pdf', 'status': 'ok'}]
+        records += [{'source_name': f'bad{i:02}.pdf', 'status': 'error', 'error': 'timeout'} for i in range(6)]
+        records += [{'source_name': f'review{i:02}.pdf', 'status': 'needs_review', 'review_reasons': ['JSON was repaired']} for i in range(6)]
+        with patch.object(u, 'load_extractions', return_value=records):
+            rows = u.failed_pdf_rows(Path('.'))
+        self.assertEqual([name for name, _ in rows], [record['source_name'] for record in records[1:]])
+
     def test_result_paths_and_metrics(self):
         summary = SimpleNamespace(report_path=None, successful_pdfs=2, needs_review_pdfs=0, failed_pdfs=1, extracted_effects=4, usable_zcurve_inputs=3, input_tokens=10, output_tokens=5, total_tokens=15)
         for report, expected in [(None, 'not rendered'), (Path('/project/output/report.html'), 'output/report.html'), (Path('/elsewhere/report.html'), '/elsewhere/report.html')]:

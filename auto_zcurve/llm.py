@@ -15,6 +15,28 @@ EXTRACTED_STATUSES = frozenset({STATUS_OK, STATUS_NEEDS_REVIEW})
 
 JSON_REPAIRED_REASON = "JSON was repaired"
 
+# Each provider request gets this many attempts in total before it fails.
+MAX_PROVIDER_ATTEMPTS = 3
+RETRY_BASE_DELAY_SEC = 1.0
+RETRY_AFTER_CAP_SEC = 30.0
+
+
+def retryable_status(status_code: object) -> bool:
+    """Whether an HTTP status is worth retrying: timeouts, conflicts, rate limits and server errors."""
+    try:
+        code = int(status_code)
+    except (TypeError, ValueError):
+        return False
+    return code in {408, 409, 425, 429} or code >= 500
+
+
+def retry_delay(attempt: int, exc: BaseException | None = None) -> float:
+    """Seconds to wait after a failed attempt: a capped Retry-After, else exponential backoff."""
+    retry_after = getattr(exc, "retry_after_sec", None)
+    if isinstance(retry_after, (int, float)) and retry_after >= 0:
+        return min(float(retry_after), RETRY_AFTER_CAP_SEC)
+    return RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1))
+
 
 def finish_reason_review_reason(finish_reason: str | None, normal: Iterable[str] = ("STOP",)) -> str | None:
     """Describe an abnormal provider finish reason, or None when it is normal or missing."""

@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .llm import ExtractionResult
+from .llm import STATUS_NEEDS_REVIEW, ExtractionResult
+from .spreadsheet import large_csv_fields
 
 
 def utc_now() -> str:
@@ -208,6 +209,24 @@ def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[
     return records
 
 
+def record_failed_retry(project_dir: Path, source_name: str, error: str | None) -> dict[str, Any] | None:
+    """Note a failed retry on a needs-review record without discarding its data.
+
+    Returns the updated record, or None when the PDF has no needs-review record
+    to keep (the caller should then save the failed result as usual). A later
+    retry that returns a result replaces the whole record, clearing these fields.
+    """
+    records = load_extractions(project_dir)
+    for record in records:
+        if record.get("source_name") == source_name and record.get("status") == STATUS_NEEDS_REVIEW:
+            record["retry_error"] = error or "Retry failed without an error message."
+            record["retry_failed_at"] = utc_now()
+            _atomic_json_dump(raw_path(project_dir, source_name), record)
+            save_extractions(project_dir, records)
+            return record
+    return None
+
+
 def delete_extraction(project_dir: Path, source_name: str) -> bool:
     """Delete one PDF's extraction record and generated response artifacts."""
     records = load_extractions(project_dir)
@@ -335,13 +354,8 @@ def read_disclosure_summary(project_dir: Path) -> tuple[int, int]:
     path = output_dir(project_dir) / "disclosure_table.csv"
     if not path.exists():
         return 0, 0
-    with path.open("r", newline="", encoding="utf-8") as handle:
-        previous_limit = csv.field_size_limit()
-        try:
-            csv.field_size_limit(max(previous_limit, 16 * 1024 * 1024))
-            rows = list(csv.DictReader(handle))
-        finally:
-            csv.field_size_limit(previous_limit)
+    with path.open("r", newline="", encoding="utf-8") as handle, large_csv_fields():
+        rows = list(csv.DictReader(handle))
     usable = sum(str(row.get("usable_for_zcurve", "")).strip().lower() in {"true", "t", "1"} for row in rows)
     return len(rows), usable
 

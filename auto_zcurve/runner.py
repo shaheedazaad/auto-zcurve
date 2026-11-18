@@ -16,12 +16,13 @@ from .artifacts import (
     load_extractions,
     load_run_log,
     read_disclosure_summary,
+    record_failed_retry,
     upsert_extraction,
     utc_now,
 )
 from .config import RunSettings, load_run_settings, save_run_settings
 from .console import CliConsole
-from .llm import EXTRACTED_STATUSES, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
+from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .models import ModelOption, resolve_input_mode, validate_model_option
 from .paths import DEFAULT_SCHEMA
 from .providers import extract_pdf, normalize_provider
@@ -189,6 +190,17 @@ def _log_result(
     )
 
 
+def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) -> None:
+    """Save an extraction, keeping a needs-review PDF's data when its retry fails.
+
+    The failed attempt is noted on the kept record (and in the run log) so the
+    user can see the retry did not succeed; any later result replaces it.
+    """
+    if retry and result.status == STATUS_ERROR and record_failed_retry(project_dir, result.source_name, result.error):
+        return
+    upsert_extraction(project_dir, result)
+
+
 def _process_one(
     *,
     project_dir: Path,
@@ -215,7 +227,7 @@ def _process_one(
         )
         _raise_if_cancelled(cancellation_event)
         with _ARTIFACT_LOCK:
-            upsert_extraction(project_dir, result)
+            _save_result(project_dir, result, retry=retry)
             _log_result(
                 project_dir=project_dir,
                 run_id=run_id,
@@ -281,7 +293,7 @@ def _process_one(
         )
     _raise_if_cancelled(cancellation_event)
     with _ARTIFACT_LOCK:
-        upsert_extraction(project_dir, result)
+        _save_result(project_dir, result, retry=retry)
         _log_result(
             project_dir=project_dir,
             run_id=run_id,

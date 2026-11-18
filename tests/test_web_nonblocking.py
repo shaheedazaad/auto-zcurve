@@ -130,6 +130,18 @@ class SlowWorkDoesNotBlockOtherRequestsTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/zip")
         self.assertIn('filename="Slow-work-results.zip"', response.headers["content-disposition"])
 
+    def test_downloading_a_spreadsheet_safe_csv_does_not_block_other_requests(self):
+        (self.project.path / "output" / "run_log.csv").write_text("source_name,status\n", encoding="utf-8")
+        response = self.assert_other_request_served_meanwhile(
+            "spreadsheet_safe_csv",
+            b"csv bytes",
+            lambda client: client.get(f"/{TOKEN}/projects/{self.project.project_id}/spreadsheet/run_log.csv"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"csv bytes")
+        self.assertEqual(response.headers["content-type"], "text/csv; charset=utf-8")
+        self.assertIn('filename="run_log.spreadsheet.csv"', response.headers["content-disposition"])
+
 
 if __name__ == "__main__":
     unittest.main()
