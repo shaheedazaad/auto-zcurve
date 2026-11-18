@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -84,6 +84,7 @@ from .projects import (
 from .runner import RunCancelled, regenerate_report, retry_project, run_project
 from .schema import read_extraction_schema
 from .security import redact_secrets
+from .spreadsheet import SPREADSHEET_SAFE_FILES, spreadsheet_safe_csv, spreadsheet_safe_name
 from .user_facing import classify_error
 from .providers import PROVIDERS, normalize_provider, provider_label
 
@@ -448,6 +449,53 @@ def _project_index_snapshot(project: ManagedProject) -> dict:
     }
 
 
+def _catalog_models(runtime: WebRuntime, provider: str) -> list:
+    """Load the model catalogue for the model picker; may fetch it from the provider."""
+    key = runtime.api_key(provider) or ""
+    if provider == "gemini" and not key:
+        return fallback_models(provider)
+    return list_live_models(key, provider)
+
+
+def _results_zip(project: ManagedProject) -> bytes:
+    """Compress the project's result files into an in-memory results ZIP."""
+    output = project.path / "output"
+    buffer = io.BytesIO()
+    result_names = {
+        "report.html",
+        "report.qmd",
+        "disclosure_table.csv",
+        "extractions.json",
+        "run_log.csv",
+        "run_log.json",
+        "zcurve_summary.txt",
+        "zcurve_plot.png",
+        "zcurve_reproduction_settings.csv",
+        "report_render.log",
+    }
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        schema_path = project.path / "extraction_schema.yml"
+        if schema_path.is_file():
+            archive.write(schema_path, "extraction_schema.yml")
+            run_settings = load_run_settings(project.path)
+            rendered_instructions = build_system_prompt(
+                read_extraction_schema(schema_path),
+                project_instruction_path(project.path),
+            )
+            archive.writestr("extraction_instructions.md", rendered_instructions)
+        if output.exists():
+            for path in sorted(output.rglob("*")):
+                relative = path.relative_to(output)
+                is_raw_artifact = (
+                    len(relative.parts) == 2
+                    and relative.parts[0] == "raw"
+                    and path.suffix in {".json", ".txt"}
+                )
+                if path.is_file() and (path.name in result_names or is_raw_artifact):
+                    archive.write(path, path.relative_to(project.path).as_posix())
+    return buffer.getvalue()
+
+
 def create_app(*, token: str | None = None, projects_root: Path | None = None) -> FastAPI:
     token = token or secrets.token_urlsafe(32)
     runtime = WebRuntime(token, projects_root=projects_root)
@@ -616,11 +664,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def model_catalog(provider: str):
         try:
             selected = normalize_provider(provider)
-            key = runtime.api_key(selected) or ""
-            if selected == "gemini" and not key:
-                options = fallback_models(selected)
-            else:
-                options = list_live_models(key, selected)
+            options = await asyncio.to_thread(_catalog_models, runtime, selected)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         parser = load_app_settings().pdf_parser
@@ -650,7 +694,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         if not key:
             raise HTTPException(status_code=400, detail="An OpenRouter API key is required to validate a model.")
         try:
-            option = validate_model_option("openrouter", model, key)
+            option = await asyncio.to_thread(validate_model_option, "openrouter", model, key)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"valid": True, "id": option.name, "parallel_requests": option.parallel_requests,
@@ -906,7 +950,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 key = await asyncio.to_thread(runtime._load_key_from_store, selected)
                 if key is None:
                     raise ValueError("An OpenRouter API key is required to validate a model.")
-                validate_model_option(selected, normalized_model, key)
+                await asyncio.to_thread(validate_model_option, selected, normalized_model, key)
             current = existing or RunSettings(primary_model=normalized_model, provider=selected)
             default_parallel, default_delay = model_request_defaults(normalized_model, selected)
             settings = RunSettings(
@@ -950,7 +994,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 if not normalize_endpoint_url(app_defaults.openai_base_url):
                     raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
             if selected == "openrouter":
-                validate_model_option(selected, effective_model, key)
+                await asyncio.to_thread(validate_model_option, selected, effective_model, key)
             default_parallel, default_delay = model_request_defaults(effective_model, selected)
             use_saved_values = existing is not None and existing.provider == selected
             settings = RunSettings(
@@ -1006,7 +1050,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 if not normalize_endpoint_url(app_defaults.openai_base_url):
                     raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
             if selected == "openrouter":
-                validate_model_option(selected, selected_model, key)
+                await asyncio.to_thread(validate_model_option, selected, selected_model, key)
             default_parallel, default_delay = model_request_defaults(selected_model, selected)
             use_saved_values = existing.provider == selected
             settings = RunSettings(
@@ -1097,50 +1141,31 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail="Z-curve plot not found.")
         return FileResponse(path, media_type="image/png")
 
+    @app.get(f"/{token}/projects/{{project_id}}/spreadsheet/{{name}}")
+    async def download_spreadsheet_safe_csv(project_id: str, name: str):
+        try:
+            project = runtime.project(project_id)
+        except ProjectError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        path = project.path / "output" / name
+        if name not in SPREADSHEET_SAFE_FILES or not path.is_file():
+            raise HTTPException(status_code=404, detail="Spreadsheet download not found.")
+        return Response(
+            spreadsheet_safe_csv(path.read_text(encoding="utf-8")),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{spreadsheet_safe_name(name)}"'},
+        )
+
     @app.get(f"/{token}/projects/{{project_id}}/results.zip")
     async def download_results(project_id: str):
         try:
             project = runtime.project(project_id)
         except ProjectError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        output = project.path / "output"
-        buffer = io.BytesIO()
-        result_names = {
-            "report.html",
-            "report.qmd",
-            "disclosure_table.csv",
-            "extractions.json",
-            "run_log.csv",
-            "run_log.json",
-            "zcurve_summary.txt",
-            "zcurve_plot.png",
-            "zcurve_reproduction_settings.csv",
-            "report_render.log",
-        }
-        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            schema_path = project.path / "extraction_schema.yml"
-            if schema_path.is_file():
-                archive.write(schema_path, "extraction_schema.yml")
-                run_settings = load_run_settings(project.path)
-                rendered_instructions = build_system_prompt(
-                    read_extraction_schema(schema_path),
-                    project_instruction_path(project.path),
-                )
-                archive.writestr("extraction_instructions.md", rendered_instructions)
-            if output.exists():
-                for path in sorted(output.rglob("*")):
-                    relative = path.relative_to(output)
-                    is_raw_artifact = (
-                        len(relative.parts) == 2
-                        and relative.parts[0] == "raw"
-                        and path.suffix in {".json", ".txt"}
-                    )
-                    if path.is_file() and (path.name in result_names or is_raw_artifact):
-                        archive.write(path, path.relative_to(project.path).as_posix())
-        buffer.seek(0)
+        archive = await asyncio.to_thread(_results_zip, project)
         filename = "".join(char if char.isalnum() or char in "-_" else "-" for char in project.name).strip("-")
-        return StreamingResponse(
-            buffer,
+        return Response(
+            archive,
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{filename or "auto-zcurve"}-results.zip"'},
         )

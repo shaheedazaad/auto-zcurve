@@ -188,10 +188,11 @@ class CliEntryPointTests(unittest.TestCase):
         with patch.object(cli, 'prompt_project_dir', return_value=Path('.')), patch.object(cli, 'run_command', return_value=7) as run:
             self.assertEqual(cli.guided(Mock()), 7)
             self.assertTrue(run.call_args.kwargs['interactive'])
-        summary = SimpleNamespace(report_path=Path('/project/report.html'), successful_pdfs=2, failed_pdfs=1, extracted_effects=3, usable_zcurve_inputs=2, input_tokens=4, output_tokens=5, total_tokens=9)
+        summary = SimpleNamespace(report_path=Path('/project/report.html'), successful_pdfs=2, needs_review_pdfs=1, failed_pdfs=1, extracted_effects=3, usable_zcurve_inputs=2, input_tokens=4, output_tokens=5, total_tokens=9)
         console = Mock()
         cli.print_summary(summary, console)
         self.assertIn(('Total tokens', 9), console.table.call_args.args[2])
+        self.assertIn(('Needs review PDFs', 1), console.table.call_args.args[2])
         summary.report_path = None
         with patch.object(cli, 'format_run_result', return_value='Z-Curve Summary: values'):
             cli.print_summary(summary, console, Path('.'))

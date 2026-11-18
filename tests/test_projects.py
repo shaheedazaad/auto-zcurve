@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -100,6 +101,51 @@ class ManagedProjectTests(unittest.TestCase):
             with self.assertRaises(UploadTooLarge):
                 save_upload(project, "large.pdf", io.BytesIO(b"%PDF" + b"x" * 20), max_bytes=10)
             self.assertEqual(list((project.path / "sources").iterdir()), [])
+
+    def test_upload_names_keep_unicode_letters_in_nfc(self):
+        decomposed = "Cafe\u0301 e\u0301tude.pdf"
+        self.assertEqual(safe_upload_name("Müller 2020.pdf"), "Müller 2020.pdf")
+        self.assertEqual(safe_upload_name("Перевод 研究 دراسة.pdf"), "Перевод 研究 دراسة.pdf")
+        self.assertEqual(safe_upload_name(decomposed), "Café étude.pdf")
+        self.assertEqual(safe_upload_name("Smith, J. (2020) & O'Neil [draft] #1.pdf"),
+                         "Smith, J. (2020) & O'Neil [draft] #1.pdf")
+
+    def test_upload_names_replace_windows_forbidden_and_control_characters(self):
+        self.assertEqual(safe_upload_name('a<b>c:d"e|f?g*h.pdf'), "a_b_c_d_e_f_g_h.pdf")
+        self.assertEqual(safe_upload_name("tab\there\x00\x7f\x85.pdf"), "tab_here_.pdf")
+        self.assertEqual(safe_upload_name("lone\udc80surrogate.pdf"), "lone_surrogate.pdf")
+
+    def test_upload_names_make_windows_reserved_device_names_safe(self):
+        for name in ["CON.pdf", "nul.pdf", "Com1.pdf", "LPT9.pdf", "PRN.draft.pdf",
+                     "aux .pdf", "COM¹.pdf"]:
+            with self.subTest(name=name):
+                self.assertEqual(safe_upload_name(name), "_" + name)
+        for name in ["CONSOLE.pdf", "COM0.pdf", "LPT10.pdf", "nullable.pdf"]:
+            with self.subTest(name=name):
+                self.assertEqual(safe_upload_name(name), name)
+
+    def test_long_multibyte_upload_name_is_shortened_by_bytes_and_saved(self):
+        name = safe_upload_name("研究" * 100 + ".pdf")
+        self.assertTrue(name.endswith(".pdf"))
+        self.assertLessEqual(len(name.encode("utf-8")), 164)
+        self.assertEqual(name, "研究" * 26 + "研.pdf")
+        cluster = "e\u0301\u0302"
+        combining = safe_upload_name("a" + cluster * 100 + ".pdf")
+        self.assertEqual(combining, "a" + unicodedata.normalize("NFC", cluster) * 39 + ".pdf")
+        marks = safe_upload_name("e" + "\u0301" * 100 + ".pdf")
+        self.assertTrue(marks.endswith(".pdf"))
+        self.assertLessEqual(len(marks.encode("utf-8")), 164)
+        with tempfile.TemporaryDirectory() as tmp:
+            project = create_project("Long names", root=Path(tmp))
+            first = save_upload(project, "研究" * 100 + ".pdf", io.BytesIO(b"%PDF-one"))
+            second = save_upload(project, "研究" * 100 + ".pdf", io.BytesIO(b"%PDF-two"))
+            self.assertEqual(first.name, name)
+            self.assertEqual(second.name, "研究" * 26 + "研 (2).pdf")
+            self.assertEqual(second.read_bytes(), b"%PDF-two")
+            self.assertEqual(
+                sorted(path.name for path in (project.path / "sources").iterdir()),
+                sorted([first.name, second.name]),
+            )
 
     def test_invalid_pdf_signature_is_removed(self):
         with tempfile.TemporaryDirectory() as tmp:

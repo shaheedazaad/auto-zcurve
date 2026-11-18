@@ -20,6 +20,24 @@ stopifnot(nrow(refs) == 4, identical(refs$citation, c("First", "Nested", "Legacy
 stopifnot(nrow(build_reference_table(list(), config)) == 0)
 empty_config <- list(meta_data = list(), effects = list())
 stopifnot(all(is.na(build_reference_table(results, empty_config)$citation)))
+stopifnot(identical(table$extraction_status, rep("ok", 5)), all(is.na(table$extraction_review_reasons)))
+
+# needs_review extractions are analysed but marked; projects saved before the
+# status existed (no review_reasons) and other statuses keep their old handling.
+review_results <- list(
+  list(status = "needs_review", file_name = "repaired.pdf", review_reasons = list("JSON was repaired", "finish reason: MAX_TOKENS"), data = list(meta_data = list(title = "Repaired"), effects = list(list(p = .05)))),
+  list(status = "needs_review", file_name = "unexplained.pdf", data = list(meta_data = list(title = "Unexplained"), effects = list(list(p = .06)))),
+  list(status = "ok", file_name = "clean.pdf", review_reasons = list(), data = list(meta_data = list(title = "Clean"), effects = list(list(p = .07)))),
+  list(file_name = "statusless.pdf", data = list(effects = list(list(p = .08)))),
+  list(status = c("ok", "ok"), file_name = "malformed.pdf", data = list(effects = list(list(p = .09))))
+)
+stopifnot(identical(vapply(review_results, is_extracted_result, logical(1)), c(TRUE, TRUE, TRUE, FALSE, FALSE)))
+review_table <- flatten_results(review_results, config)
+stopifnot(identical(review_table$source_name, c("repaired.pdf", "unexplained.pdf", "clean.pdf")))
+stopifnot(identical(review_table$p, c(.05, .06, .07)))
+stopifnot(identical(review_table$extraction_status, c("needs_review", "needs_review", "ok")))
+stopifnot(identical(review_table$extraction_review_reasons, c("JSON was repaired; finish reason: MAX_TOKENS", "No reason was recorded.", NA_character_)))
+stopifnot(identical(build_reference_table(review_results, config)$citation, c("Repaired", "Unexplained", "Clean")))
 
 path <- tempfile(fileext = ".txt")
 writeLines("Use {{reported_statistic_field}}, {{eligible_field}}, {{eligibility_explanation_field}}", path)

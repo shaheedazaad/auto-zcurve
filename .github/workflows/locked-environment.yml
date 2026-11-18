@@ -49,8 +49,8 @@ jobs:
           cache: true
       - name: Verify locked install
         run: pixi install --locked
-      - name: Run Python and R tests
-        run: pixi run --locked test
+      - name: Run Python and R tests with Python coverage (fails below 100%)
+        run: pixi run --locked test-coverage
       - name: Render fixture with R and Quarto
         run: pixi run --locked release-smoke
       - name: Build release bundles

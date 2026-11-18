@@ -168,12 +168,22 @@
   const articleStatusBadge = (status, jsonRepaired) => {
     const states = {
       ok: { variant: "success", label: jsonRepaired ? "JSON repaired" : "Done" },
+      needs_review: { variant: "warning", label: "Needs review" },
       error: { variant: "destructive", label: "Failed" },
       ready: { variant: "outline", label: "Ready" },
     };
     const state = states[status] || states.ready;
     return `<span class="badge article-status" data-variant="${state.variant}">${state.label}</span>`;
   };
+  const articleMessage = (article) => {
+    if (article.error) return `<small class="article-message u-error">${escapeHtml(article.error)}</small>`;
+    if (article.status === "needs_review") {
+      const reasons = (article.review_reasons || []).join("; ") || "no reason was recorded";
+      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons)}</small>`;
+    }
+    return article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
+  };
+  const articleRowState = (status) => ({ ok: "ok", error: "error", needs_review: "needs-review" })[status] || "ready";
   const articleFileIcon = '<span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>';
   if (!token) return;
 
@@ -588,8 +598,8 @@
       tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDFs from the Sources tab to begin.</td></tr>';
     } else {
       tbody.innerHTML = visibleArticles.map((article) => `
-        <tr class="article-row article-row-${article.status === "error" ? "error" : article.status === "ok" ? "ok" : "ready"}">
-          <td>${articleFileIcon}<span><strong class="article-name" title="${escapeHtml(article.name)}">${escapeHtml(article.name)}</strong>${article.error ? `<small class="article-message u-error">${escapeHtml(article.error)}</small>` : article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : ""}</span></td>
+        <tr class="article-row article-row-${articleRowState(article.status)}">
+          <td>${articleFileIcon}<span><strong class="article-name" title="${escapeHtml(article.name)}">${escapeHtml(article.name)}</strong>${articleMessage(article)}</span></td>
           <td>${articleStatusBadge(article.status, article.json_repaired)}</td>
           <td>${article.effects || "—"}</td>
           <td class="u-muted u-sm u-nowrap">${article.input_tokens || 0} in · ${article.output_tokens || 0} out</td>
@@ -612,12 +622,13 @@
     document.querySelector("[data-token-count]").textContent = project.total_tokens;
     const currentRunButton = document.querySelector(".js-run");
     currentRunButton.dataset.hasPdfs = project.pdf_count > 0 ? "true" : "false";
-    const remaining = Math.max(0, project.pdf_count - project.successful_count);
-    currentRunButton.innerHTML = project.successful_count > 0 && remaining > 0
+    const extracted = project.successful_count + (project.needs_review_count || 0);
+    const remaining = Math.max(0, project.pdf_count - extracted);
+    currentRunButton.innerHTML = extracted > 0 && remaining > 0
       ? `Continue processing ${remaining} PDF${remaining === 1 ? "" : "s"} <span>→</span>`
       : "Run analysis <span>→</span>";
     const currentRetryButton = document.querySelector(".js-retry");
-    currentRetryButton.dataset.hasFailures = project.failed_count > 0 ? "true" : "false";
+    currentRetryButton.dataset.hasFailures = project.failed_count > 0 || project.needs_review_count > 0 ? "true" : "false";
     syncProviderCredentialState();
   };
 
@@ -768,7 +779,14 @@
   const progressMessage = document.querySelector("[data-progress-message]");
   const runMessage = document.querySelector(".run-message");
   const slowExtractionWarning = document.querySelector("[data-slow-extraction-warning]");
+  const connectionLost = document.querySelector("[data-connection-lost]");
+  const connectionLostTitle = document.querySelector("[data-connection-lost-title]");
+  const connectionLostMessage = document.querySelector("[data-connection-lost-message]");
+  // Browsers retry a dropped stream on their own, but keep retrying forever
+  // when the app is down; after this many failures, ask for a reload instead.
+  const MAX_STREAM_RETRIES = 3;
   let eventSource;
+  let streamFailures = 0;
   let slowExtractionTimer;
   let articleRefreshTimer;
 
@@ -790,11 +808,30 @@
     if (!running) syncProviderCredentialState();
   };
 
+  const showConnectionLost = (closed) => {
+    connectionLostTitle.textContent = "Connection lost";
+    connectionLostMessage.textContent = closed
+      ? "Live progress has stopped updating. Reload this page. If that does not work, restart auto-zcurve and open the new link it prints."
+      : "Live progress stopped updating. Retrying…";
+    connectionLost.hidden = false;
+  };
+
+  const clearConnectionLost = () => {
+    streamFailures = 0;
+    connectionLost.hidden = true;
+  };
+
   const watchEvents = () => {
     eventSource?.close();
+    clearConnectionLost();
     eventSource = new EventSource(`${base}/events`);
+    eventSource.addEventListener("error", () => {
+      streamFailures += 1;
+      showConnectionLost(eventSource.readyState === EventSource.CLOSED || streamFailures >= MAX_STREAM_RETRIES);
+    });
     eventSource.addEventListener("progress", (event) => {
       const data = JSON.parse(event.data);
+      clearConnectionLost();
       const percent = data.total ? Math.round((data.completed / data.total) * 100) : 0;
       progressBar.querySelector("span").style.width = `${percent}%`;
       progressBar.setAttribute("aria-valuenow", String(percent));
@@ -809,6 +846,7 @@
     });
     eventSource.addEventListener("status", async (event) => {
       const data = JSON.parse(event.data);
+      clearConnectionLost();
       progressMessage.textContent = data.message;
       if (["complete", "failed", "cancelled"].includes(data.status)) {
         eventSource.close();

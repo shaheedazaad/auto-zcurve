@@ -12,7 +12,7 @@ from auto_zcurve.artifacts import save_extractions
 
 class ProjectValidationTests(unittest.TestCase):
     def test_platform_data_directories(self):
-        cases = [('linux', {}, '/home/test/.local/share/auto-zcurve'), ('linux', {'XDG_DATA_HOME': '/data'}, '/data/auto-zcurve'), ('darwin', {}, '/home/test/Library/Application Support/Auto Z-Curve'), ('win32', {}, '/home/test/AppData/Local/Auto Z-Curve'), ('win32', {'LOCALAPPDATA': '/data'}, '/data/Auto Z-Curve'), ('linux', {'AUTO_ZCURVE_HOME': '/custom'}, '/custom')]
+        cases = [('linux', {}, '/home/test/.local/share/auto-zcurve'), ('linux', {'XDG_DATA_HOME': '/data'}, '/data/auto-zcurve'), ('darwin', {}, '/home/test/Library/Application Support/Auto Z-Curve'), ('win32', {}, '/home/test/AppData/Local/Auto Z-Curve'), ('win32', {'LOCALAPPDATA': '/data'}, '/data/Auto Z-Curve'), ('linux', {'AUTO_ZCURVE_HOME': '/custom'}, str(Path('/custom').resolve()))]
         for platform, env, expected in cases:
             with self.subTest(platform=platform, env=env), patch.object(p.sys, 'platform', platform), patch.dict(os.environ, env, clear=True), patch.object(Path, 'home', return_value=Path('/home/test')):
                 self.assertEqual(p.app_data_dir(), Path(expected))

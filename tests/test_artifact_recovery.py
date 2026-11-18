@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -18,6 +19,43 @@ class ArtifactRecoveryTests(unittest.TestCase):
                 a._atomic_json_dump(path, ['new'])
             self.assertEqual(json.loads(path.read_text()), ['old'])
             self.assertEqual(list(Path(tmp).iterdir()), [path])
+
+    def test_failed_response_file_writes_preserve_previous_files_and_clean_temporary_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            a.ensure_output_dirs(project)
+            paths = [
+                a.provider_response_path(project, 'a.pdf'),
+                a.raw_response_path(project, 'a.pdf'),
+                a.repaired_response_path(project, 'a.pdf'),
+            ]
+            for path in paths:
+                path.write_text('old', encoding='utf-8')
+            result = ExtractionResult(project / 'a.pdf', 'a.pdf', 'ok', raw_response='new', repaired_response='new', provider_responses=[{'attempt': 1}])
+            real_replace = a.os.replace
+            for failing in paths:
+                def replace(source, destination, failing=failing):
+                    if Path(destination) == failing:
+                        raise OSError('disk full')
+                    return real_replace(source, destination)
+
+                with self.subTest(path=failing.name), patch.object(a.os, 'replace', side_effect=replace), self.assertRaises(OSError):
+                    a.upsert_extraction(project, result)
+                self.assertEqual(failing.read_text(encoding='utf-8'), 'old')
+                self.assertEqual([path for path in a.raw_dir(project).iterdir() if path.name.endswith('.tmp')], [])
+                for path in paths:
+                    path.write_text('old', encoding='utf-8')
+
+    def test_response_files_keep_utf8_contents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            result = ExtractionResult(project / 'a.pdf', 'a.pdf', 'ok', raw_response='raw – ü\n', repaired_response='repaired – ü', provider_responses=[{'text': 'é'}])
+            a.upsert_extraction(project, result)
+            self.assertEqual(a.raw_response_path(project, 'a.pdf').read_bytes(), 'raw – ü\n'.replace('\n', os.linesep).encode('utf-8'))
+            self.assertEqual(a.repaired_response_path(project, 'a.pdf').read_bytes(), 'repaired – ü'.encode('utf-8'))
+            provider = a.provider_response_path(project, 'a.pdf').read_text(encoding='utf-8')
+            self.assertIn('"text": "é"', provider)
+            self.assertTrue(provider.endswith('}\n'))
 
     def test_corrupt_backup_names_do_not_overwrite_existing_backups(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(a, 'datetime') as clock:

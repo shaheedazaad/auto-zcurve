@@ -140,3 +140,35 @@ test('completed report reloads after showing success', async t => {
   assert.equal(h.browserErrors.length, 0);
   h.timers[0](); assert.match(h.browserErrors[0].message, /navigation/i);
 });
+
+test('a dropped progress stream shows a retrying message that clears when events resume', async t => {
+  const h = projectMount('', { project, setup: window => { window.document.querySelector('.progress-area').hidden = false; } });
+  t.after(h.close); await flush();
+  const notice = h.document.querySelector('[data-connection-lost]');
+  assert.equal(notice.hidden, true);
+  h.sources[0].fail(h.window.EventSource.CONNECTING);
+  assert.equal(notice.hidden, false);
+  assert.match(h.document.querySelector('[data-connection-lost-title]').textContent, /Connection lost/);
+  assert.match(h.document.querySelector('[data-connection-lost-message]').textContent, /Retrying/);
+  await h.sources[0].emit('progress', { completed: 1, total: 2, message: 'Back' });
+  assert.equal(notice.hidden, true);
+  h.sources[0].fail(h.window.EventSource.CONNECTING);
+  assert.equal(notice.hidden, false);
+  await h.sources[0].emit('status', { status: 'running', message: 'Working' });
+  assert.equal(notice.hidden, true);
+  assert.equal(h.document.querySelector('[data-progress-message]').textContent, 'Working');
+});
+
+test('a progress stream that cannot reconnect tells the user to reload or restart', async t => {
+  for (const failures of [[2], [0, 0, 0]]) {
+    const h = projectMount('', { project, setup: window => { window.document.querySelector('.progress-area').hidden = false; } });
+    t.after(h.close); await flush();
+    for (const state of failures) h.sources[0].fail(state);
+    const notice = h.document.querySelector('[data-connection-lost]');
+    assert.equal(notice.hidden, false);
+    assert.match(h.document.querySelector('[data-connection-lost-message]').textContent, /Reload this page.*restart auto-zcurve/s);
+    assert.equal(h.document.querySelector('.progress-area').hidden, false);
+    await h.sources[0].emit('status', { status: 'failed', message: 'Stopped' });
+    assert.equal(notice.hidden, true);
+  }
+});

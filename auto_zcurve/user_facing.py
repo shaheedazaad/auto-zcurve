@@ -10,6 +10,7 @@ from typing import Callable, Sequence
 from .artifacts import load_extractions, read_zcurve_summary
 from .credentials import load_saved_api_key
 from .env import load_dotenv
+from .llm import STATUS_NEEDS_REVIEW, STATUS_OK, record_review_reasons
 from .paths import DEFAULT_SCHEMA
 from .preflight import check_r_packages, check_system_tools, missing_python_dependencies
 from .runner import RunSummary
@@ -309,15 +310,34 @@ def classify_error(error: BaseException | str) -> UserFacingError:
     )
 
 
+def review_reasons_text(record: dict) -> str:
+    reasons = record_review_reasons(record)
+    return "; ".join(reasons) if reasons else "no reason was recorded"
+
+
+def retry_reason(record: dict) -> str:
+    """Explain why a failed or needs-review extraction is offered for retry."""
+    if record.get("status") == STATUS_NEEDS_REVIEW:
+        return f"Needs review: {review_reasons_text(record)}"
+    return classify_error(str(record.get("error") or "")).compact()
+
+
 def failed_pdf_rows(project_dir: Path, limit: int = 8) -> list[tuple[str, str]]:
+    """Rows for every PDF a retry would re-extract: failed and needs-review ones."""
     rows: list[tuple[str, str]] = []
     for record in load_extractions(project_dir):
-        if record.get("status") == "ok":
+        if record.get("status") == STATUS_OK:
             continue
-        source = str(record.get("source_name") or "")
-        summary = classify_error(str(record.get("error") or "")).compact()
-        rows.append((source, summary))
+        rows.append((str(record.get("source_name") or ""), retry_reason(record)))
     return rows[:limit]
+
+
+def needs_review_pdf_rows(project_dir: Path) -> list[tuple[str, str]]:
+    return [
+        (str(record.get("source_name") or ""), review_reasons_text(record))
+        for record in load_extractions(project_dir)
+        if record.get("status") == STATUS_NEEDS_REVIEW
+    ]
 
 
 def format_run_result(summary: RunSummary, project_dir: Path) -> str:
@@ -330,6 +350,7 @@ def format_run_result(summary: RunSummary, project_dir: Path) -> str:
     lines = [
         f"Report: {report}",
         f"Successful PDFs: {summary.successful_pdfs}",
+        f"Needs review PDFs: {summary.needs_review_pdfs}",
         f"Failed PDFs: {summary.failed_pdfs}",
         f"Extracted effects: {summary.extracted_effects}",
         f"Usable z-curve inputs: {summary.usable_zcurve_inputs}",
@@ -337,6 +358,10 @@ def format_run_result(summary: RunSummary, project_dir: Path) -> str:
         f"Output tokens: {summary.output_tokens}",
         f"Total tokens: {summary.total_tokens}",
     ]
+    review_rows = needs_review_pdf_rows(project_dir)
+    if review_rows:
+        lines.append("Needs review:")
+        lines.extend(f"  {source}: {reasons}" for source, reasons in review_rows)
     return "\n".join(lines)
 
 

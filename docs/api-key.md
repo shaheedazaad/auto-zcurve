@@ -33,7 +33,7 @@ downloads. If no usable credential store is available, keys can be used in
 memory for the current app session.
 
 Starting the app or opening Settings does not read saved keys. **Unlock**
-loads a key explicitly. **Run analysis** and **Retry failed** also load the
+loads a key explicitly. **Run analysis** and **Retry** also load the
 selected provider's saved key when needed; OpenRouter model validation can
 load its key too. The operating system may ask for authorisation.
 

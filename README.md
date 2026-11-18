@@ -241,13 +241,26 @@ message-state inputs, and empty provider responses, plus two initial no-op
 callbacks. Current page flows cannot invoke those paths; they remain visible
 as uncovered branches/functions rather than being excluded from measurement.
 
-For Python coverage, install the `test` extra in your development environment
+Python coverage must stay at 100% (line and branch). CI runs the Python suite
+under coverage on every platform in the test matrix and fails if coverage drops
+below 100%. Run the same check locally in the managed Pixi environment (which
+includes the `test` extra):
+
+```sh
+pixi run test-coverage
+```
+
+Outside Pixi, install the `test` extra in your development environment
 (`python -m pip install -e '.[test]'`), then run:
 
 ```sh
 python -m coverage run -m unittest discover -s tests
 python -m coverage report
 ```
+
+New Python code needs tests that keep coverage at 100%. Reserve
+`# pragma: no cover` for lines that genuinely cannot run in the test
+environment, and give the reason in the comment.
 
 This measures Python application and release-tooling coverage. R regression
 scripts run through unittest when `Rscript` is available; they are not included
@@ -269,7 +282,8 @@ The R check runs every `tests/r/test_*.R` script and enforces 100% coverage of
 `R/*.R`. R's expression coverage and JavaScript/Python branch coverage are
 different measurements; the real render smoke test remains a separate check.
 
-For Python-only development without managed R or Quarto:
+For Python-only development without managed R or Quarto (requires Python 3.11
+or newer):
 
 ```sh
 python -m venv .venv

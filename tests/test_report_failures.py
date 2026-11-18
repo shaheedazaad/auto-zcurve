@@ -75,7 +75,7 @@ class ReportFailureTests(unittest.TestCase):
             env = run.call_args.kwargs['env']
             for key, value in {'AUTO_ZCURVE_PROJECT_DIR': project.resolve(), 'AUTO_ZCURVE_SCHEMA_PATH': schema.resolve(), 'AUTO_ZCURVE_INSTRUCTIONS_PATH': instructions.resolve(), 'AUTO_ZCURVE_OUTPUT_DIR': (project / 'output').resolve()}.items():
                 self.assertEqual(env[key], str(value))
-            self.assertEqual(env['QUARTO_R'], '/tools')
+            self.assertEqual(env['QUARTO_R'], str(Path('/tools').resolve()))
             self.assertEqual(env['R_LIBS'], '/libraries')
             self.assertEqual(env['AUTO_ZCURVE_MODEL_NAME'], 'custom-model')
             self.assertEqual(path.read_text(), '<html>report</html>')
