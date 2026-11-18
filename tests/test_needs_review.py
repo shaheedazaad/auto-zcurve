@@ -285,7 +285,8 @@ class WebNeedsReviewTests(unittest.TestCase):
         upsert_extraction(project.path, ExtractionResult(project.path / "sources/warning.pdf", "warning.pdf", "ok", data={"effects": []}, parser_warnings=("table skipped",)))
 
         page = self.client.get(f"/token/projects/{project.project_id}").text
-        rows = {name: page.split(f'title="{name}"', 1)[1].split("</tr>", 1)[0] for name in ["both.pdf", "reasons.pdf", "warning.pdf"]}
+        articles = page.split("data-article-body", 1)[1]
+        rows = {name: articles.split(f'title="{name}"', 1)[1].split("</tr>", 1)[0] for name in ["both.pdf", "reasons.pdf", "warning.pdf"]}
         self.assertIn("Needs review: JSON was repaired</small>", rows["both.pdf"])
         self.assertIn('<small class="article-message u-warning">&lt;b&gt;page 3&lt;/b&gt; dropped</small>', rows["both.pdf"])
         self.assertIn("Needs review: finish reason: MAX_TOKENS</small>", rows["reasons.pdf"])
