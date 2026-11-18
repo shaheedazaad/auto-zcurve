@@ -497,4 +497,6 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         "model": settings.primary_model if settings else default_model,
         "parallel_requests": settings.parallel_requests if settings else default_parallel,
         "request_delay_sec": settings.request_delay_sec if settings else default_delay,
+        "openrouter_provider": settings.openrouter_provider if settings else "",
+        "openrouter_allow_fallbacks": settings.openrouter_allow_fallbacks if settings else True,
     }

@@ -44,6 +44,19 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(payload["reasoning_effort"], "high")
             self.assertEqual(load_run_settings(project).provider, "gemini")
 
+    def test_openrouter_routing_defaults_persists_and_rejects_bad_slugs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            save_run_settings(project, RunSettings(primary_model="vendor/model", provider="openrouter"))
+            loaded = load_run_settings(project)
+            self.assertEqual((loaded.openrouter_provider, loaded.openrouter_allow_fallbacks), ("", True))
+            save_run_settings(project, RunSettings(primary_model="vendor/model", provider="openrouter",
+                                                   openrouter_provider=" DeepInfra/FP8 ", openrouter_allow_fallbacks=False))
+            loaded = load_run_settings(project)
+            self.assertEqual((loaded.openrouter_provider, loaded.openrouter_allow_fallbacks), ("deepinfra/fp8", False))
+            with self.assertRaisesRegex(ValueError, "Invalid OpenRouter provider"):
+                save_run_settings(project, RunSettings(primary_model="m", openrouter_provider="../etc"))
+
     def test_app_settings_default_to_native_and_persist(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}, clear=False):

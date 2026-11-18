@@ -248,6 +248,8 @@ def _process_one(
             service_tier=settings.service_tier,
             endpoint_order=model_option.endpoint_order,
             cancellation_event=cancellation_event,
+            openrouter_provider=settings.openrouter_provider,
+            openrouter_allow_fallbacks=settings.openrouter_allow_fallbacks,
         )
         _raise_if_cancelled(cancellation_event)
     except RunCancelled:

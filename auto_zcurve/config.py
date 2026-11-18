@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -105,6 +106,19 @@ class RunSettings:
     pdf_parser: str = DEFAULTS["pdf_parser"]
     reasoning_effort: str = DEFAULTS["reasoning_effort"]
     service_tier: str = DEFAULTS["service_tier"]
+    openrouter_provider: str = ""
+    openrouter_allow_fallbacks: bool = True
+
+
+OPENROUTER_PROVIDER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)?$")
+
+
+def normalize_openrouter_provider(value: object) -> str:
+    """Return an OpenRouter provider/endpoint slug such as `deepinfra/fp8`, or "" for automatic routing."""
+    slug = str(value or "").strip().lower()
+    if slug and not OPENROUTER_PROVIDER_PATTERN.fullmatch(slug):
+        raise ValueError(f"Invalid OpenRouter provider: {value}")
+    return slug
 
 
 def normalize_endpoint_url(value: str) -> str:
@@ -268,6 +282,8 @@ def load_run_settings(project_dir: Path) -> RunSettings | None:
         pdf_parser=normalize_pdf_parser(raw.get("pdf_parser")),
         reasoning_effort=normalize_reasoning_effort(raw.get("reasoning_effort")),
         service_tier=normalize_service_tier(raw.get("service_tier")),
+        openrouter_provider=normalize_openrouter_provider(raw.get("openrouter_provider")),
+        openrouter_allow_fallbacks=raw.get("openrouter_allow_fallbacks", True) is not False,
     )
 
 
@@ -284,6 +300,8 @@ def save_run_settings(project_dir: Path, settings: RunSettings) -> None:
         "pdf_parser": normalize_pdf_parser(settings.pdf_parser),
         "reasoning_effort": normalize_reasoning_effort(settings.reasoning_effort),
         "service_tier": normalize_service_tier(settings.service_tier),
+        "openrouter_provider": normalize_openrouter_provider(settings.openrouter_provider),
+        "openrouter_allow_fallbacks": bool(settings.openrouter_allow_fallbacks),
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)

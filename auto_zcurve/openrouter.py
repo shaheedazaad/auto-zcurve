@@ -6,6 +6,7 @@ import math
 import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -114,6 +115,33 @@ def list_models(
     if not isinstance(models, list):
         raise RuntimeError("OpenRouter returned an invalid model catalog.")
     return [model for model in models if isinstance(model, dict)]
+
+
+def list_model_endpoints(
+    model_id: str,
+    *,
+    api_key: str | None = None,
+    timeout_sec: int = 30,
+) -> list[dict[str, str]]:
+    """List the provider endpoints serving a model that can return strict structured output."""
+    model_path = "/".join(urllib.parse.quote(part, safe="") for part in model_id.split(":", 1)[0].split("/"))
+    payload = _request_json(f"{API_BASE}/models/{model_path}/endpoints", api_key=api_key, timeout_sec=timeout_sec)
+    data = payload.get("data")
+    endpoints = data.get("endpoints") if isinstance(data, dict) else None
+    if not isinstance(endpoints, list):
+        raise RuntimeError("OpenRouter returned an invalid endpoint list.")
+    listed: dict[str, dict[str, str]] = {}
+    for endpoint in endpoints:
+        if not isinstance(endpoint, dict):
+            continue
+        tag = str(endpoint.get("tag") or "").strip().lower()
+        parameters = {str(value).lower() for value in endpoint.get("supported_parameters") or []}
+        if not tag or "structured_outputs" not in parameters or tag in listed:
+            continue
+        details = [part for part in (tag.partition("/")[2], str(endpoint.get("quantization") or "")) if part and part != "unknown"]
+        name = str(endpoint.get("provider_name") or tag)
+        listed[tag] = {"tag": tag, "name": f"{name} ({', '.join(dict.fromkeys(details))})" if details else name}
+    return sorted(listed.values(), key=lambda item: item["name"].lower())
 
 
 def supports_native_structured_pdf(model: dict[str, Any]) -> bool:
@@ -304,6 +332,8 @@ def extract_pdf(
     project_dir: Path | None = None,
     reasoning_effort: str | None = None,
     endpoint_order: tuple[str, ...] = (),
+    preferred_provider: str = "",
+    allow_fallbacks: bool = True,
 ) -> ExtractionResult:
     started = time.monotonic()
     prompt = build_system_prompt(schema_config, instruction_path)
@@ -351,6 +381,10 @@ def extract_pdf(
                 "allow_fallbacks": False,
             }
         )
+    elif preferred_provider:
+        payload["provider"].update({"order": [preferred_provider], "allow_fallbacks": allow_fallbacks})
+    elif not allow_fallbacks:
+        payload["provider"]["allow_fallbacks"] = False
     if reasoning_effort is not None:
         payload["reasoning"] = {"effort": normalize_reasoning_effort(reasoning_effort)}
     engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]

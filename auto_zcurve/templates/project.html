@@ -422,6 +422,25 @@
               <section><strong>Experimental backup provider.</strong> Model quality, PDF support, structured-output behavior, latency, and reliability can vary by model and provider route.</section>
             </div>
 
+            <div class="grid-2" data-openrouter-routing {% if project.provider != 'openrouter' %}hidden{% endif %}>
+              <div class="field">
+                <label for="openrouter-provider">Route to provider</label>
+                <select class="select" id="openrouter-provider" name="openrouter_provider" data-saved-value="{{ project.openrouter_provider }}">
+                  <option value="">Automatic (OpenRouter chooses)</option>
+                  {% if project.openrouter_provider %}<option value="{{ project.openrouter_provider }}" selected>{{ project.openrouter_provider }}</option>{% endif %}
+                </select>
+                <p class="u-sm u-muted" data-openrouter-provider-status role="status">Providers serving this model with structured output.</p>
+              </div>
+              <div class="field">
+                <label for="openrouter-fallbacks">Fallbacks</label>
+                <select class="select" id="openrouter-fallbacks" name="openrouter_fallbacks">
+                  <option value="allow" {% if project.openrouter_allow_fallbacks %}selected{% endif %}>Allow other providers</option>
+                  <option value="deny" {% if not project.openrouter_allow_fallbacks %}selected{% endif %}>Don't fall back</option>
+                </select>
+                <p class="u-sm u-muted" data-openrouter-fallbacks-hint></p>
+              </div>
+            </div>
+
             <div class="field">
               <label for="request-delay-sec">Delay between submissions (seconds)</label>
               <input class="input" id="request-delay-sec" name="request_delay_sec" type="number" min="0" max="3600" value="{{ project.request_delay_sec }}" required>

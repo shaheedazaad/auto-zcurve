@@ -33,3 +33,17 @@ class WebProjectSettingsTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 validate.assert_called_once_with('openrouter', 'vendor/model', 'key')
                 self.assertEqual(load_run_settings(project.path).provider, 'openrouter')
+                with patch.object(app.state.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option'):
+                    response = client.post(url, data={'provider': 'openrouter', 'model': 'vendor/model', 'openrouter_provider': 'deepinfra/fp8', 'openrouter_fallbacks': 'deny'})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    settings = load_run_settings(project.path)
+                    self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', False))
+                    response = client.post(url, data={'provider': 'openrouter', 'model': 'vendor/model'})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    settings = load_run_settings(project.path)
+                    self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', False))
+                    for bad in [{'openrouter_fallbacks': 'maybe'}, {'openrouter_provider': 'bad slug!'}]:
+                        self.assertEqual(client.post(url, data={'provider': 'openrouter', 'model': 'vendor/model', **bad}).status_code, 400)
+                page = client.get('/token/projects/' + project.project_id)
+                self.assertIn('<option value="deepinfra/fp8" selected>deepinfra/fp8</option>', page.text)
+                self.assertIn('<option value="deny" selected>', page.text)

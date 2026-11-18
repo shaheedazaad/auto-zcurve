@@ -41,6 +41,23 @@ Enter an exact model ID, such as the ID shown by your provider, on
 the live model catalog for structured-output and compatible input support
 when you save or run. PDF processing uses OpenRouter's file-parser service.
 
+Two more choices appear on **Run analysis** when OpenRouter is selected:
+
+- **Route to provider** lists the providers that currently serve the model
+  with structured output, such as `DeepInfra (fp8)`. Leave it on
+  **Automatic** to let OpenRouter choose. Providers can run different
+  quantizations of the same model, so pinning one keeps results consistent.
+  If the provider you saved stops serving the model, it stays selected and
+  is marked **(not listed for this model)**. Pick another provider or
+  **Automatic** if requests start failing.
+- **Fallbacks** controls what happens when that provider is unavailable.
+  **Allow other providers** retries elsewhere. **Don't fall back** fails the
+  request instead, so every result comes from the provider you chose. With
+  **Automatic**, it limits each request to OpenRouter's first choice.
+
+Both are saved with the project. Changing them does not re-extract PDFs that
+were already processed.
+
 ### OpenAI-compatible
 
 Expand **OpenAI-compatible** to connect a hosted or local server that supports
