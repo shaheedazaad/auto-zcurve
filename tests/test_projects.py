@@ -153,6 +153,19 @@ class ManagedProjectTests(unittest.TestCase):
                 sorted([first.name, second.name]),
             )
 
+    def test_long_upload_name_keeps_marks_with_zero_combining_class_on_their_base(self):
+        # Devanagari vowel sign I (Mc) and Thai sara i (Mn) both have combining class 0.
+        cases = {
+            "devanagari": ("कि", "कि" * 26),
+            "thai": ("กิ", "กิ" * 26),
+            "thai stacked marks": ("กิ่", "กิ่" * 17),
+        }
+        for label, (cluster, expected_stem) in cases.items():
+            with self.subTest(label):
+                name = safe_upload_name(cluster * 100 + ".pdf")
+                self.assertEqual(name, expected_stem + ".pdf")
+                self.assertLessEqual(len(Path(name).stem.encode("utf-8")), 160)
+
     def test_invalid_pdf_signature_is_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = create_project("Validation", root=Path(tmp))

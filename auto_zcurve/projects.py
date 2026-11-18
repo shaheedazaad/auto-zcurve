@@ -180,8 +180,9 @@ def list_projects(*, root: Path | None = None) -> list[ManagedProject]:
 def _truncate_utf8(text: str, max_bytes: int) -> str:
     cut = text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
     kept = cut
-    # Do not separate a base letter from the combining marks that follow it.
-    while kept and len(kept) < len(text) and unicodedata.combining(text[len(kept)]):
+    # Do not separate a base letter from the marks (categories Mn, Mc, Me) that follow it.
+    # Some marks, such as Devanagari and Thai vowel signs, have combining class 0.
+    while kept and len(kept) < len(text) and unicodedata.category(text[len(kept)]).startswith("M"):
         kept = kept[:-1]
     return kept or cut
 
