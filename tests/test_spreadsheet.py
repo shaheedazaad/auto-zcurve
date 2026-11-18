@@ -1,6 +1,7 @@
 import csv
 import io
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from auto_zcurve.spreadsheet import escape_cell, spreadsheet_safe_csv
 
@@ -14,12 +15,18 @@ def read_rows(payload: bytes) -> list[list[str]]:
 
 class EscapeCellTests(unittest.TestCase):
     def test_formula_like_cells_get_a_leading_apostrophe(self):
-        for value in ["=SUM(A1:A2)", "+cmd", "-cmd|' /C calc'!A0", "@SUM(1)", "\tvalue", "\rvalue", "-", "+", "=", "@"]:
+        for value in ["=SUM(A1:A2)", "+cmd", "-cmd|' /C calc'!A0", "@SUM(1)", "\tvalue", "\rvalue", "\nvalue", "-", "+", "=", "@"]:
             with self.subTest(value=value):
                 self.assertEqual(escape_cell(value), "'" + value)
 
     def test_formula_like_cells_after_leading_whitespace_are_escaped(self):
-        for value in ["  =1+1", " +1+", "   @x", " \t=1", "\t ", " \r"]:
+        for value in ["  =1+1", " +1+", "   @x", " \t=1", "\t ", " \r", " \n=1", "\n "]:
+            with self.subTest(value=value):
+                self.assertEqual(escape_cell(value), "'" + value)
+
+    def test_line_feed_prefixed_hyperlink_is_escaped(self):
+        # Regression for #15: a line feed before a formula must not bypass escaping.
+        for value in ['\n=HYPERLINK("http://x","click")', '  \n=HYPERLINK("http://x","click")']:
             with self.subTest(value=value):
                 self.assertEqual(escape_cell(value), "'" + value)
 
@@ -58,6 +65,10 @@ class SpreadsheetSafeCsvTests(unittest.TestCase):
             ],
         )
 
+    def test_quoted_cell_starting_with_line_feed_is_escaped(self):
+        payload = spreadsheet_safe_csv('quote\n"\n=HYPERLINK(""http://x"")"\n')
+        self.assertEqual(read_rows(payload), [["quote"], ["'\n=HYPERLINK(\"http://x\")"]])
+
     def test_unicode_text_and_embedded_newlines_survive(self):
         source = 'quote,beta\n"Line one\nline two — résumé",β\n'
         payload = spreadsheet_safe_csv(source)
@@ -81,6 +92,17 @@ class SpreadsheetSafeCsvTests(unittest.TestCase):
             self.assertEqual(read_rows(payload), [["quote"], [large]])
         finally:
             csv.field_size_limit(previous_reader_limit)
+
+    def test_concurrent_conversions_with_large_fields_all_succeed(self):
+        # Downloads convert in worker threads (#19); the raised csv field limit is
+        # process-global, so overlapping conversions must not undo each other's limit.
+        large = "x" * (200 * 1024)
+        source = f"quote\n{large}\n"
+        previous_limit = csv.field_size_limit()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            payloads = list(pool.map(lambda _: spreadsheet_safe_csv(source), range(64)))
+        self.assertEqual(csv.field_size_limit(), previous_limit)
+        self.assertEqual(len(set(payloads)), 1)
 
 
 if __name__ == "__main__":

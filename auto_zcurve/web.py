@@ -457,6 +457,11 @@ def _catalog_models(runtime: WebRuntime, provider: str) -> list:
     return list_live_models(key, provider)
 
 
+def _spreadsheet_safe_download(path: Path) -> bytes:
+    """Blocking: read a canonical CSV and build its spreadsheet-safe copy. Call via a worker thread."""
+    return spreadsheet_safe_csv(path.read_text(encoding="utf-8"))
+
+
 def _results_zip(project: ManagedProject) -> bytes:
     """Compress the project's result files into an in-memory results ZIP."""
     output = project.path / "output"
@@ -1169,8 +1174,9 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         path = project.path / "output" / name
         if name not in SPREADSHEET_SAFE_FILES or not path.is_file():
             raise HTTPException(status_code=404, detail="Spreadsheet download not found.")
+        payload = await asyncio.to_thread(_spreadsheet_safe_download, path)
         return Response(
-            spreadsheet_safe_csv(path.read_text(encoding="utf-8")),
+            payload,
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{spreadsheet_safe_name(name)}"'},
         )
