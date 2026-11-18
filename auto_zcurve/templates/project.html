@@ -60,8 +60,8 @@
     <button type="button" role="tab" id="tab-sources" aria-controls="panel-sources" data-tab-target="sources" aria-selected="false">{{ workflow_icon("sources") }}<span>Sources</span></button>
     <button type="button" role="tab" id="tab-extraction-setup" aria-controls="panel-extraction-setup" data-tab-target="extraction-setup" aria-selected="false">{{ workflow_icon("manual") }}<span>Extraction instructions</span></button>
     <button type="button" role="tab" id="tab-schema" aria-controls="panel-schema" data-tab-target="schema" aria-selected="false">{{ workflow_icon("coding-sheet") }}<span>Schema</span></button>
-    <button type="button" role="tab" id="tab-articles" aria-controls="panel-articles" data-tab-target="articles" aria-selected="false">{{ workflow_icon("identify") }}<span>Articles</span></button>
     <button type="button" role="tab" id="tab-run-analysis" aria-controls="panel-run-analysis" data-tab-target="run-analysis" aria-selected="false">{{ workflow_icon("run") }}<span>Run analysis</span></button>
+    <button type="button" role="tab" id="tab-articles" aria-controls="panel-articles" data-tab-target="articles" aria-selected="false">{{ workflow_icon("identify") }}<span>Extraction results</span></button>
   </div>
 
   </aside>
@@ -166,6 +166,37 @@
       </label>
     </form>
     <p class="upload-message form-message u-sm" role="status"></p>
+    <div class="panel">
+      <div class="table-container">
+        <table class="table source-table">
+          <thead>
+            <tr>
+              <th>PDF</th>
+              <th>Size</th>
+              <th>Added</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody data-source-body>
+            {% for article in (project.articles | sort(attribute="added_at", reverse=True))[:10] %}
+            <tr class="source-row">
+              <td><span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span><strong class="article-name" title="{{ article.name }}">{{ article.name }}</strong></td>
+              <td class="u-muted u-sm u-nowrap">{{ article.size_display }}</td>
+              <td class="u-muted u-sm u-nowrap">{{ article.added_display }}</td>
+              <td><a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/sources/{{ article.name | urlencode }}" target="_blank" rel="noopener">Open</a></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="4" class="table-empty-cell">No PDFs yet. Drop some above to add them to this project.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <nav class="panel-foot" data-source-pagination aria-label="PDF pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
+        <span class="u-muted u-sm" data-source-page-status>Page 1 of {{ ((project.pdf_count - 1) // 10) + 1 }}</span>
+        <button class="btn js-source-previous" data-variant="outline" data-size="sm" type="button" disabled>Previous</button>
+        <button class="btn js-source-next" data-variant="outline" data-size="sm" type="button" {% if project.pdf_count <= 10 %}disabled{% endif %}>Next</button>
+      </nav>
+    </div>
   </section>
 
   <section class="tab-panel" id="panel-extraction-setup" role="tabpanel" aria-labelledby="tab-extraction-setup" data-tab-panel="extraction-setup" hidden>
@@ -274,7 +305,7 @@
     <div data-articles-table-view>
     <div class="section-head">
       <div>
-        <h2 class="icon-heading">{{ workflow_icon("identify") }}Review</h2>
+        <h2 class="icon-heading">{{ workflow_icon("identify") }}Extraction results</h2>
         {{ docs_link("results/#when-an-article-fails", "Reviewing results") }}
       </div>
       <div class="cluster" aria-label="Article statuses">
@@ -323,7 +354,7 @@
               </td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDFs from the Sources tab to begin.</td></tr>
+            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No extraction results yet. Add PDFs on the Sources tab, then start a run from Run analysis.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -339,7 +370,7 @@
     <div data-articles-detail-view hidden>
       <div class="section-head">
         <div>
-          <button class="btn" data-variant="outline" data-size="sm" type="button" data-response-back>← Back to articles</button>
+          <button class="btn" data-variant="outline" data-size="sm" type="button" data-response-back>← Back to extraction results</button>
         </div>
       </div>
       <div class="panel panel-pad stack">

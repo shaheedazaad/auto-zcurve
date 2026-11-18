@@ -24,17 +24,17 @@ r-tibble = ">=3.2"
 r-yaml = ">=2.3"
 
 [target.linux-64.dependencies]
-r-zcurve = "2.4.6.*"
+r-zcurve = "2.5.0.*"
 pytorch-cpu = ">=2.2.2,<3"
 torchvision = ">=0.17,<1"
 
 [target.win-64.dependencies]
-r-zcurve = "2.4.6.*"
+r-zcurve = "2.5.0.*"
 pytorch-cpu = ">=2.2.2,<3"
 torchvision = ">=0.17,<1"
 
 [target.osx-64.dependencies]
-r-zcurve = "2.4.6.*"
+r-zcurve = "2.5.0.*"
 
 # conda-forge does not currently publish zcurve for Apple Silicon. The exact
 # CRAN source archive is bundled and compiled inside the locked environment.
@@ -42,7 +42,6 @@ r-zcurve = "2.4.6.*"
 cxx-compiler = ">=1.9"
 r-rcpp = ">=1.0"
 r-nleqslv = "*"
-r-evmix = "*"
 r-ggplot2 = "*"
 r-rdpack = "*"
 r-rlang = "*"

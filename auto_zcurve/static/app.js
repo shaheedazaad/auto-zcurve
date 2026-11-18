@@ -615,9 +615,46 @@
     }
   };
 
+  let sourcePage = 1;
+  let recentUploads = new Set();
+  const renderSourcePage = () => {
+    const tbody = document.querySelector("[data-source-body]");
+    if (!tbody) return;
+    const sources = [...currentArticles].sort((left, right) =>
+      String(right.added_at || "").localeCompare(String(left.added_at || "")) || left.name.localeCompare(right.name));
+    const totalPages = Math.max(1, Math.ceil(sources.length / pageSize));
+    sourcePage = Math.min(sourcePage, totalPages);
+    const visible = sources.slice((sourcePage - 1) * pageSize, sourcePage * pageSize);
+    tbody.innerHTML = visible.length
+      ? visible.map((source) => `
+        <tr class="source-row${recentUploads.has(source.name) ? " source-row-new" : ""}">
+          <td>${articleFileIcon}<strong class="article-name" title="${escapeHtml(source.name)}">${escapeHtml(source.name)}</strong>${recentUploads.has(source.name) ? ' <span class="badge" data-variant="success">New</span>' : ""}</td>
+          <td class="u-muted u-sm u-nowrap">${escapeHtml(source.size_display || "")}</td>
+          <td class="u-muted u-sm u-nowrap">${escapeHtml(source.added_display || "")}</td>
+          <td><a class="btn" data-variant="outline" data-size="sm" href="/${token}/projects/${projectId}/sources/${encodeURIComponent(source.name)}" target="_blank" rel="noopener">Open</a></td>
+        </tr>`).join("")
+      : '<tr class="empty-row"><td colspan="4" class="table-empty-cell">No PDFs yet. Drop some above to add them to this project.</td></tr>';
+    const pagination = document.querySelector("[data-source-pagination]");
+    if (pagination) {
+      pagination.hidden = sources.length <= pageSize;
+      pagination.querySelector("[data-source-page-status]").textContent = `Page ${sourcePage} of ${totalPages}`;
+      pagination.querySelector(".js-source-previous").disabled = sourcePage <= 1;
+      pagination.querySelector(".js-source-next").disabled = sourcePage >= totalPages;
+    }
+  };
+  document.querySelector(".js-source-previous")?.addEventListener("click", () => {
+    if (sourcePage > 1) sourcePage -= 1;
+    renderSourcePage();
+  });
+  document.querySelector(".js-source-next")?.addEventListener("click", () => {
+    sourcePage += 1;
+    renderSourcePage();
+  });
+
   const renderArticles = (project) => {
     currentArticles = project.articles;
     renderArticlePage();
+    renderSourcePage();
     document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} PDFs`;
     document.querySelector("[data-token-count]").textContent = project.total_tokens;
     const currentRunButton = document.querySelector(".js-run");
@@ -719,6 +756,8 @@
       uploadMessage.textContent = `Added ${result.saved.length} PDF${result.saved.length === 1 ? "" : "s"}.`;
       setMessageState(uploadMessage, "upload-message form-message success-text");
       fileInput.value = "";
+      recentUploads = new Set(result.saved);
+      sourcePage = 1;
       await refreshProject();
     } catch (error) {
       uploadMessage.textContent = error.message;

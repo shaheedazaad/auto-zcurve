@@ -1181,6 +1181,25 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail="Z-curve plot not found.")
         return FileResponse(path, media_type="image/png")
 
+    @app.get(f"/{token}/projects/{{project_id}}/sources/{{name}}")
+    async def source_pdf(project_id: str, name: str):
+        try:
+            project = runtime.project(project_id)
+        except ProjectError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        sources = project.path / "sources"
+        if Path(name).name != name or Path(name).suffix.lower() != ".pdf":
+            raise HTTPException(status_code=404, detail="PDF not found.")
+        try:
+            path = (sources / name).resolve(strict=True)
+            real_sources = sources.resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise HTTPException(status_code=404, detail="PDF not found.") from None
+        # Refuse symlinks that point outside the project's sources folder.
+        if path.parent != real_sources or not path.is_file():
+            raise HTTPException(status_code=404, detail="PDF not found.")
+        return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=name)
+
     @app.get(f"/{token}/projects/{{project_id}}/spreadsheet/{{name}}")
     async def download_spreadsheet_safe_csv(project_id: str, name: str):
         try:
