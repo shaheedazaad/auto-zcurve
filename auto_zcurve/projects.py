@@ -415,6 +415,7 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
                 "status": status,
                 "error": str(record.get("error") or ""),
                 "review_reasons": record_review_reasons(record),
+                "retry_error": str(record.get("retry_error") or ""),
                 "warning": " ".join(str(item) for item in record.get("parser_warnings") or []),
                 "input_mode": str(record.get("input_mode") or ""),
                 "parser_name": str(record.get("parser_name") or ""),

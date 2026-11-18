@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .llm import ExtractionResult
+from .llm import STATUS_NEEDS_REVIEW, ExtractionResult
 
 
 def utc_now() -> str:
@@ -206,6 +206,24 @@ def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[
     _atomic_json_dump(raw_path(project_dir, result.source_name), record)
     save_extractions(project_dir, records)
     return records
+
+
+def record_failed_retry(project_dir: Path, source_name: str, error: str | None) -> dict[str, Any] | None:
+    """Note a failed retry on a needs-review record without discarding its data.
+
+    Returns the updated record, or None when the PDF has no needs-review record
+    to keep (the caller should then save the failed result as usual). A later
+    retry that returns a result replaces the whole record, clearing these fields.
+    """
+    records = load_extractions(project_dir)
+    for record in records:
+        if record.get("source_name") == source_name and record.get("status") == STATUS_NEEDS_REVIEW:
+            record["retry_error"] = error or "Retry failed without an error message."
+            record["retry_failed_at"] = utc_now()
+            _atomic_json_dump(raw_path(project_dir, source_name), record)
+            save_extractions(project_dir, records)
+            return record
+    return None
 
 
 def delete_extraction(project_dir: Path, source_name: str) -> bool:
