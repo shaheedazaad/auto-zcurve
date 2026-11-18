@@ -19,6 +19,11 @@ class GeminiAdapterTests(unittest.TestCase):
         self.assertEqual(gemini._metadata_value(NS(second=3), 'first', 'second'), 3)
         self.assertIsNone(gemini._int_or_none([]))
 
+    def test_thinking_tokens_count_as_output(self):
+        self.assertEqual(gemini._response_usage({'usageMetadata': {'promptTokenCount': 7, 'candidatesTokenCount': 3, 'thoughtsTokenCount': 20, 'totalTokenCount': 30}}), {'input_tokens': 7, 'output_tokens': 23, 'total_tokens': 30})
+        self.assertEqual(gemini._response_usage(NS(usage_metadata=NS(prompt_token_count=7, candidates_token_count=3, thoughts_token_count=None, total_token_count=10))), {'input_tokens': 7, 'output_tokens': 3, 'total_tokens': 10})
+        self.assertEqual(gemini._response_usage({'usageMetadata': {'candidatesTokenCount': None, 'thoughtsTokenCount': 20}})['output_tokens'], None)
+
     def test_empty_and_split_responses(self):
         for response in [NS(), NS(candidates=[NS(content=None)]), NS(candidates=[NS(content=NS(parts=[NS(text='  ')]))])]:
             with self.subTest(response=response), self.assertRaisesRegex(RuntimeError, 'empty text payload'):

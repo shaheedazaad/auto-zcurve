@@ -54,6 +54,10 @@ def _response_usage(response: object) -> dict[str, int | None]:
     usage = _metadata_value(response, "usage_metadata", "usageMetadata") or {}
     input_tokens = _int_or_none(_metadata_value(usage, "prompt_token_count", "promptTokenCount"))
     output_tokens = _int_or_none(_metadata_value(usage, "candidates_token_count", "candidatesTokenCount"))
+    # Gemini bills thinking tokens as output and already includes them in its total.
+    thinking_tokens = _int_or_none(_metadata_value(usage, "thoughts_token_count", "thoughtsTokenCount"))
+    if output_tokens is not None and thinking_tokens is not None:
+        output_tokens += thinking_tokens
     total_tokens = _int_or_none(_metadata_value(usage, "total_token_count", "totalTokenCount"))
     return {
         "input_tokens": input_tokens,
