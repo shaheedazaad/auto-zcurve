@@ -17,8 +17,8 @@ straight there, or **Download results** to get a ZIP copy.
 ## Spreadsheet-safe downloads
 
 The disclosure table holds text quoted from articles. Excel and LibreOffice
-treat a cell that starts with `=`, `+`, `-` or `@` (or a tab or carriage
-return, even after leading spaces) as a formula. Text quoted from a PDF
+treat a cell that starts with `=`, `+`, `-` or `@` (or a tab, carriage
+return or line feed, even after leading spaces) as a formula. Text quoted from a PDF
 could then display wrongly or, in the worst case, run a formula that a
 malicious PDF planted.
 

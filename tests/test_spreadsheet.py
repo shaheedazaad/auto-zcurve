@@ -14,12 +14,18 @@ def read_rows(payload: bytes) -> list[list[str]]:
 
 class EscapeCellTests(unittest.TestCase):
     def test_formula_like_cells_get_a_leading_apostrophe(self):
-        for value in ["=SUM(A1:A2)", "+cmd", "-cmd|' /C calc'!A0", "@SUM(1)", "\tvalue", "\rvalue", "-", "+", "=", "@"]:
+        for value in ["=SUM(A1:A2)", "+cmd", "-cmd|' /C calc'!A0", "@SUM(1)", "\tvalue", "\rvalue", "\nvalue", "-", "+", "=", "@"]:
             with self.subTest(value=value):
                 self.assertEqual(escape_cell(value), "'" + value)
 
     def test_formula_like_cells_after_leading_whitespace_are_escaped(self):
-        for value in ["  =1+1", " +1+", "   @x", " \t=1", "\t ", " \r"]:
+        for value in ["  =1+1", " +1+", "   @x", " \t=1", "\t ", " \r", " \n=1", "\n "]:
+            with self.subTest(value=value):
+                self.assertEqual(escape_cell(value), "'" + value)
+
+    def test_line_feed_prefixed_hyperlink_is_escaped(self):
+        # Regression for #15: a line feed before a formula must not bypass escaping.
+        for value in ['\n=HYPERLINK("http://x","click")', '  \n=HYPERLINK("http://x","click")']:
             with self.subTest(value=value):
                 self.assertEqual(escape_cell(value), "'" + value)
 
@@ -57,6 +63,10 @@ class SpreadsheetSafeCsvTests(unittest.TestCase):
                 ["'  @quote", "'=HYPERLINK(\"x\")"],
             ],
         )
+
+    def test_quoted_cell_starting_with_line_feed_is_escaped(self):
+        payload = spreadsheet_safe_csv('quote\n"\n=HYPERLINK(""http://x"")"\n')
+        self.assertEqual(read_rows(payload), [["quote"], ["'\n=HYPERLINK(\"http://x\")"]])
 
     def test_unicode_text_and_embedded_newlines_survive(self):
         source = 'quote,beta\n"Line one\nline two — résumé",β\n'

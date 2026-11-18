@@ -1,7 +1,8 @@
 """Spreadsheet-safe copies of the canonical CSV outputs.
 
 Excel and LibreOffice treat a cell that starts with ``=``, ``+``, ``-`` or
-``@`` (or a tab or carriage return, even after leading spaces) as a formula.
+``@`` (or a tab, carriage return or line feed, even after leading spaces) as a
+formula.
 The canonical CSV files stay untouched for the R report and for scripts; these
 helpers build a separate copy that is safe to open in a spreadsheet application.
 """
@@ -12,7 +13,7 @@ import csv
 import io
 import re
 
-FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
 SIGNED_NUMBER = re.compile(r" *[+-](?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)? *")
 UTF8_BOM = "﻿"
 MAX_FIELD_SIZE = 16 * 1024 * 1024
