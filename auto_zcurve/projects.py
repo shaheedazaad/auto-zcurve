@@ -423,7 +423,7 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
                 "name": source.name,
                 "size": stat.st_size,
                 "size_display": file_size_display(stat.st_size),
-                "added_at": added.isoformat(timespec="seconds"),
+                "added_at": added.isoformat(timespec="microseconds"),
                 "added_display": added.strftime("%d %b %Y, %H:%M"),
                 "status": status,
                 "error": str(record.get("error") or ""),

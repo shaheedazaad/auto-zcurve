@@ -18,6 +18,8 @@ test('sources list uploaded PDFs newest first with size, date, and a paginated o
   const first = h.document.querySelector('[data-source-body] tr');
   assert.deepEqual([...first.querySelectorAll('td')].slice(1, 3).map(td => td.textContent), ['12 KB', '12 Nov 2026, 10:00']);
   assert.equal(first.querySelector('a').getAttribute('href'), '/token/projects/project/sources/Paper%2011.pdf');
+  assert.equal(first.querySelector('a').getAttribute('target'), '_blank');
+  assert.equal(first.querySelector('a').getAttribute('rel'), 'noopener');
   const status = () => h.document.querySelector('[data-source-page-status]').textContent;
   assert.equal(status(), 'Page 1 of 2'); assert.equal(h.document.querySelector('.js-source-previous').disabled, true);
   await h.click('.js-source-previous'); assert.equal(status(), 'Page 1 of 2');
