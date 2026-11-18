@@ -157,8 +157,9 @@ truncate_report_text <- function(x, max_chars = 180) {
 }
 
 successful_pdfs <- sum(vapply(results, function(item) identical(item$status, "ok"), logical(1)))
-failed_pdfs <- sum(vapply(results, function(item) !identical(item$status, "ok"), logical(1)))
-total_pdfs <- successful_pdfs + failed_pdfs
+needs_review_pdfs <- sum(vapply(results, function(item) identical(item$status, "needs_review"), logical(1)))
+failed_pdfs <- sum(!vapply(results, is_extracted_result, logical(1)))
+total_pdfs <- successful_pdfs + needs_review_pdfs + failed_pdfs
 extracted_effects <- nrow(effect_table)
 sum_result_number <- function(field) {
   values <- vapply(results, function(item) {
@@ -183,7 +184,8 @@ articles_with_effects <- if (nrow(effect_table) && "source_name" %in% names(effe
 } else {
   0
 }
-failed_results <- purrr::keep(results, function(item) !identical(item$status, "ok"))
+failed_results <- purrr::keep(results, function(item) !is_extracted_result(item))
+needs_review_results <- purrr::keep(results, function(item) identical(item$status, "needs_review"))
 disclosure_csv_path <- file.path(output_dir, "disclosure_table.csv")
 
 rel_to_project <- function(path) {
@@ -234,7 +236,8 @@ pre {
 ## Overview
 
 This report was generated from `r total_pdfs` PDF article`r if (total_pdfs == 1) "" else "s"`.
-Extraction succeeded for `r successful_pdfs` article`r if (successful_pdfs == 1) "" else "s"` and failed for `r failed_pdfs`.
+Extraction succeeded for `r successful_pdfs` article`r if (successful_pdfs == 1) "" else "s"`, needs review for `r needs_review_pdfs`, and failed for `r failed_pdfs`.
+Statistics from extractions that need review are included in the z-curve and marked in the disclosure table (`extraction_status` and `extraction_review_reasons`).
 
 The successful extractions produced `r extracted_effects` effect`r if (extracted_effects == 1) "" else "s"` from `r articles_with_effects` article`r if (articles_with_effects == 1) "" else "s"`.
 Of those effects, `r usable_inputs` had statistics usable as z-curve inputs.
@@ -315,6 +318,19 @@ if (length(failed_results)) {
   }
 } else {
   cat("No articles failed during extraction.")
+}
+```
+
+### Articles Needing Review
+
+```{r results='asis'}
+if (length(needs_review_results)) {
+  for (item in needs_review_results) {
+    source_name <- item$source_name %||% item$file_name %||% item$source_file %||% "Unknown source"
+    cat("- **", source_name, "**: ", review_reasons_text(item), "\n", sep = "")
+  }
+} else {
+  cat("No extractions were flagged for review.")
 }
 ```
 

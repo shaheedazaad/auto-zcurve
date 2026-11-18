@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import normalize_reasoning_effort
-from .llm import ExtractionResult
+from .llm import ExtractionResult, extraction_review_reasons, review_status
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, normalize_extracted_json, validate_extracted_json
 
@@ -23,6 +23,8 @@ LOCAL_CONTEXT_SAFETY_RATIO = 0.85
 MAX_COMPLETION_ATTEMPTS = 3
 RETRY_BASE_DELAY_SEC = 1.0
 OPENROUTER_PDF_ENGINES = ("cloudflare-ai", "mistral-ocr")
+# OpenAI-style finish reasons; anything else (length, content_filter, ...) needs review.
+NORMAL_FINISH_REASONS = ("stop",)
 
 
 class _OpenRouterRequestError(RuntimeError):
@@ -265,6 +267,12 @@ def _empty_response_error(payload: dict[str, Any]) -> str:
     )
 
 
+def choice_finish_reason(choice: object) -> str | None:
+    """Return an OpenAI-style choice's finish reason, or None when it is absent."""
+    value = choice.get("finish_reason") if isinstance(choice, dict) else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def _add_usage(
     total: dict[str, int | None],
     current: dict[str, int | None],
@@ -438,10 +446,15 @@ def extract_pdf(
 
     if not isinstance(parsed, dict):  # pragma: no cover - validation guarantees this
         raise RuntimeError("OpenRouter returned JSON that is not a top-level object.")
+    # Only the final, successful attempt is checked; earlier attempts were retried.
+    review_reasons = extraction_review_reasons(
+        None, [choice_finish_reason(choices[0])], NORMAL_FINISH_REASONS
+    )
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
-        status="ok",
+        status=review_status(review_reasons),
+        review_reasons=review_reasons,
         provider_used="openrouter",
         model_used=str(response.get("model") or primary_model),
         data=parsed,

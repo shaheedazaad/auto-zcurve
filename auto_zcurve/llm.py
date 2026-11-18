@@ -1,8 +1,84 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
+
+
+STATUS_OK = "ok"
+STATUS_NEEDS_REVIEW = "needs_review"
+STATUS_ERROR = "error"
+# Statuses whose extracted values are kept and fed into the z-curve analysis.
+# A plain run skips them; only a retry (or --force) re-extracts them.
+EXTRACTED_STATUSES = frozenset({STATUS_OK, STATUS_NEEDS_REVIEW})
+
+JSON_REPAIRED_REASON = "JSON was repaired"
+
+
+def finish_reason_review_reason(finish_reason: str | None, normal: Iterable[str] = ("STOP",)) -> str | None:
+    """Describe an abnormal provider finish reason, or None when it is normal or missing."""
+    value = str(finish_reason or "").strip()
+    if not value or value.upper() in {item.upper() for item in normal}:
+        return None
+    return f"finish reason: {value}"
+
+
+def parse_json_with_repair(raw_text: str, provider_name: str) -> tuple[dict[str, Any], str | None]:
+    """Parse provider JSON, repairing malformed output while preserving both forms.
+
+    Returns the parsed value and the repaired text, which is None when no repair
+    was needed. Errors carry `raw_response` (and `repaired_response`) for review.
+    """
+    try:
+        return json.loads(raw_text), None
+    except json.JSONDecodeError as original_exc:
+        try:
+            from json_repair import repair_json
+        except ImportError as exc:  # pragma: no cover - dependency is declared at install time
+            error = RuntimeError(f"{provider_name} returned invalid JSON and json-repair is not installed.")
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            raise error from exc
+        repaired_text: str | None = None
+        try:
+            repaired_text = repair_json(raw_text)
+            parsed = json.loads(repaired_text)
+        except (TypeError, ValueError, json.JSONDecodeError) as repair_exc:
+            error = RuntimeError(
+                f"{provider_name} returned invalid JSON and json-repair could not repair it: {original_exc}"
+            )
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            error.repaired_response = repaired_text  # type: ignore[attr-defined]
+            raise error from repair_exc
+        return parsed, repaired_text
+
+
+def extraction_review_reasons(
+    repaired_text: str | None,
+    finish_reasons: Iterable[str | None],
+    normal: Iterable[str] = ("STOP",),
+) -> tuple[str, ...]:
+    """List why a validated extraction needs review: a JSON repair, then abnormal finish reasons."""
+    normal = tuple(normal)
+    reasons = [JSON_REPAIRED_REASON] if repaired_text is not None else []
+    for finish_reason in finish_reasons:
+        reason = finish_reason_review_reason(finish_reason, normal)
+        if reason:
+            reasons.append(reason)
+    return tuple(reasons)
+
+
+def review_status(reasons: Iterable[str]) -> str:
+    """Return the status for an extraction whose JSON validated."""
+    return STATUS_NEEDS_REVIEW if any(reasons) else STATUS_OK
+
+
+def record_review_reasons(record: dict[str, Any]) -> list[str]:
+    """Read review reasons from a saved record; records saved before them have none."""
+    reasons = record.get("review_reasons")
+    if not isinstance(reasons, (list, tuple)):
+        return []
+    return [str(item) for item in reasons if str(item).strip()]
 
 
 @dataclass
@@ -35,6 +111,7 @@ class ExtractionResult:
     parser_cache_path: str | None = None
     parser_duration_sec: float | None = None
     estimated_input_tokens: int | None = None
+    review_reasons: tuple[str, ...] = ()
 
     @property
     def effect_count(self) -> int:

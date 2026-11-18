@@ -18,7 +18,7 @@
   <div class="page-head">
     <div>
       <h1>{{ project.name }}</h1>
-      <p>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.successful_count }} processed · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
+      <p>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.extracted_count }} processed{% if project.needs_review_count %} ({{ project.needs_review_count }} need review){% endif %} · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
     </div>
     <div class="section-head-actions">
       <button class="btn js-open-folder" data-variant="outline" data-size="sm" type="button">Open project folder</button>
@@ -108,6 +108,7 @@
           {% endif %}
           <div class="summary-context" aria-label="Analysis processing details">
             <span><strong>{{ project.report_summary.articles_processed_display }}</strong> articles processed</span>
+            {% if project.report_summary.needs_review_count %}<span><strong>{{ project.report_summary.needs_review_display }}</strong> need review</span>{% endif %}
             <span><strong>{{ project.report_summary.extracted_effects_display }}</strong> effects extracted</span>
             <span><strong>{{ project.report_summary.usable_zcurve_inputs_display }}</strong> usable z-curve inputs</span>
             <span><strong>{{ project.report_summary.total_tokens_display }}</strong> LLM tokens</span>
@@ -296,17 +297,19 @@
           </thead>
           <tbody data-article-body>
             {% for article in project.articles[:10] %}
-            <tr class="article-row article-row-{{ article.status }}">
+            <tr class="article-row article-row-{{ article.status | replace('_', '-') }}">
               <td>
                 <span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>
                 <span>
                   <strong class="article-name" title="{{ article.name }}">{{ article.name }}</strong>
                   {% if article.error %}<small class="article-message u-error">{{ article.error }}</small>
+                  {% elif article.status == "needs_review" %}<small class="article-message u-warning">Needs review: {{ article.review_reasons | join("; ") if article.review_reasons else "no reason was recorded" }}</small>
                   {% elif article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
                 </span>
               </td>
               <td>
                 {% if article.status == "ok" %}<span class="badge article-status" data-variant="success">{{ "JSON repaired" if article.json_repaired else "Done" }}</span>
+                {% elif article.status == "needs_review" %}<span class="badge article-status" data-variant="warning">Needs review</span>
                 {% elif article.status == "error" %}<span class="badge article-status" data-variant="destructive">Failed</span>
                 {% else %}<span class="badge article-status" data-variant="outline">Ready</span>{% endif %}
               </td>
@@ -412,8 +415,8 @@
 
           <div data-run-actions {% if not (has_api_key or has_saved_api_key) %}hidden{% endif %}>
             <div class="run-actions-row">
-              <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.successful_count and project.remaining_count %}Continue processing {{ project.remaining_count }} PDF{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
-              <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count else 'false' }}" {% if not project.failed_count %}disabled{% endif %}>Retry failed</button>
+              <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.extracted_count and project.remaining_count %}Continue processing {{ project.remaining_count }} PDF{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
+              <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count or project.needs_review_count else 'false' }}" {% if not (project.failed_count or project.needs_review_count) %}disabled{% endif %} title="Re-extract PDFs that failed or need review">Retry</button>
             </div>
           </div>
           <button class="btn js-cancel" data-variant="outline" style="width:100%" type="button" hidden>Cancel run</button>

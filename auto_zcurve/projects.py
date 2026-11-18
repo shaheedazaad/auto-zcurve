@@ -25,6 +25,7 @@ from .config import (
     load_run_settings,
     remove_legacy_effect_definition,
 )
+from .llm import STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, record_review_reasons
 from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
@@ -413,6 +414,7 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
                 "size": source.stat().st_size,
                 "status": status,
                 "error": str(record.get("error") or ""),
+                "review_reasons": record_review_reasons(record),
                 "warning": " ".join(str(item) for item in record.get("parser_warnings") or []),
                 "input_mode": str(record.get("input_mode") or ""),
                 "parser_name": str(record.get("parser_name") or ""),
@@ -431,7 +433,9 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         settings.primary_model if settings else default_model,
         settings.provider if settings else "gemini",
     )
-    successful_count = sum(item["status"] == "ok" for item in articles)
+    successful_count = sum(item["status"] == STATUS_OK for item in articles)
+    needs_review_count = sum(item["status"] == STATUS_NEEDS_REVIEW for item in articles)
+    extracted_count = successful_count + needs_review_count
     total_tokens = sum(item["total_tokens"] for item in articles)
     report = project.path / "output" / "report.html"
     zcurve_plot = project.path / "output" / "zcurve_plot.png"
@@ -447,7 +451,9 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
             "metrics": parsed_summary["metrics"],
             "text": zcurve_text,
             "has_plot": zcurve_plot.is_file(),
-            "articles_processed_display": f"{successful_count:,}",
+            "articles_processed_display": f"{extracted_count:,}",
+            "needs_review_count": needs_review_count,
+            "needs_review_display": f"{needs_review_count:,}",
             "extracted_effects_display": f"{disclosure_rows:,}",
             "usable_zcurve_inputs_display": f"{usable_inputs:,}",
             "total_tokens_display": f"{total_tokens:,}",
@@ -458,9 +464,11 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         "created_at": project.created_at,
         "articles": articles,
         "pdf_count": len(articles),
-        "failed_count": sum(item["status"] == "error" for item in articles),
+        "failed_count": sum(item["status"] == STATUS_ERROR for item in articles),
+        "needs_review_count": needs_review_count,
         "successful_count": successful_count,
-        "remaining_count": max(0, len(articles) - successful_count),
+        "extracted_count": extracted_count,
+        "remaining_count": max(0, len(articles) - extracted_count),
         "has_extractions": bool(records),
         "has_analysis_results": project_has_analysis_results(project),
         "total_tokens": total_tokens,

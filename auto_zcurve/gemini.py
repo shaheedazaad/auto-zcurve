@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import json
 import time
 import unicodedata
 from pathlib import Path
 from typing import Any
 
-from .llm import ExtractionResult
+from .llm import (
+    ExtractionResult,
+    extraction_review_reasons,
+    parse_json_with_repair,
+    review_status,
+)
 from .models import normalize_model_name
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
@@ -50,6 +54,28 @@ def _int_or_none(value: object) -> int | None:
         return None
 
 
+# FINISH_REASON_UNSPECIFIED is the API's unset default, so it counts as missing.
+_NORMAL_FINISH_REASONS = ("STOP", "FINISH_REASON_UNSPECIFIED")
+
+
+def _finish_reason_name(value: object) -> str | None:
+    if value is None:
+        return None
+    name = getattr(value, "name", None)
+    text = str(name if isinstance(name, str) else value).strip()
+    return text.removeprefix("FinishReason.") or None
+
+
+def _response_finish_reasons(response: object) -> list[str]:
+    """Return each candidate's finish reason that is present, in order and without duplicates."""
+    reasons: list[str] = []
+    for candidate in _metadata_value(response, "candidates") or []:
+        reason = _finish_reason_name(_metadata_value(candidate, "finish_reason", "finishReason"))
+        if reason and reason not in reasons:
+            reasons.append(reason)
+    return reasons
+
+
 def _response_usage(response: object) -> dict[str, int | None]:
     usage = _metadata_value(response, "usage_metadata", "usageMetadata") or {}
     input_tokens = _int_or_none(_metadata_value(usage, "prompt_token_count", "promptTokenCount"))
@@ -64,29 +90,7 @@ def _response_usage(response: object) -> dict[str, int | None]:
 
 def _parse_json_response(raw_text: str) -> tuple[dict[str, Any], str | None]:
     """Parse Gemini JSON, repairing malformed output while preserving both forms."""
-    try:
-        return json.loads(raw_text), None
-    except json.JSONDecodeError as original_exc:
-        try:
-            from json_repair import repair_json
-        except ImportError as exc:  # pragma: no cover - dependency is declared at install time
-            error = RuntimeError(
-                "Gemini returned invalid JSON and json-repair is not installed."
-            )
-            error.raw_response = raw_text  # type: ignore[attr-defined]
-            raise error from exc
-        repaired_text: str | None = None
-        try:
-            repaired_text = repair_json(raw_text)
-            parsed = json.loads(repaired_text)
-        except (TypeError, ValueError, json.JSONDecodeError) as repair_exc:
-            error = RuntimeError(
-                f"Gemini returned invalid JSON and json-repair could not repair it: {original_exc}"
-            )
-            error.raw_response = raw_text  # type: ignore[attr-defined]
-            error.repaired_response = repaired_text  # type: ignore[attr-defined]
-            raise error from repair_exc
-        return parsed, repaired_text
+    return parse_json_with_repair(raw_text, "Gemini")
 
 
 def _generate(
@@ -96,7 +100,7 @@ def _generate(
     prompt: str,
     response_schema: dict[str, Any],
     service_tier: str = "standard",
-) -> tuple[dict[str, Any], str, str | None, dict[str, int | None]]:
+) -> tuple[dict[str, Any], str, str | None, dict[str, int | None], list[str]]:
     try:
         from google.genai import types
     except ImportError as exc:  # pragma: no cover - preflight catches this
@@ -113,7 +117,7 @@ def _generate(
     )
     raw_text = _response_text(response)
     parsed, repaired_text = _parse_json_response(raw_text)
-    return parsed, raw_text, repaired_text, _response_usage(response)
+    return parsed, raw_text, repaired_text, _response_usage(response), _response_finish_reasons(response)
 
 
 def extract_pdf(
@@ -152,7 +156,7 @@ def extract_pdf(
     with source_path.open("rb") as _fh:
         uploaded = client.files.upload(file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"})
 
-    parsed, raw_text, repaired_text, usage = _generate(
+    parsed, raw_text, repaired_text, usage, finish_reasons = _generate(
         client, uploaded, primary_model, prompt, response_schema, service_tier
     )
     try:
@@ -161,10 +165,12 @@ def extract_pdf(
         exc.raw_response = raw_text  # type: ignore[attr-defined]
         exc.repaired_response = repaired_text  # type: ignore[attr-defined]
         raise
+    review_reasons = extraction_review_reasons(repaired_text, finish_reasons, _NORMAL_FINISH_REASONS)
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
-        status="ok",
+        status=review_status(review_reasons),
+        review_reasons=review_reasons,
         provider_used="gemini",
         model_used=normalize_model_name(primary_model),
         data=parsed,

@@ -43,7 +43,7 @@ class EndpointTests(unittest.TestCase):
                 response = {"choices": [{"message": {"content": '{"effects":[]}'}}]}
                 with patch("auto_zcurve.openai_compatible.urllib.request.urlopen",
                            return_value=io.BytesIO(json.dumps(response).encode())) as request:
-                    text, _ = _call(model="local-model", api_key=key, prompt="Extract",
+                    text, _, _ = _call(model="local-model", api_key=key, prompt="Extract",
                                     base_url="http://localhost:8000/v1", response_format=mode,
                                     response_schema={"type": "object"})
                 sent = request.call_args.args[0]
@@ -67,14 +67,14 @@ class EndpointTests(unittest.TestCase):
         with patch("auto_zcurve.openai_compatible.pdf_text", return_value="[Page 1]\nStudy"), patch(
             "auto_zcurve.prompts.build_system_prompt", return_value="Extract"
         ), patch("auto_zcurve.openai_compatible._call", return_value=(
-            '{"effects":[{"claim":"Finding"}]}', {"input_tokens": 10, "output_tokens": 5}
+            '{"effects":[{"claim":"Finding"}]}', {"input_tokens": 10, "output_tokens": 5}, "stop"
         )):
             result = extract_pdf(**kwargs)
         self.assertEqual(result.provider_used, "openai_compatible")
         self.assertEqual(result.total_tokens, 15)
         with patch("auto_zcurve.openai_compatible.pdf_text", return_value="Study"), patch(
             "auto_zcurve.prompts.build_system_prompt", return_value="Extract"
-        ), patch("auto_zcurve.openai_compatible._call", return_value=('{"effects":[{}]}', {})):
+        ), patch("auto_zcurve.openai_compatible._call", return_value=('{"effects":[{}]}', {}, None)):
             with self.assertRaises(ValueError):
                 extract_pdf(**kwargs)
 

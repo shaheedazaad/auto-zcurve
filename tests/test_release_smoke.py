@@ -82,7 +82,19 @@ class ReleaseSmokeTests(unittest.TestCase):
                 output_tokens=5,
                 total_tokens=15,
             )
-            with patch("auto_zcurve.runner.extract_pdf", return_value=result):
+            truncated_pdf = sources / "truncated fixture.pdf"
+            truncated_pdf.write_bytes(b"%PDF-1.4\n%%EOF")
+            truncated = ExtractionResult(
+                source_path=truncated_pdf,
+                source_name=truncated_pdf.name,
+                status="needs_review",
+                review_reasons=("finish reason: MAX_TOKENS",),
+                model_used="gemini-3.6-flash",
+                data={"effects": [{"claim": "Truncated fixture", "reported_statistic": "p=0.003", "eligible": True, "eligibility_explanation": "Supports a fixture abstract claim.", "significant": True, "one_sided": False}]},
+                raw_json="{}",
+            )
+            results = {pdf.name: result, truncated_pdf.name: truncated}
+            with patch("auto_zcurve.runner.extract_pdf", side_effect=lambda **kwargs: results[kwargs["source_name"]]):
                 summary = run_project(
                     project_dir=project,
                     settings=RunSettings(primary_model="gemini-3.6-flash", parallel_requests=1),
@@ -101,9 +113,11 @@ class ReleaseSmokeTests(unittest.TestCase):
             self.assertTrue(
                 (project / "output" / "zcurve_reproduction_settings.csv").is_file()
             )
-            self.assertEqual(summary.successful_pdfs, 1)
+            self.assertEqual((summary.successful_pdfs, summary.needs_review_pdfs), (1, 1))
             report = (project / "output" / "report.html").read_text(encoding="utf-8")
             self.assertIn("Z-curve input warning", report)
+            self.assertIn("Articles Needing Review", report)
+            self.assertIn("finish reason: MAX_TOKENS", report)
             with (project / "output" / "disclosure_table.csv").open(
                 encoding="utf-8", newline=""
             ) as handle:
@@ -119,7 +133,12 @@ class ReleaseSmokeTests(unittest.TestCase):
             self.assertEqual(ineligible["eligible"], "FALSE")
             self.assertEqual(ineligible["usable_for_zcurve"], "FALSE")
             self.assertIn("Not eligible for z-curve", ineligible["zcurve_exclusion_reason"])
-            self.assertEqual(sum(row["usable_for_zcurve"] == "TRUE" for row in rows), 10)
+            truncated_row = next(row for row in rows if row["claim"] == "Truncated fixture")
+            self.assertEqual(truncated_row["usable_for_zcurve"], "TRUE")
+            self.assertEqual(truncated_row["extraction_status"], "needs_review")
+            self.assertEqual(truncated_row["extraction_review_reasons"], "finish reason: MAX_TOKENS")
+            self.assertEqual(excluded["extraction_status"], "ok")
+            self.assertEqual(sum(row["usable_for_zcurve"] == "TRUE" for row in rows), 11)
 
             reproduction_cache = project / "output" / ".reproduction-cache"
             reproduction_home = reproduction_cache / "home"

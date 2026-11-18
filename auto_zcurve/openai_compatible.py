@@ -93,7 +93,9 @@ def _call(
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     reasoning_effort: str = "",
     cancel_event: threading.Event | None = None,
-) -> tuple[str, dict[str, int | None]]:
+) -> tuple[str, dict[str, int | None], str | None]:
+    from .openrouter import choice_finish_reason
+
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -178,7 +180,7 @@ def _call(
         "input_tokens": usage.get("prompt_tokens"),
         "output_tokens": usage.get("completion_tokens"),
     }
-    return text, tokens
+    return text, tokens, choice_finish_reason(choice)
 
 
 
@@ -186,14 +188,14 @@ def extract_pdf(*, source_path, source_name, api_key, primary_model,
                 response_schema, schema_config, instruction_path,
                 request_timeout_sec=600, reasoning_effort=None, **kwargs):
     from .config import load_app_settings
-    from .llm import ExtractionResult
-    from .openrouter import strict_response_schema
+    from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
+    from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
     from .prompts import build_system_prompt
     from .schema import normalize_extracted_json, validate_extracted_json
 
     started = time.monotonic()
     settings = load_app_settings()
-    text, tokens = _call(
+    text, tokens, finish_reason = _call(
         model=primary_model, api_key=api_key or "",
         prompt=build_system_prompt(schema_config, instruction_path)
             + "\n\nArticle text:\n" + pdf_text(source_path, None),
@@ -202,13 +204,21 @@ def extract_pdf(*, source_path, source_name, api_key, primary_model,
         response_schema=strict_response_schema(response_schema),
         timeout_sec=request_timeout_sec,
     )
-    parsed = json.loads(text)
+    parsed, repaired_text = parse_json_with_repair(text, "OpenAI-compatible endpoint")
     normalize_extracted_json(parsed, schema_config)
-    validate_extracted_json(parsed, schema_config, provider_name="OpenAI-compatible")
+    try:
+        validate_extracted_json(parsed, schema_config, provider_name="OpenAI-compatible")
+    except ValueError as exc:
+        exc.raw_response = text  # type: ignore[attr-defined]
+        exc.repaired_response = repaired_text  # type: ignore[attr-defined]
+        raise
+    review_reasons = extraction_review_reasons(repaired_text, [finish_reason], NORMAL_FINISH_REASONS)
     return ExtractionResult(
-        source_path=source_path, source_name=source_name, status="ok",
+        source_path=source_path, source_name=source_name,
+        status=review_status(review_reasons), review_reasons=review_reasons,
         provider_used="openai_compatible", model_used=primary_model,
-        data=parsed, raw_json=text, duration_sec=round(time.monotonic() - started, 3),
+        data=parsed, raw_json=text, raw_response=text, repaired_response=repaired_text,
+        duration_sec=round(time.monotonic() - started, 3),
         input_tokens=tokens.get("input_tokens"), output_tokens=tokens.get("output_tokens"),
         total_tokens=sum(v for v in tokens.values() if isinstance(v, int)) or None,
         input_mode="local_text",
