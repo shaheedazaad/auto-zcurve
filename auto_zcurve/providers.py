@@ -75,6 +75,7 @@ def extract_pdf(
     reasoning_effort: str | None = None,
     service_tier: str = "standard",
     endpoint_order: tuple[str, ...] = (),
+    cancellation_event: object | None = None,
 ) -> ExtractionResult:
     selected = normalize_provider(provider)
     module = importlib.import_module(PROVIDER_REGISTRY[selected].adapter_module)
@@ -96,4 +97,5 @@ def extract_pdf(
     )
     if selected == "gemini":
         kwargs["service_tier"] = service_tier
+        kwargs["cancellation_event"] = cancellation_event
     return implementation(**kwargs)

@@ -42,6 +42,12 @@ causes:
 - The extraction schema doesn't match what's actually in the article (for
   example, `required: true` on a field that isn't always reported).
 
+Temporary provider errors, such as rate limits (HTTP 429) and server errors
+(HTTP 5xx), are retried automatically with increasing waits, up to three
+attempts per request, before an article is marked as failed. Errors that
+won't go away on their own, such as an invalid key or a rejected request, fail
+straight away.
+
 Try **Retry failed** after fixing the underlying PDF or schema. If several
 unrelated articles fail with the same error, it's more likely a settings or
 schema issue than a problem with any one PDF.

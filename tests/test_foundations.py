@@ -76,6 +76,7 @@ class ProviderTests(unittest.TestCase):
                 expected = dict(request)
                 if provider == 'gemini':
                     expected['service_tier'] = 'flex'
+                    expected['cancellation_event'] = None
                 implementation.assert_called_once_with(**expected)
                 self.assertIs(result, implementation.return_value)
 

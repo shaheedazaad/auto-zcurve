@@ -245,6 +245,7 @@ def _process_one(
             reasoning_effort=(settings.reasoning_effort if model_option.supports_reasoning else None),
             service_tier=settings.service_tier,
             endpoint_order=model_option.endpoint_order,
+            cancellation_event=cancellation_event,
         )
         _raise_if_cancelled(cancellation_event)
     except RunCancelled:
