@@ -384,6 +384,14 @@ def update_project_schema(
     return {"changed": True, "reset": has_results}
 
 
+def file_size_display(size: int) -> str:
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
 def project_snapshot(project: ManagedProject, default_model: str | None = None) -> dict:
     default_model = default_model or DEFAULT_MODEL
     sources = sorted(project.path.joinpath("sources").glob("*.pdf"))
@@ -408,10 +416,15 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         record = records.get(source.name, {})
         status = str(record.get("status") or "ready")
         raw_response = response_text(record, "raw_response_path") or str(record.get("raw_json") or "")[:2_000_000]
+        stat = source.stat()
+        added = datetime.fromtimestamp(stat.st_mtime)
         articles.append(
             {
                 "name": source.name,
-                "size": source.stat().st_size,
+                "size": stat.st_size,
+                "size_display": file_size_display(stat.st_size),
+                "added_at": added.isoformat(timespec="microseconds"),
+                "added_display": added.strftime("%d %b %Y, %H:%M"),
                 "status": status,
                 "error": str(record.get("error") or ""),
                 "review_reasons": record_review_reasons(record),

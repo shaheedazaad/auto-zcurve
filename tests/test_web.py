@@ -296,8 +296,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(">Extraction instructions</span></button>", response.text)
         self.assertIn('aria-orientation="vertical"', response.text)
         self.assertIn('id="panel-schema" role="tabpanel" aria-labelledby="tab-schema" data-tab-panel="schema" hidden>', response.text)
-        self.assertIn("article-09.pdf", response.text)
-        self.assertNotIn("article-10.pdf", response.text)
+        articles_panel = response.text[response.text.index('data-tab-panel="articles"'):]
+        self.assertIn("article-09.pdf", articles_panel)
+        self.assertNotIn("article-10.pdf", articles_panel)
         self.assertIn("data-article-pagination", response.text)
         self.assertIn('list="gemini-model-options"', response.text)
         self.assertIn('value="gemini-3.6-flash"', response.text)
@@ -312,6 +313,55 @@ class WebAppTests(unittest.TestCase):
             f'/{TOKEN}/projects/{project.project_id}/schema',
             response.text,
         )
+
+    def test_sources_tab_lists_pdfs_newest_first_and_tabs_put_run_before_results(self):
+        project = create_project("Sources list", root=self.root)
+        # Filenames sort opposite to upload time, so newest-first can't pass as a name sort.
+        for index in range(12):
+            path = project.path / "sources" / f"source-{11 - index:02d}.pdf"
+            path.write_bytes(b"%PDF-fixture")
+            os.utime(path, (1_800_000_000 + index * 60,) * 2)
+        newest_twin = project.path / "sources" / "source-zz.pdf"
+        newest_twin.write_bytes(b"%PDF-fixture")
+        os.utime(newest_twin, (1_800_000_000 + 11 * 60 - 0.5,) * 2)
+
+        page = self.client.get(f"/{TOKEN}/projects/{project.project_id}").text
+        sources_panel = page[page.index('data-tab-panel="sources"'):page.index('data-tab-panel="extraction-setup"')]
+        self.assertIn("data-source-pagination", sources_panel)
+        self.assertIn(f"/{TOKEN}/projects/{project.project_id}/sources/source-00.pdf", sources_panel)
+        self.assertNotIn("source-10.pdf", sources_panel)
+        self.assertLess(sources_panel.index("source-00.pdf"), sources_panel.index("source-zz.pdf"))
+        self.assertLess(sources_panel.index("source-zz.pdf"), sources_panel.index("source-01.pdf"))
+        self.assertIn("<td class=\"u-muted u-sm u-nowrap\">12 B</td>", sources_panel)
+        self.assertLess(page.index('id="tab-run-analysis"'), page.index('id="tab-articles"'))
+        self.assertIn("<span>Extraction results</span></button>", page)
+        self.assertNotIn("<span>Articles</span>", page)
+
+        article = self.client.get(f"/{TOKEN}/api/projects/{project.project_id}").json()["articles"][0]
+        self.assertEqual(article["size_display"], "12 B")
+        self.assertRegex(article["added_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$")
+        self.assertTrue(article["added_display"])
+
+    def test_source_pdf_route_serves_inline_and_rejects_other_paths(self):
+        project = create_project("Source route", root=self.root)
+        (project.path / "sources" / "paper one.pdf").write_bytes(b"%PDF-fixture")
+        (project.path / "sources" / "notes.txt").write_text("not a pdf")
+        (project.path / "secret.pdf").write_bytes(b"%PDF-secret")
+        base = f"/{TOKEN}/projects/{project.project_id}/sources"
+
+        response = self.client.get(f"{base}/paper%20one.pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"%PDF-fixture")
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertTrue(response.headers["content-disposition"].startswith("inline"))
+        try:
+            (project.path / "sources" / "linked.pdf").symlink_to(project.path / "secret.pdf")
+            names = ["linked.pdf"]
+        except OSError:  # Windows without symlink privileges
+            names = []
+        for name in names + ["notes.txt", "missing.pdf", "..%2Fsecret.pdf", "..%5Csecret.pdf"]:
+            self.assertEqual(self.client.get(f"{base}/{name}").status_code, 404, name)
+        self.assertEqual(self.client.get(f"/{TOKEN}/projects/missing/sources/paper.pdf").status_code, 404)
 
     def test_slow_extraction_warning_uses_a_paragraph_body(self):
         project = create_project("Slow extraction notice", root=self.root)
