@@ -86,6 +86,11 @@ def extraction_record(result: ExtractionResult) -> dict[str, Any]:
 
 def _atomic_json_dump(path: Path, value: Any) -> None:
     """Write JSON without exposing a partially-written file to readers."""
+    _atomic_write_text(path, json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write UTF-8 text without exposing a partially-written file to readers."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent,
@@ -95,8 +100,7 @@ def _atomic_json_dump(path: Path, value: Any) -> None:
     temporary_path = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, indent=2, ensure_ascii=False)
-            handle.write("\n")
+            handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
@@ -171,27 +175,23 @@ def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[
     if result.provider_responses:
         response_path = provider_response_path(project_dir, result.source_name)
         record["provider_response_path"] = str(response_path.relative_to(project_dir))
-        with response_path.open("w", encoding="utf-8") as handle:
-            json.dump(
-                {
-                    "source_name": result.source_name,
-                    "provider": result.provider_used,
-                    "model": result.model_used,
-                    "responses": result.provider_responses,
-                },
-                handle,
-                indent=2,
-                ensure_ascii=False,
-            )
-            handle.write("\n")
+        _atomic_json_dump(
+            response_path,
+            {
+                "source_name": result.source_name,
+                "provider": result.provider_used,
+                "model": result.model_used,
+                "responses": result.provider_responses,
+            },
+        )
     if result.raw_response is not None:
         response_path = raw_response_path(project_dir, result.source_name)
         record["raw_response_path"] = str(response_path.relative_to(project_dir))
-        response_path.write_text(result.raw_response, encoding="utf-8")
+        _atomic_write_text(response_path, result.raw_response)
     if result.repaired_response is not None:
         repaired_path = repaired_response_path(project_dir, result.source_name)
         record["repaired_response_path"] = str(repaired_path.relative_to(project_dir))
-        repaired_path.write_text(result.repaired_response, encoding="utf-8")
+        _atomic_write_text(repaired_path, result.repaired_response)
         record["json_repaired"] = True
     replaced = False
     for index, existing in enumerate(records):
