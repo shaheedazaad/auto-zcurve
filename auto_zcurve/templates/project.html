@@ -408,9 +408,17 @@
           <button class="btn js-cancel" data-variant="outline" style="width:100%" type="button" hidden>Cancel run</button>
 
           <div class="progress-area" {% if not job or job.status not in ["queued", "running"] %}hidden{% endif %}>
-            <div class="progress-heading"><strong data-progress-title>Processing articles</strong><span data-progress-count>0 / {{ project.pdf_count }}</span></div>
-            <div class="run-progress" data-progress-bar role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Extraction progress"><span></span></div>
-            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0" data-progress-message aria-live="polite">Preparing…</p>
+            <div data-progress-summary role="status" aria-live="polite" aria-atomic="true">
+              <div class="progress-heading"><strong data-progress-title>Processing articles</strong><span data-progress-count>0 / {{ project.pdf_count }}</span></div>
+              <div class="run-progress" data-progress-bar role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Extraction progress"><span></span></div>
+              <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0" data-progress-message>Preparing…</p>
+            </div>
+          </div>
+          <div class="alert" data-variant="warning" data-connection-lost role="alert" hidden>
+            <h2 data-connection-lost-title>Connection lost</h2>
+            <section>
+              <p data-connection-lost-message></p>
+            </section>
           </div>
           <div class="alert" data-variant="warning" data-slow-extraction-warning hidden>
             <h2>This paper is taking longer than a minute.</h2>

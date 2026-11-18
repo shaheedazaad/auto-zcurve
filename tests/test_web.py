@@ -327,6 +327,22 @@ class WebAppTests(unittest.TestCase):
             response.text,
         )
 
+    def test_run_progress_is_announced_and_has_a_connection_lost_notice(self):
+        project = create_project("Live progress", root=self.root)
+
+        response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            '<div data-progress-summary role="status" aria-live="polite" aria-atomic="true">',
+            response.text,
+        )
+        self.assertIn(
+            '<div class="alert" data-variant="warning" data-connection-lost role="alert" hidden>',
+            response.text,
+        )
+        self.assertIn("data-connection-lost-message", response.text)
+
     def test_project_credential_prompt_links_to_central_settings(self):
         project = create_project("Provider credentials", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
