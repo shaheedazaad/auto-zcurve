@@ -895,6 +895,58 @@
   const keyInput = document.querySelector("[data-key-input]");
   const macosKeyNote = document.querySelector("[data-macos-key-note]");
   let currentModelCatalog = [];
+  const openRouterRouting = document.querySelector("[data-openrouter-routing]");
+  const openRouterProvider = document.querySelector("#openrouter-provider");
+  const openRouterProviderStatus = document.querySelector("[data-openrouter-provider-status]");
+  const openRouterFallbacks = document.querySelector("#openrouter-fallbacks");
+  const openRouterFallbacksHint = document.querySelector("[data-openrouter-fallbacks-hint]");
+  let openRouterEndpointRequest = 0;
+
+  const updateFallbacksHint = () => {
+    if (!openRouterProvider || !openRouterFallbacks || !openRouterFallbacksHint) return;
+    const chosen = openRouterProvider.value ? openRouterProvider.selectedOptions[0].textContent : "";
+    const allow = openRouterFallbacks.value === "allow";
+    openRouterFallbacksHint.textContent = chosen
+      ? (allow ? `Tries ${chosen} first, then other providers if it is unavailable.` : `Only ${chosen} is used. Requests fail if it is unavailable.`)
+      : (allow ? "OpenRouter picks a provider and tries others if a request fails." : "Only OpenRouter's first-choice provider is tried.");
+  };
+
+  const renderOpenRouterProviders = (endpoints, selectedValue) => {
+    const known = endpoints.some((item) => item.tag === selectedValue);
+    const options = [{ tag: "", name: "Automatic (OpenRouter chooses)" }, ...endpoints];
+    if (selectedValue && !known) options.push({ tag: selectedValue, name: `${selectedValue} (not listed for this model)` });
+    openRouterProvider.innerHTML = options.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.name)}</option>`).join("");
+    openRouterProvider.value = selectedValue;
+    updateFallbacksHint();
+  };
+
+  const loadOpenRouterProviders = async () => {
+    if (!openRouterProvider || !openRouterProviderStatus) return;
+    const model = modelInput?.value.trim() || "";
+    const selectedValue = openRouterProvider.value;
+    const request = ++openRouterEndpointRequest;
+    if (providerSelect?.value !== "openrouter" || !model) {
+      renderOpenRouterProviders([], selectedValue);
+      openRouterProviderStatus.textContent = "Choose a model to see which providers serve it.";
+      return;
+    }
+    openRouterProviderStatus.textContent = "Loading providers…";
+    try {
+      const response = await fetch(`/${token}/api/models/openrouter/endpoints?model=${encodeURIComponent(model)}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Providers could not be loaded.");
+      if (request !== openRouterEndpointRequest) return;
+      renderOpenRouterProviders(payload, openRouterProvider.value);
+      openRouterProviderStatus.textContent = payload.length
+        ? `${payload.length} provider${payload.length === 1 ? " serves" : "s serve"} this model with structured output.`
+        : "No provider currently serves this model with structured output.";
+    } catch (error) {
+      if (request !== openRouterEndpointRequest) return;
+      openRouterProviderStatus.textContent = error.message;
+    }
+  };
+  openRouterProvider?.addEventListener("change", updateFallbacksHint);
+  openRouterFallbacks?.addEventListener("change", updateFallbacksHint);
 
   const updateModelHint = () => {
     if (!modelHint || !providerSelect || !modelInput) return;
@@ -942,6 +994,8 @@
     const isOpenRouter = provider === "openrouter";
     syncProviderCredentialState();
     if (openRouterWarning) openRouterWarning.hidden = !isOpenRouter;
+    if (openRouterRouting) openRouterRouting.hidden = !isOpenRouter;
+    if (isOpenRouter) loadOpenRouterProviders();
     modelInput.removeAttribute("list");
     if (provider === "gemini") modelInput.setAttribute("list", "gemini-model-options");
     if (provider !== "gemini") {
@@ -1011,6 +1065,7 @@
   modelInput?.addEventListener("input", updateModelHint);
   modelInput?.addEventListener("change", () => {
     updateModelHint();
+    if (providerSelect?.value === "openrouter") loadOpenRouterProviders();
     if (!projectSettingsTouched) {
       const selected = currentModelCatalog.find((item) => item.id === modelInput.value.trim());
       if (selected && parallelInput && delayInput) {

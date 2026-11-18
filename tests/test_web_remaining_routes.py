@@ -72,6 +72,28 @@ class RemainingRouteTests(unittest.TestCase):
             self.assertEqual(self.client.post(self.base + '/regenerate-report').status_code, 202)
             self.assertEqual(start.call_args.args[2].primary_model, 'vendor/old')
 
+    def test_run_and_retry_pass_openrouter_routing_and_endpoint_listing(self):
+        save_run_settings(self.project.path, RunSettings(primary_model='vendor/old', provider='openrouter', openrouter_provider='saved/tag', openrouter_allow_fallbacks=False))
+        with patch.object(self.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option'), patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
+            for action in ['run', 'retry']:
+                response = self.client.post(self.base + '/' + action, data={'provider': 'openrouter', 'model': 'vendor/new', 'openrouter_provider': 'deepinfra/fp8', 'openrouter_fallbacks': 'allow'})
+                self.assertEqual(response.status_code, 202, response.text)
+                settings = start.call_args.args[2]
+                self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', True))
+                self.client.post(self.base + '/' + action, data={'provider': 'openrouter', 'model': 'vendor/new'})
+                settings = start.call_args.args[2]
+                self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('saved/tag', False))
+            self.assertEqual(self.client.post(self.base + '/run', data={'provider': 'openrouter', 'model': 'vendor/new', 'openrouter_fallbacks': 'nope'}).status_code, 409)
+        listing = [{'tag': 'deepinfra/fp8', 'name': 'DeepInfra (fp8)'}]
+        with patch.object(self.runtime, '_load_key_from_store', return_value=None), patch.object(w, 'list_model_endpoints', return_value=listing) as endpoints:
+            response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
+        self.assertEqual((response.status_code, response.json()), (200, listing))
+        endpoints.assert_called_once_with('vendor/model', api_key=None)
+        with patch.object(w, 'list_model_endpoints', side_effect=RuntimeError('OpenRouter is down')):
+            response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
+        self.assertEqual((response.status_code, response.json()['detail']), (503, 'OpenRouter is down'))
+        self.assertEqual(self.client.get('/token/api/models/openrouter/endpoints', params={'model': ' '}).status_code, 400)
+
     def test_instruction_validation_schema_validation_and_job_reset(self):
         self.assertEqual(self.client.post(self.base + '/instructions', data={'instructions': ' '}).status_code, 400)
         self.assertEqual(self.client.post(self.base + '/schema', data={'schema_text': 'effects: []'}).status_code, 400)

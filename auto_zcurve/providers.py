@@ -76,6 +76,8 @@ def extract_pdf(
     service_tier: str = "standard",
     endpoint_order: tuple[str, ...] = (),
     cancellation_event: object | None = None,
+    openrouter_provider: str = "",
+    openrouter_allow_fallbacks: bool = True,
 ) -> ExtractionResult:
     selected = normalize_provider(provider)
     module = importlib.import_module(PROVIDER_REGISTRY[selected].adapter_module)
@@ -98,4 +100,7 @@ def extract_pdf(
     if selected == "gemini":
         kwargs["service_tier"] = service_tier
         kwargs["cancellation_event"] = cancellation_event
+    if selected == "openrouter":
+        kwargs["preferred_provider"] = openrouter_provider
+        kwargs["allow_fallbacks"] = openrouter_allow_fallbacks
     return implementation(**kwargs)
