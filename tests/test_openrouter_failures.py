@@ -64,10 +64,10 @@ class OpenRouterTransportTests(unittest.TestCase):
         self.assertEqual(p._message_text({'content': None}), '')
         self.assertEqual(p._message_text({'content': [{'type': 'text', 'text': 'a'}, {'type': 'output_text', 'text': 'b'}, None, {'type': 'image'}]}), 'ab')
         self.assertEqual(p._usage({'usage': {'prompt_tokens': '4', 'completion_tokens': [], 'total_tokens': None}}), {'input_tokens': 4, 'output_tokens': None, 'total_tokens': None})
-        self.assertFalse(p._retryable_status('bad'))
-        self.assertEqual(p._retry_delay(2), 2)
-        self.assertEqual(p._retry_delay(1, p._OpenRouterRequestError('wait', retry_after_sec=60)), 30)
-        self.assertEqual(p._retry_delay(2, p._OpenRouterRequestError('wait', retry_after_sec=-1)), 2)
+        self.assertFalse(p.retryable_status('bad'))
+        self.assertEqual(p.retry_delay(2), 2)
+        self.assertEqual(p.retry_delay(1, p._OpenRouterRequestError('wait', retry_after_sec=60)), 30)
+        self.assertEqual(p.retry_delay(2, p._OpenRouterRequestError('wait', retry_after_sec=-1)), 2)
         schema = {'type': 'object', 'properties': {'x': {'type': ['string']}, 'y': {'type': ['string', 'null']}, 'z': {'description': 'untyped'}}}
         converted = p.strict_response_schema(schema)
         self.assertEqual(converted['properties']['x']['type'], ['string', 'null'])
@@ -131,6 +131,43 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
                 result = p.extract_pdf(**self.kwargs)
             self.assertEqual(result.status, 'ok')
             self.assertEqual(len(result.provider_responses), 2)
+
+    def test_valid_json_is_ok_without_repair(self):
+        with patch.object(p, '_request_json', return_value=self.success()) as request:
+            result = p.extract_pdf(**self.kwargs)
+        request.assert_called_once()
+        self.assertEqual((result.status, result.review_reasons), ('ok', ()))
+        self.assertEqual(result.raw_response, '{"effects":[{"claim":"finding"}]}')
+        self.assertIsNone(result.repaired_response)
+
+    def test_repairable_json_is_repaired_and_needs_review(self):
+        raw = '{"effects":[{"claim":"finding"}]'
+        response = {'choices': [{'message': {'content': raw}, 'finish_reason': 'length'}]}
+        with patch.object(p, '_request_json', return_value=response) as request:
+            result = p.extract_pdf(**self.kwargs)
+        request.assert_called_once()
+        self.sleep.assert_not_called()
+        self.assertEqual(result.status, 'needs_review')
+        self.assertEqual(result.review_reasons, ('JSON was repaired', 'finish reason: length'))
+        self.assertEqual(result.data, {'effects': [{'claim': 'finding'}]})
+        self.assertEqual((result.raw_json, result.raw_response), (raw, raw))
+        self.assertEqual(json.loads(result.repaired_response), result.data)
+
+    def test_unrepairable_json_retries_then_keeps_raw_response(self):
+        bad = {'choices': [{'message': {'content': 'bad json'}}]}
+        with patch.object(p, '_request_json', return_value=bad) as request, self.assertRaisesRegex(RuntimeError, 'OpenRouter returned invalid JSON') as caught:
+            p.extract_pdf(**self.kwargs)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(caught.exception.raw_response, 'bad json')
+        self.assertEqual(len(caught.exception.provider_responses), 3)
+
+    def test_repaired_json_that_fails_validation_is_retried(self):
+        invalid = {'choices': [{'message': {'content': '{"effects":[{}]'}}]}
+        with patch.object(p, '_request_json', side_effect=[invalid, self.success()]) as request:
+            result = p.extract_pdf(**self.kwargs)
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual((result.status, result.review_reasons), ('ok', ()))
+        self.assertIsNone(result.repaired_response)
 
     def test_embedded_error_categories(self):
         for payload, retryable in [({'error': {'code': 401}}, False), ({'choices': [{'error': {'metadata': {'error_type': 'timeout'}}}]}, True), ({'choices': [{'error': {'metadata': {'error_type': 'invalid_request'}}}]}, False), ({'choices': [{'finish_reason': 'error'}]}, True)]:

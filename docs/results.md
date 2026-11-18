@@ -75,9 +75,9 @@ An extraction is marked **Needs review** instead of **Done** when:
 
 - **"JSON was repaired"**: the model's output was not valid JSON and
   auto-zcurve had to repair it before reading it. A repair can silently drop
-  the end of a response. (Gemini and OpenAI-compatible endpoints only;
-  OpenRouter retries invalid JSON instead, and fails if every attempt is
-  invalid.)
+  the end of a response. (If OpenRouter's output can't be repaired, the
+  request is retried instead, and the article fails if no attempt can be
+  read.)
 - **"finish reason: …"**: the model stopped for a reason other than finishing
   normally. `MAX_TOKENS` (Gemini) or `length` (OpenRouter and
   OpenAI-compatible endpoints) means it ran out of output space, so effects at

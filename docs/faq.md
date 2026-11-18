@@ -46,7 +46,11 @@ Temporary provider errors, such as rate limits (HTTP 429) and server errors
 (HTTP 5xx), are retried automatically with increasing waits, up to three
 attempts per request, before an article is marked as failed. Errors that
 won't go away on their own, such as an invalid key or a rejected request, fail
-straight away.
+straight away. The exception is an OpenRouter model that reads PDFs through
+OpenRouter's parser (one without native PDF input): if the first attempt
+fails for any reason, including an invalid key or a rejected request (for
+example HTTP 400 or 401), auto-zcurve tries once more with a different PDF
+parser (Mistral OCR) before marking the article as failed.
 
 Try **Retry** after fixing the underlying PDF or schema. If several
 unrelated articles fail with the same error, it's more likely a settings or
