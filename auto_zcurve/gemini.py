@@ -15,6 +15,13 @@ from .models import normalize_model_name
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
 from .config import normalize_service_tier
+from .openai_compatible import ExtractionCancelled
+from .openrouter import MAX_COMPLETION_ATTEMPTS, _retry_delay, _retryable_status
+
+# Each Gemini request (file upload, then generation) gets this many attempts in
+# total. The SDK's own retries stay off (its default) so this bound holds.
+MAX_REQUEST_ATTEMPTS = MAX_COMPLETION_ATTEMPTS
+_CANCEL_POLL_SEC = 0.1
 
 
 def _response_text(response: object) -> str:
@@ -92,6 +99,54 @@ def _response_usage(response: object) -> dict[str, int | None]:
     }
 
 
+def _retryable(exc: BaseException) -> bool:
+    """Retry rate limits, server errors and dropped connections only."""
+    import httpx
+    from google.genai import errors
+
+    if isinstance(exc, errors.APIError):
+        return _retryable_status(exc.code)
+    return isinstance(exc, (httpx.TimeoutException, httpx.ConnectError))
+
+
+def _retry_after_sec(exc: BaseException) -> float | None:
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    try:
+        return float(headers.get("Retry-After"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _raise_if_cancelled(cancellation_event: object | None) -> None:
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise ExtractionCancelled("Extraction cancelled by user.")
+
+
+def _wait_for_retry(delay_sec: float, cancellation_event: object | None) -> None:
+    """Sleep before the next attempt, stopping early if the run is cancelled."""
+    deadline = time.monotonic() + delay_sec
+    while True:
+        _raise_if_cancelled(cancellation_event)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, _CANCEL_POLL_SEC))
+
+
+def _with_retries(request: Any, cancellation_event: object | None) -> Any:
+    attempt = 1
+    while True:
+        _raise_if_cancelled(cancellation_event)
+        try:
+            return request()
+        except Exception as exc:
+            if attempt >= MAX_REQUEST_ATTEMPTS or not _retryable(exc):
+                raise
+            exc.retry_after_sec = _retry_after_sec(exc)  # type: ignore[attr-defined]
+            _wait_for_retry(_retry_delay(attempt, exc), cancellation_event)
+            attempt += 1
+
+
 def _parse_json_response(raw_text: str) -> tuple[dict[str, Any], str | None]:
     """Parse Gemini JSON, repairing malformed output while preserving both forms."""
     return parse_json_with_repair(raw_text, "Gemini")
@@ -140,6 +195,7 @@ def extract_pdf(
     reasoning_effort: str | None = None,
     service_tier: str = "standard",
     endpoint_order: tuple[str, ...] = (),
+    cancellation_event: object | None = None,
 ) -> ExtractionResult:
     started = time.monotonic()
     try:
@@ -157,11 +213,18 @@ def extract_pdf(
         upload_name = nfc_name
     except UnicodeEncodeError:
         upload_name = unicodedata.normalize("NFKD", nfc_name).encode("ascii", "ignore").decode("ascii") or "document.pdf"
-    with source_path.open("rb") as _fh:
-        uploaded = client.files.upload(file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"})
 
-    parsed, raw_text, repaired_text, usage, finish_reasons = _generate(
-        client, uploaded, primary_model, prompt, response_schema, service_tier
+    def upload() -> object:
+        # Reopen per attempt so a retry sends the whole file again.
+        with source_path.open("rb") as _fh:
+            return client.files.upload(
+                file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"}
+            )
+
+    uploaded = _with_retries(upload, cancellation_event)
+    parsed, raw_text, repaired_text, usage, finish_reasons = _with_retries(
+        lambda: _generate(client, uploaded, primary_model, prompt, response_schema, service_tier),
+        cancellation_event,
     )
     try:
         validate_extracted_json(parsed, schema_config)
