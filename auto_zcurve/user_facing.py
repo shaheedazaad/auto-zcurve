@@ -325,8 +325,11 @@ def retry_reason(record: dict) -> str:
     return classify_error(str(record.get("error") or "")).compact()
 
 
-def failed_pdf_rows(project_dir: Path, limit: int = 8) -> list[tuple[str, str]]:
-    """Rows for every PDF a retry would re-extract: failed and needs-review ones."""
+def failed_pdf_rows(project_dir: Path, limit: int | None = None) -> list[tuple[str, str]]:
+    """Rows for the PDFs a retry would re-extract: failed and needs-review ones.
+
+    Returns every such PDF unless ``limit`` caps the number of rows.
+    """
     rows: list[tuple[str, str]] = []
     for record in load_extractions(project_dir):
         if record.get("status") == STATUS_OK:
