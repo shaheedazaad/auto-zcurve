@@ -48,12 +48,17 @@ An extraction is marked **Needs review** instead of **Done** when:
 
 - **"JSON was repaired"**: the model's output was not valid JSON and
   auto-zcurve had to repair it before reading it. A repair can silently drop
-  the end of a response.
+  the end of a response. (Gemini and OpenAI-compatible endpoints only;
+  OpenRouter retries invalid JSON instead, and fails if every attempt is
+  invalid.)
 - **"finish reason: …"**: the model stopped for a reason other than finishing
-  normally. `MAX_TOKENS` means it ran out of output space, so effects at the
-  end of the article may be missing or a statistic may be cut short.
-  `SAFETY`, `RECITATION`, and other reasons mean the provider stopped the
-  response early. (A response with no finish reason counts as normal.)
+  normally. `MAX_TOKENS` (Gemini) or `length` (OpenRouter and
+  OpenAI-compatible endpoints) means it ran out of output space, so effects at
+  the end of the article may be missing or a statistic may be cut short.
+  `SAFETY`, `RECITATION`, `content_filter`, and other reasons mean the
+  provider stopped the response early. A normal finish is `STOP` for Gemini
+  and `stop` for the others; a response with no finish reason also counts as
+  normal.
 
 The reasons are shown under the article's name on the **Articles** tab, in
 the CLI run summary, in the report's *Articles Needing Review* section, and
@@ -71,7 +76,8 @@ fit without them using `report.qmd`.
 To re-extract them instead, use **Retry** (or `auto-zcurve retry` in the
 CLI). Retry reprocesses failed and needs-review articles together. A plain
 **Run analysis** skips needs-review articles, just as it skips completed
-ones. Currently only Gemini extractions are checked this way.
+ones. Extractions from every provider (Gemini, OpenRouter, and
+OpenAI-compatible endpoints) are checked this way.
 
 ## When an article fails
 

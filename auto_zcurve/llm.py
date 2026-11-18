@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -21,6 +22,50 @@ def finish_reason_review_reason(finish_reason: str | None, normal: Iterable[str]
     if not value or value.upper() in {item.upper() for item in normal}:
         return None
     return f"finish reason: {value}"
+
+
+def parse_json_with_repair(raw_text: str, provider_name: str) -> tuple[dict[str, Any], str | None]:
+    """Parse provider JSON, repairing malformed output while preserving both forms.
+
+    Returns the parsed value and the repaired text, which is None when no repair
+    was needed. Errors carry `raw_response` (and `repaired_response`) for review.
+    """
+    try:
+        return json.loads(raw_text), None
+    except json.JSONDecodeError as original_exc:
+        try:
+            from json_repair import repair_json
+        except ImportError as exc:  # pragma: no cover - dependency is declared at install time
+            error = RuntimeError(f"{provider_name} returned invalid JSON and json-repair is not installed.")
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            raise error from exc
+        repaired_text: str | None = None
+        try:
+            repaired_text = repair_json(raw_text)
+            parsed = json.loads(repaired_text)
+        except (TypeError, ValueError, json.JSONDecodeError) as repair_exc:
+            error = RuntimeError(
+                f"{provider_name} returned invalid JSON and json-repair could not repair it: {original_exc}"
+            )
+            error.raw_response = raw_text  # type: ignore[attr-defined]
+            error.repaired_response = repaired_text  # type: ignore[attr-defined]
+            raise error from repair_exc
+        return parsed, repaired_text
+
+
+def extraction_review_reasons(
+    repaired_text: str | None,
+    finish_reasons: Iterable[str | None],
+    normal: Iterable[str] = ("STOP",),
+) -> tuple[str, ...]:
+    """List why a validated extraction needs review: a JSON repair, then abnormal finish reasons."""
+    normal = tuple(normal)
+    reasons = [JSON_REPAIRED_REASON] if repaired_text is not None else []
+    for finish_reason in finish_reasons:
+        reason = finish_reason_review_reason(finish_reason, normal)
+        if reason:
+            reasons.append(reason)
+    return tuple(reasons)
 
 
 def review_status(reasons: Iterable[str]) -> str:

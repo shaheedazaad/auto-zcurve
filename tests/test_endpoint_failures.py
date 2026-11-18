@@ -43,7 +43,7 @@ class EndpointFailureTests(unittest.TestCase):
     def test_usage_reasoning_and_timeout_forwarding(self):
         for usage, expected in [({'prompt_tokens': 4, 'completion_tokens': 2}, {'input_tokens': 4, 'output_tokens': 2}), ('bad', {'input_tokens': None, 'output_tokens': None})]:
             with patch.object(p.urllib.request, 'urlopen', return_value=self.response({'choices': [{'message': {'content': '{}'}}], 'usage': usage})) as request:
-                text, tokens = self.call(reasoning_effort='high', timeout_sec=12)
+                text, tokens, _ = self.call(reasoning_effort='high', timeout_sec=12)
             self.assertEqual((text, tokens), ('{}', expected))
             self.assertEqual(request.call_args.kwargs['timeout'], 12)
             self.assertEqual(json.loads(request.call_args.args[0].data)['reasoning_effort'], 'high')

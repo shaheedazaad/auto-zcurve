@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import json
 import time
 import unicodedata
 from pathlib import Path
 from typing import Any
 
-from .llm import JSON_REPAIRED_REASON, ExtractionResult, finish_reason_review_reason, review_status
+from .llm import (
+    ExtractionResult,
+    extraction_review_reasons,
+    parse_json_with_repair,
+    review_status,
+)
 from .models import normalize_model_name
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
@@ -72,15 +76,6 @@ def _response_finish_reasons(response: object) -> list[str]:
     return reasons
 
 
-def _review_reasons(repaired_text: str | None, finish_reasons: list[str]) -> tuple[str, ...]:
-    reasons = [JSON_REPAIRED_REASON] if repaired_text is not None else []
-    for finish_reason in finish_reasons:
-        reason = finish_reason_review_reason(finish_reason, _NORMAL_FINISH_REASONS)
-        if reason:
-            reasons.append(reason)
-    return tuple(reasons)
-
-
 def _response_usage(response: object) -> dict[str, int | None]:
     usage = _metadata_value(response, "usage_metadata", "usageMetadata") or {}
     input_tokens = _int_or_none(_metadata_value(usage, "prompt_token_count", "promptTokenCount"))
@@ -95,29 +90,7 @@ def _response_usage(response: object) -> dict[str, int | None]:
 
 def _parse_json_response(raw_text: str) -> tuple[dict[str, Any], str | None]:
     """Parse Gemini JSON, repairing malformed output while preserving both forms."""
-    try:
-        return json.loads(raw_text), None
-    except json.JSONDecodeError as original_exc:
-        try:
-            from json_repair import repair_json
-        except ImportError as exc:  # pragma: no cover - dependency is declared at install time
-            error = RuntimeError(
-                "Gemini returned invalid JSON and json-repair is not installed."
-            )
-            error.raw_response = raw_text  # type: ignore[attr-defined]
-            raise error from exc
-        repaired_text: str | None = None
-        try:
-            repaired_text = repair_json(raw_text)
-            parsed = json.loads(repaired_text)
-        except (TypeError, ValueError, json.JSONDecodeError) as repair_exc:
-            error = RuntimeError(
-                f"Gemini returned invalid JSON and json-repair could not repair it: {original_exc}"
-            )
-            error.raw_response = raw_text  # type: ignore[attr-defined]
-            error.repaired_response = repaired_text  # type: ignore[attr-defined]
-            raise error from repair_exc
-        return parsed, repaired_text
+    return parse_json_with_repair(raw_text, "Gemini")
 
 
 def _generate(
@@ -192,7 +165,7 @@ def extract_pdf(
         exc.raw_response = raw_text  # type: ignore[attr-defined]
         exc.repaired_response = repaired_text  # type: ignore[attr-defined]
         raise
-    review_reasons = _review_reasons(repaired_text, finish_reasons)
+    review_reasons = extraction_review_reasons(repaired_text, finish_reasons, _NORMAL_FINISH_REASONS)
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
