@@ -6,6 +6,7 @@ import re
 import secrets
 import shutil
 import sys
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +31,15 @@ from .schema import build_response_schema, parse_extraction_schema
 
 
 PROJECT_ID_RE = re.compile(r"^[a-f0-9]{16}$")
-SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._ -]+")
+# Characters Windows forbids in filenames, control characters, and lone
+# surrogates (which cannot be encoded as UTF-8).
+UNSAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f\ud800-\udfff]+')
+WINDOWS_RESERVED_NAME_RE = re.compile(
+    r"(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])",
+    re.IGNORECASE,
+)
+MAX_UPLOAD_NAME_BYTES = 180
+MAX_UPLOAD_STEM_BYTES = 160
 PROJECT_INSTRUCTIONS_NAME = "extraction_instructions.md"
 PROJECT_SCHEMA_NAME = "extraction_schema.yml"
 LEGACY_EFFECT_DEFINITION_PLACEHOLDER = "{{effect_definition}}"
@@ -166,16 +175,28 @@ def list_projects(*, root: Path | None = None) -> list[ManagedProject]:
     return sorted(found, key=lambda item: item.created_at, reverse=True)
 
 
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    cut = text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+    kept = cut
+    # Do not separate a base letter from the combining marks that follow it.
+    while kept and len(kept) < len(text) and unicodedata.combining(text[len(kept)]):
+        kept = kept[:-1]
+    return kept or cut
+
+
 def safe_upload_name(filename: str) -> str:
-    basename = Path(filename.replace("\\", "/")).name
-    cleaned = SAFE_NAME_RE.sub("_", basename).strip(" .")
+    normalized = unicodedata.normalize("NFC", filename)
+    basename = Path(normalized.replace("\\", "/")).name
+    cleaned = UNSAFE_NAME_RE.sub("_", basename).strip(" .")
     if not cleaned or cleaned in {".", ".."}:
         raise ProjectError("A PDF filename is required.")
-    if len(cleaned) > 180:
-        stem = Path(cleaned).stem[:160]
-        cleaned = stem + Path(cleaned).suffix
-    if Path(cleaned).suffix.lower() != ".pdf":
+    suffix = Path(cleaned).suffix
+    if suffix.lower() != ".pdf":
         raise ProjectError(f"{basename or 'File'} is not a PDF.")
+    if len(cleaned.encode("utf-8")) > MAX_UPLOAD_NAME_BYTES:
+        cleaned = _truncate_utf8(Path(cleaned).stem, MAX_UPLOAD_STEM_BYTES) + suffix
+    if WINDOWS_RESERVED_NAME_RE.fullmatch(cleaned.split(".", 1)[0].rstrip(" ")):
+        cleaned = "_" + cleaned
     return cleaned
 
 
