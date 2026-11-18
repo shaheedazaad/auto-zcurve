@@ -133,6 +133,17 @@
       </div>
     </div>
     {% endif %}
+    {% if project.spreadsheet_downloads %}
+    <section class="panel panel-pad stack-sm" aria-labelledby="spreadsheet-downloads-heading" style="margin-top:var(--sp-6)">
+      <h3 id="spreadsheet-downloads-heading" style="margin:0">Spreadsheet-safe downloads</h3>
+      <p class="u-sm u-muted" style="margin:0">Copies for opening in Excel or LibreOffice. Cells that a spreadsheet could run as a formula start with an apostrophe. Use the files in <strong>Download results</strong> for R or scripts. {{ docs_link("results/#spreadsheet-safe-downloads", "When to use these") }}</p>
+      <div class="section-head-actions" style="justify-content:flex-start; flex-wrap:wrap">
+        {% for download in project.spreadsheet_downloads %}
+        <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/spreadsheet/{{ download.name }}" download>{{ download.label }} (CSV)</a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
   </section>
 
   <section class="tab-panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" data-tab-panel="sources" hidden>

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -84,6 +84,7 @@ from .projects import (
 from .runner import RunCancelled, regenerate_report, retry_project, run_project
 from .schema import read_extraction_schema
 from .security import redact_secrets
+from .spreadsheet import SPREADSHEET_SAFE_FILES, spreadsheet_safe_csv, spreadsheet_safe_name
 from .user_facing import classify_error
 from .providers import PROVIDERS, normalize_provider, provider_label
 
@@ -1096,6 +1097,21 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Z-curve plot not found.")
         return FileResponse(path, media_type="image/png")
+
+    @app.get(f"/{token}/projects/{{project_id}}/spreadsheet/{{name}}")
+    async def download_spreadsheet_safe_csv(project_id: str, name: str):
+        try:
+            project = runtime.project(project_id)
+        except ProjectError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        path = project.path / "output" / name
+        if name not in SPREADSHEET_SAFE_FILES or not path.is_file():
+            raise HTTPException(status_code=404, detail="Spreadsheet download not found.")
+        return Response(
+            spreadsheet_safe_csv(path.read_text(encoding="utf-8")),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{spreadsheet_safe_name(name)}"'},
+        )
 
     @app.get(f"/{token}/projects/{{project_id}}/results.zip")
     async def download_results(project_id: str):

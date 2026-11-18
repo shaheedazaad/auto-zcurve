@@ -27,6 +27,7 @@ from .config import (
 from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
+from .spreadsheet import SPREADSHEET_SAFE_FILES
 
 
 PROJECT_ID_RE = re.compile(r"^[a-f0-9]{16}$")
@@ -444,6 +445,11 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         "total_tokens": total_tokens,
         "has_report": report.is_file(),
         "report_summary": report_summary,
+        "spreadsheet_downloads": [
+            {"name": name, "label": label}
+            for name, label in SPREADSHEET_SAFE_FILES.items()
+            if (project.path / "output" / name).is_file()
+        ],
         "instructions": read_project_instructions(project),
         "provider": settings.provider if settings else "gemini",
         "model": settings.primary_model if settings else default_model,
