@@ -150,3 +150,25 @@ test('needs-review rows also show parser warnings, and every message is escaped'
   assert.deepEqual(messages('C warning.pdf'), ['<img src=x onerror=bad> table skipped']);
   assert.equal(h.document.querySelector('[data-article-body] b, [data-article-body] img'), null);
 });
+
+test('header article, processed, and needs-review counts follow live project data', async t => {
+  const header = '<span data-article-count>stale</span><span data-processed-count>stale</span>';
+  const snapshot = (pdfs, successful, review, failed) => ({ ...project, articles: [], pdf_count: pdfs, successful_count: successful, needs_review_count: review, failed_count: failed });
+  let live = snapshot(1, 0, 0, 0);
+  const h = projectMount(header, { project: live, fetch: async url => url.includes('/api/projects/') ? { ok: true, json: async () => live } : undefined });
+  t.after(h.close); await flush();
+  const text = selector => h.document.querySelector(selector).textContent;
+  assert.equal(text('[data-article-count]'), '1 article');
+  assert.equal(text('[data-processed-count]'), '0 processed');
+  h.select('openai_compatible'); await flush(); await h.click('.js-run');
+  await h.sources[0].emit('progress', { completed: 2, total: 3, message: 'Two done' });
+  live = snapshot(3, 1, 1, 0); await h.intervals[0](); await flush();
+  assert.equal(text('[data-article-count]'), '3 articles');
+  assert.equal(text('[data-processed-count]'), '2 processed (1 need review)');
+  live = snapshot(3, 1, 1, 1); await h.sources[0].emit('status', { status: 'failed', message: 'Failed' });
+  assert.equal(text('[data-processed-count]'), '2 processed (1 need review)');
+  await h.click('.js-retry');
+  assert.equal(h.sources.length, 2);
+  live = snapshot(3, 2, 0, 1); await h.sources[1].emit('status', { status: 'cancelled', message: 'Cancelled' });
+  assert.equal(text('[data-processed-count]'), '2 processed');
+});

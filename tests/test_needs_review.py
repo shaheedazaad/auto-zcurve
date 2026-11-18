@@ -254,6 +254,8 @@ class WebNeedsReviewTests(unittest.TestCase):
         self.assertEqual(rows["reasons.pdf"].count("article-message"), 1)
         self.assertIn('<small class="article-message u-warning">table skipped</small>', rows["warning.pdf"])
         self.assertNotIn("Needs review", rows["warning.pdf"])
+        self.assertIn("<span data-article-count>3 articles</span>", page)
+        self.assertIn("<span data-processed-count>3 processed (2 need review)</span>", page)
 
 
 if __name__ == "__main__":

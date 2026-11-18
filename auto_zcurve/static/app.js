@@ -621,9 +621,15 @@
     renderArticlePage();
     document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} PDFs`;
     document.querySelector("[data-token-count]").textContent = project.total_tokens;
+    const extracted = project.successful_count + (project.needs_review_count || 0);
+    const articleCount = document.querySelector("[data-article-count]");
+    if (articleCount) articleCount.textContent = `${project.pdf_count} article${project.pdf_count === 1 ? "" : "s"}`;
+    const processedCount = document.querySelector("[data-processed-count]");
+    if (processedCount) {
+      processedCount.textContent = `${extracted} processed${project.needs_review_count ? ` (${project.needs_review_count} need review)` : ""}`;
+    }
     const currentRunButton = document.querySelector(".js-run");
     currentRunButton.dataset.hasPdfs = project.pdf_count > 0 ? "true" : "false";
-    const extracted = project.successful_count + (project.needs_review_count || 0);
     const remaining = Math.max(0, project.pdf_count - extracted);
     currentRunButton.innerHTML = extracted > 0 && remaining > 0
       ? `Continue processing ${remaining} PDF${remaining === 1 ? "" : "s"} <span>→</span>`

@@ -18,7 +18,7 @@
   <div class="page-head">
     <div>
       <h1>{{ project.name }}</h1>
-      <p>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %} · {{ project.extracted_count }} processed{% if project.needs_review_count %} ({{ project.needs_review_count }} need review){% endif %} · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
+      <p><span data-article-count>{{ project.pdf_count }} article{% if project.pdf_count != 1 %}s{% endif %}</span> · <span data-processed-count>{{ project.extracted_count }} processed{% if project.needs_review_count %} ({{ project.needs_review_count }} need review){% endif %}</span> · <span data-token-count>{{ project.total_tokens }}</span> tokens</p>
     </div>
     <div class="section-head-actions">
       <button class="btn js-open-folder" data-variant="outline" data-size="sm" type="button">Open project folder</button>
