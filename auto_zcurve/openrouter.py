@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from .config import normalize_reasoning_effort
-from .llm import ExtractionResult, extraction_review_reasons, review_status
+from .llm import (
+    MAX_PROVIDER_ATTEMPTS,
+    ExtractionResult,
+    extraction_review_reasons,
+    retry_delay,
+    retryable_status,
+    review_status,
+)
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, normalize_extracted_json, validate_extracted_json
 
@@ -20,8 +27,7 @@ API_BASE = "https://openrouter.ai/api/v1"
 USER_AGENT = "auto-zcurve"
 LOCAL_OUTPUT_TOKEN_RESERVE = 32_768
 LOCAL_CONTEXT_SAFETY_RATIO = 0.85
-MAX_COMPLETION_ATTEMPTS = 3
-RETRY_BASE_DELAY_SEC = 1.0
+MAX_COMPLETION_ATTEMPTS = MAX_PROVIDER_ATTEMPTS
 OPENROUTER_PDF_ENGINES = ("cloudflare-ai", "mistral-ocr")
 # OpenAI-style finish reasons; anything else (length, content_filter, ...) needs review.
 NORMAL_FINISH_REASONS = ("stop",)
@@ -43,7 +49,7 @@ class _OpenRouterRequestError(RuntimeError):
 
     @property
     def retryable(self) -> bool:
-        return self.status_code is None or _retryable_status(self.status_code)
+        return self.status_code is None or retryable_status(self.status_code)
 
 
 def _request_json(
@@ -208,14 +214,6 @@ def _usage(payload: dict[str, Any]) -> dict[str, int | None]:
     }
 
 
-def _retryable_status(status_code: object) -> bool:
-    try:
-        code = int(status_code)
-    except (TypeError, ValueError):
-        return False
-    return code in {408, 409, 425, 429} or code >= 500
-
-
 def _embedded_error(payload: dict[str, Any]) -> tuple[str, bool] | None:
     choices = payload.get("choices")
     choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -242,7 +240,7 @@ def _embedded_error(payload: dict[str, Any]) -> tuple[str, bool] | None:
         "timeout",
     }
     retryable = (
-        _retryable_status(code)
+        retryable_status(code)
         if code is not None
         else error_type in retryable_types or not error_type
     )
@@ -280,13 +278,6 @@ def _add_usage(
     for name, value in current.items():
         if value is not None:
             total[name] = int(total.get(name) or 0) + value
-
-
-def _retry_delay(attempt: int, exc: BaseException | None = None) -> float:
-    retry_after = getattr(exc, "retry_after_sec", None)
-    if isinstance(retry_after, (int, float)) and retry_after >= 0:
-        return min(float(retry_after), 30.0)
-    return RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1))
 
 
 def extract_pdf(
@@ -391,7 +382,7 @@ def extract_pdf(
             exc.provider_responses = provider_responses
             last_error = exc
             if should_retry(attempt, exc.retryable):
-                time.sleep(_retry_delay(attempt, exc))
+                time.sleep(retry_delay(attempt, exc))
                 continue
             raise
 
@@ -403,7 +394,7 @@ def extract_pdf(
             last_error = RuntimeError(message)
             last_error.provider_responses = provider_responses
             if should_retry(attempt, retryable):
-                time.sleep(_retry_delay(attempt))
+                time.sleep(retry_delay(attempt))
                 continue
             raise last_error
 
@@ -417,7 +408,7 @@ def extract_pdf(
             last_error = RuntimeError(_empty_response_error(response))
             last_error.provider_responses = provider_responses
             if should_retry(attempt):
-                time.sleep(_retry_delay(attempt))
+                time.sleep(retry_delay(attempt))
                 continue
             raise last_error
         try:
@@ -426,7 +417,7 @@ def extract_pdf(
             last_error = RuntimeError(f"OpenRouter returned invalid JSON: {exc}")
             last_error.provider_responses = provider_responses
             if should_retry(attempt):
-                time.sleep(_retry_delay(attempt))
+                time.sleep(retry_delay(attempt))
                 continue
             raise last_error from exc
 
@@ -437,7 +428,7 @@ def extract_pdf(
             last_error = exc
             last_error.provider_responses = provider_responses
             if should_retry(attempt):
-                time.sleep(_retry_delay(attempt))
+                time.sleep(retry_delay(attempt))
                 continue
             raise
         break

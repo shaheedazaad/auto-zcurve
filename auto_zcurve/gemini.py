@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from .llm import (
+    MAX_PROVIDER_ATTEMPTS,
     ExtractionResult,
     extraction_review_reasons,
     parse_json_with_repair,
+    retry_delay,
+    retryable_status,
     review_status,
 )
 from .models import normalize_model_name
@@ -16,11 +19,10 @@ from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
 from .config import normalize_service_tier
 from .openai_compatible import ExtractionCancelled
-from .openrouter import MAX_COMPLETION_ATTEMPTS, _retry_delay, _retryable_status
 
 # Each Gemini request (file upload, then generation) gets this many attempts in
 # total. The SDK's own retries stay off (its default) so this bound holds.
-MAX_REQUEST_ATTEMPTS = MAX_COMPLETION_ATTEMPTS
+MAX_REQUEST_ATTEMPTS = MAX_PROVIDER_ATTEMPTS
 _CANCEL_POLL_SEC = 0.1
 
 
@@ -105,7 +107,7 @@ def _retryable(exc: BaseException) -> bool:
     from google.genai import errors
 
     if isinstance(exc, errors.APIError):
-        return _retryable_status(exc.code)
+        return retryable_status(exc.code)
     return isinstance(exc, (httpx.TimeoutException, httpx.ConnectError))
 
 
@@ -143,7 +145,7 @@ def _with_retries(request: Any, cancellation_event: object | None) -> Any:
             if attempt >= MAX_REQUEST_ATTEMPTS or not _retryable(exc):
                 raise
             exc.retry_after_sec = _retry_after_sec(exc)  # type: ignore[attr-defined]
-            _wait_for_retry(_retry_delay(attempt, exc), cancellation_event)
+            _wait_for_retry(retry_delay(attempt, exc), cancellation_event)
             attempt += 1
 
 
