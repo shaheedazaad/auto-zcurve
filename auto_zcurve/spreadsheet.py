@@ -12,11 +12,14 @@ from __future__ import annotations
 import csv
 import io
 import re
+import threading
 
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
 SIGNED_NUMBER = re.compile(r" *[+-](?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)? *")
 UTF8_BOM = "﻿"
 MAX_FIELD_SIZE = 16 * 1024 * 1024
+# csv.field_size_limit is process-global; conversions run in worker threads.
+_FIELD_LIMIT_LOCK = threading.Lock()
 
 SPREADSHEET_SAFE_FILES = {
     "disclosure_table.csv": "Disclosure table",
@@ -41,12 +44,13 @@ def escape_cell(value: str) -> str:
 def spreadsheet_safe_csv(text: str) -> bytes:
     """Return a UTF-8 (with BOM), CRLF copy of ``text`` with formula-like cells escaped."""
     text = text.removeprefix(UTF8_BOM)
-    previous_limit = csv.field_size_limit()
-    try:
-        csv.field_size_limit(max(previous_limit, MAX_FIELD_SIZE))
-        rows = list(csv.reader(io.StringIO(text, newline="")))
-    finally:
-        csv.field_size_limit(previous_limit)
+    with _FIELD_LIMIT_LOCK:
+        previous_limit = csv.field_size_limit()
+        try:
+            csv.field_size_limit(max(previous_limit, MAX_FIELD_SIZE))
+            rows = list(csv.reader(io.StringIO(text, newline="")))
+        finally:
+            csv.field_size_limit(previous_limit)
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator="\r\n")
     for row in rows:

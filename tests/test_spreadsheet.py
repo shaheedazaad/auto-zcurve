@@ -1,6 +1,7 @@
 import csv
 import io
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from auto_zcurve.spreadsheet import escape_cell, spreadsheet_safe_csv
 
@@ -91,6 +92,17 @@ class SpreadsheetSafeCsvTests(unittest.TestCase):
             self.assertEqual(read_rows(payload), [["quote"], [large]])
         finally:
             csv.field_size_limit(previous_reader_limit)
+
+    def test_concurrent_conversions_with_large_fields_all_succeed(self):
+        # Downloads convert in worker threads (#19); the raised csv field limit is
+        # process-global, so overlapping conversions must not undo each other's limit.
+        large = "x" * (200 * 1024)
+        source = f"quote\n{large}\n"
+        previous_limit = csv.field_size_limit()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            payloads = list(pool.map(lambda _: spreadsheet_safe_csv(source), range(64)))
+        self.assertEqual(csv.field_size_limit(), previous_limit)
+        self.assertEqual(len(set(payloads)), 1)
 
 
 if __name__ == "__main__":
