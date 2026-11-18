@@ -122,7 +122,7 @@ test('numeric sorting treats absent effect counts as zero on either side', async
 test('needs-review extractions show a warning badge, their reasons, and enable retry without counting as remaining', async t => {
   const h = projectMount('', { project: { ...project, pdf_count: 3, successful_count: 1, needs_review_count: 2, failed_count: 0, articles: [
     { name: 'Repaired.pdf', status: 'needs_review', effects: 1, review_reasons: ['JSON was repaired', 'finish reason: <MAX_TOKENS>'] },
-    { name: 'Legacy.pdf', status: 'needs_review', effects: 1 },
+    { name: 'Legacy.pdf', status: 'needs_review', effects: 1, retry_error: 'network <timeout>' },
     { name: 'Done.pdf', status: 'ok', effects: 2 },
   ] } });
   t.after(h.close); await flush();
@@ -132,7 +132,7 @@ test('needs-review extractions show a warning badge, their reasons, and enable r
   const badge = rows[0].querySelector('.article-status');
   assert.equal(badge.textContent, 'Needs review'); assert.equal(badge.dataset.variant, 'warning');
   assert.equal(rows[0].querySelector('.article-message').textContent, 'Needs review: JSON was repaired; finish reason: <MAX_TOKENS>');
-  assert.equal(rows[1].querySelector('.article-message').textContent, 'Needs review: no reason was recorded');
+  assert.equal(rows[1].querySelector('.article-message').textContent, 'Needs review: no reason was recorded · Last retry failed: network <timeout>');
   assert.equal(h.document.querySelector('.js-retry').dataset.hasFailures, 'true');
   assert.doesNotMatch(h.document.querySelector('.js-run').textContent, /Continue processing/);
 });

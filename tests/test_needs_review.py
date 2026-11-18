@@ -21,6 +21,7 @@ from auto_zcurve import user_facing as u
 from auto_zcurve.artifacts import (
     load_extractions,
     load_run_log,
+    record_failed_retry,
     run_log_csv_path,
     save_extractions,
     upsert_extraction,
@@ -155,6 +156,43 @@ class ArtifactAndRunnerTests(unittest.TestCase):
             r.retry_project(project_dir=self.project, settings=self.settings, selected_sources=None, assume_yes=True, skip_report=True, console=self.console, api_key="key")
             self.assertEqual(sorted(path.name for path in process.call_args.kwargs["paths"]), ["failed.pdf", "review.pdf"])
 
+    def retry_review(self, extract):
+        self.saved_states()
+        upsert_extraction(self.project, ExtractionResult(self.project / "sources/review.pdf", "review.pdf", "needs_review", data={"effects": [{"claim": "kept"}]}, raw_response="{", review_reasons=("JSON was repaired",)))
+        with patch.object(r, "extract_pdf", side_effect=extract):
+            return r._process_one(project_dir=self.project, source_path=self.project / "sources/review.pdf", settings=self.settings, api_key="key", retry=True, run_id="run", model_option=self.option)
+
+    def test_failed_retry_keeps_needs_review_data_and_records_the_failure(self):
+        result = self.retry_review(RuntimeError("network timeout"))
+        self.assertEqual(result.status, "error")
+        record = {item["source_name"]: item for item in load_extractions(self.project)}["review.pdf"]
+        self.assertEqual((record["status"], record["data"], record["effects"], record["review_reasons"]), ("needs_review", {"effects": [{"claim": "kept"}]}, 1, ["JSON was repaired"]))
+        self.assertEqual(record["retry_error"], "network timeout")
+        self.assertTrue(record["retry_failed_at"])
+        self.assertEqual((self.project / record["raw_response_path"]).read_text(), "{")
+        saved = json.loads(next((self.project / "output/raw").glob("review-*.json")).read_text())
+        self.assertEqual((saved["status"], saved["retry_error"]), ("needs_review", "network timeout"))
+        log = load_run_log(self.project)[-1]
+        self.assertEqual((log["status"], log["retry"], log["error"]), ("error", True, "network timeout"))
+        self.assertEqual(r.summarize(self.project, None).extracted_effects, 1 + 2)
+        self.assertIn(("review.pdf", "Needs review: JSON was repaired; last retry failed: " + u.classify_error("network timeout").compact()), u.failed_pdf_rows(self.project))
+
+    def test_successful_retry_replaces_needs_review_result_and_clears_failed_retry(self):
+        self.retry_review(RuntimeError("network timeout"))
+        with patch.object(r, "extract_pdf", side_effect=lambda **kwargs: ExtractionResult(kwargs["source_path"], kwargs["source_name"], "ok", data={"effects": [{"claim": "new"}, {"claim": "two"}]})):
+            r._process_one(project_dir=self.project, source_path=self.project / "sources/review.pdf", settings=self.settings, api_key="key", retry=True, run_id="run2", model_option=self.option)
+        record = {item["source_name"]: item for item in load_extractions(self.project)}["review.pdf"]
+        self.assertEqual((record["status"], record["data"], record["effects"]), ("ok", {"effects": [{"claim": "new"}, {"claim": "two"}]}, 2))
+        self.assertNotIn("retry_error", record)
+
+    def test_failed_retry_of_an_error_record_still_replaces_it(self):
+        self.saved_states()
+        with patch.object(r, "extract_pdf", side_effect=RuntimeError("quota exceeded")):
+            r._process_one(project_dir=self.project, source_path=self.project / "sources/failed.pdf", settings=self.settings, api_key="key", retry=True, run_id="run", model_option=self.option)
+        record = {item["source_name"]: item for item in load_extractions(self.project)}["failed.pdf"]
+        self.assertEqual((record["status"], record["error"]), ("error", "quota exceeded"))
+        self.assertNotIn("retry_error", record)
+
     def test_summary_counts_needs_review_separately(self):
         self.saved_states()
         summary = r.summarize(self.project, None)
@@ -256,6 +294,16 @@ class WebNeedsReviewTests(unittest.TestCase):
         self.assertNotIn("Needs review", rows["warning.pdf"])
         self.assertIn("<span data-article-count>3 articles</span>", page)
         self.assertIn("<span data-processed-count>3 processed (2 need review)</span>", page)
+
+    def test_results_table_shows_a_failed_retry_on_a_kept_needs_review_result(self):
+        project = create_project("Review", root=self.root)
+        (project.path / "sources/review.pdf").write_bytes(b"%PDF")
+        upsert_extraction(project.path, ExtractionResult(project.path / "sources/review.pdf", "review.pdf", "needs_review", data={"effects": [{}]}, review_reasons=("JSON was repaired",)))
+        record_failed_retry(project.path, "review.pdf", "network timeout")
+        article = project_snapshot(project)["articles"][0]
+        self.assertEqual((article["status"], article["effects"], article["retry_error"]), ("needs_review", 1, "network timeout"))
+        page = self.client.get(f"/token/projects/{project.project_id}").text
+        self.assertIn("Needs review: JSON was repaired · Last retry failed: network timeout", page)
 
 
 if __name__ == "__main__":

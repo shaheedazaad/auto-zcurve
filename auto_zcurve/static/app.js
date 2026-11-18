@@ -180,7 +180,8 @@
     const parserWarning = article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
     if (article.status === "needs_review") {
       const reasons = (article.review_reasons || []).join("; ") || "no reason was recorded";
-      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons)}</small>${parserWarning}`;
+      const retry = article.retry_error ? ` · Last retry failed: ${article.retry_error}` : "";
+      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons + retry)}</small>${parserWarning}`;
     }
     return parserWarning;
   };
