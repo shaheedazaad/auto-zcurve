@@ -14,6 +14,32 @@ straight there, or **Download results** to get a ZIP copy.
 | `run_log.csv` | A log of every processing attempt: timing, token usage, input mode, and parser diagnostics. |
 | `raw/*.json` | The raw extraction result for each article individually. |
 
+## Spreadsheet-safe downloads
+
+The disclosure table holds text quoted from articles. Excel and LibreOffice
+treat a cell that starts with `=`, `+`, `-` or `@` (or a tab or carriage
+return, even after leading spaces) as a formula. Text quoted from a PDF
+could then display wrongly or, in the worst case, run a formula that a
+malicious PDF planted.
+
+To avoid this, the **Overview** tab has a **Spreadsheet-safe downloads**
+section with copies of the disclosure table, the run log, and the
+reproduction settings:
+
+- Any cell that could be read as a formula starts with an apostrophe (`'`),
+  headers included. The spreadsheet shows the text as it is and doesn't run
+  it.
+- Plain signed numbers such as `-1.25` or `-1.25e-3` are left alone, so they
+  stay numeric.
+- The files are saved as UTF-8 with a byte-order mark and Windows (CRLF) line
+  endings, so Excel opens accented characters and symbols correctly.
+
+**When to use them:** use the spreadsheet-safe copies whenever you open the
+results in Excel, LibreOffice, Numbers, or Google Sheets. Use the regular
+CSV files in the `output/` folder (or the results ZIP) for R, Python, or
+any other script. Those files are never changed, and the extra apostrophes
+in the spreadsheet-safe copies would show up as part of the text in a script.
+
 ## Reading the report
 
 The report's estimates and plot come directly from the `zcurve` R package.
