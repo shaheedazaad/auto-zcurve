@@ -7,7 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = ROOT / "vendor" / "zcurve_2.4.6.tar.gz"
+ZCURVE_VERSION = "2.5.0"
+ARCHIVE = ROOT / "vendor" / f"zcurve_{ZCURVE_VERSION}.tar.gz"
 
 
 def main() -> int:
@@ -23,7 +24,12 @@ def main() -> int:
     env["R_LIBS_USER"] = str(library)
     env["R_LIBS_SITE"] = str(library)
     check = subprocess.run(
-        [rscript, "-e", "quit(status=ifelse(requireNamespace('zcurve', quietly=TRUE),0,1))"],
+        [
+            rscript,
+            "-e",
+            "quit(status=ifelse(requireNamespace('zcurve', quietly=TRUE) && "
+            f"utils::packageVersion('zcurve') == '{ZCURVE_VERSION}',0,1))",
+        ],
         check=False,
         env=env,
     )
