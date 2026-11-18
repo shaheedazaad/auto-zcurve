@@ -16,7 +16,8 @@ const controls = `
 <button class="js-regenerate-report">Report</button><button class="js-save-instructions">Save instructions</button>
 <button class="js-cancel" hidden>Cancel</button><button class="js-save-project-settings">Save settings</button>
 <button class="js-open-folder">Open folder</button><p class="project-settings-message"></p><p class="run-message"></p>
-<div class="progress-area" hidden><div data-progress-bar><span></span></div><span data-progress-count></span><span data-progress-message></span></div>
+<div class="progress-area" hidden><div data-progress-summary><div data-progress-bar><span></span></div><span data-progress-count></span><span data-progress-message></span></div></div>
+<div data-connection-lost hidden><h2 data-connection-lost-title></h2><p data-connection-lost-message></p></div>
 <div data-slow-extraction-warning hidden></div><span data-pdf-count></span><span data-token-count></span>
 <div data-articles-table-view><table><tbody data-article-body></tbody></table></div>
 <div data-articles-detail-view hidden><h3 data-response-title></h3><div data-response-body></div><button data-response-back>Back</button></div>
@@ -42,10 +43,12 @@ function projectMount(html = '', options = {}) {
       window.setInterval = fn => { intervals.push(fn); return intervals.length; };
       window.clearInterval = id => clearedIntervals.push(id);
       window.EventSource = class {
-        constructor(url) { this.url = url; this.listeners = {}; this.closed = false; sources.push(this); }
+        static CONNECTING = 0; static OPEN = 1; static CLOSED = 2;
+        constructor(url) { this.url = url; this.listeners = {}; this.closed = false; this.readyState = 0; sources.push(this); }
         addEventListener(name, listener) { this.listeners[name] = listener; }
         close() { this.closed = true; }
         async emit(name, data) { await this.listeners[name]({ data: JSON.stringify(data) }); }
+        fail(readyState) { this.readyState = readyState; this.listeners.error({}); }
       };
       options.setup?.(window);
     },

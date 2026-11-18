@@ -768,7 +768,14 @@
   const progressMessage = document.querySelector("[data-progress-message]");
   const runMessage = document.querySelector(".run-message");
   const slowExtractionWarning = document.querySelector("[data-slow-extraction-warning]");
+  const connectionLost = document.querySelector("[data-connection-lost]");
+  const connectionLostTitle = document.querySelector("[data-connection-lost-title]");
+  const connectionLostMessage = document.querySelector("[data-connection-lost-message]");
+  // Browsers retry a dropped stream on their own, but keep retrying forever
+  // when the app is down; after this many failures, ask for a reload instead.
+  const MAX_STREAM_RETRIES = 3;
   let eventSource;
+  let streamFailures = 0;
   let slowExtractionTimer;
   let articleRefreshTimer;
 
@@ -790,11 +797,30 @@
     if (!running) syncProviderCredentialState();
   };
 
+  const showConnectionLost = (closed) => {
+    connectionLostTitle.textContent = "Connection lost";
+    connectionLostMessage.textContent = closed
+      ? "Live progress has stopped updating. Reload this page. If that does not work, restart auto-zcurve and open the new link it prints."
+      : "Live progress stopped updating. Retrying…";
+    connectionLost.hidden = false;
+  };
+
+  const clearConnectionLost = () => {
+    streamFailures = 0;
+    connectionLost.hidden = true;
+  };
+
   const watchEvents = () => {
     eventSource?.close();
+    clearConnectionLost();
     eventSource = new EventSource(`${base}/events`);
+    eventSource.addEventListener("error", () => {
+      streamFailures += 1;
+      showConnectionLost(eventSource.readyState === EventSource.CLOSED || streamFailures >= MAX_STREAM_RETRIES);
+    });
     eventSource.addEventListener("progress", (event) => {
       const data = JSON.parse(event.data);
+      clearConnectionLost();
       const percent = data.total ? Math.round((data.completed / data.total) * 100) : 0;
       progressBar.querySelector("span").style.width = `${percent}%`;
       progressBar.setAttribute("aria-valuenow", String(percent));
@@ -809,6 +835,7 @@
     });
     eventSource.addEventListener("status", async (event) => {
       const data = JSON.parse(event.data);
+      clearConnectionLost();
       progressMessage.textContent = data.message;
       if (["complete", "failed", "cancelled"].includes(data.status)) {
         eventSource.close();
