@@ -11,6 +11,7 @@ from auto_zcurve.projects import (
     ProjectError,
     UploadTooLarge,
     create_project,
+    file_size_display,
     get_project,
     list_projects,
     read_project_instructions,
@@ -91,6 +92,11 @@ class ManagedProjectTests(unittest.TestCase):
             self.assertEqual(first.name, "paper.pdf")
             self.assertEqual(second.name, "paper (2).pdf")
             self.assertEqual(second.read_bytes(), b"%PDF-two")
+
+    def test_file_size_display_picks_a_readable_unit(self):
+        self.assertEqual(file_size_display(512), "512 B")
+        self.assertEqual(file_size_display(250 * 1024), "250 KB")
+        self.assertEqual(file_size_display(3 * 1024 * 1024 + 300_000), "3.3 MB")
 
     def test_upload_rejects_unsafe_non_pdf_and_oversized_files(self):
         self.assertEqual(safe_upload_name("../../study.pdf"), "study.pdf")
