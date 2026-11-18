@@ -71,12 +71,15 @@ class ProviderTests(unittest.TestCase):
                 implementation = Mock(return_value=object())
                 request = dict(source_path=Path('article.pdf'), source_name='article.pdf', api_key='key', primary_model='model', response_schema={'type': 'object'}, schema_config=object(), instruction_path=Path('instructions.md'), request_timeout_sec=30, input_mode='text', context_length=1234, project_dir=Path('project'), reasoning_effort='high', endpoint_order=('endpoint',))
                 with patch.object(providers.importlib, 'import_module', return_value=SimpleNamespace(extract_pdf=implementation)) as load:
-                    result = providers.extract_pdf(provider=provider, service_tier='flex', **request)
+                    result = providers.extract_pdf(provider=provider, service_tier='flex', openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks=False, **request)
                 load.assert_called_once_with(definition.adapter_module)
                 expected = dict(request)
                 if provider == 'gemini':
                     expected['service_tier'] = 'flex'
                     expected['cancellation_event'] = None
+                if provider == 'openrouter':
+                    expected['preferred_provider'] = 'deepinfra/fp8'
+                    expected['allow_fallbacks'] = False
                 implementation.assert_called_once_with(**expected)
                 self.assertIs(result, implementation.return_value)
 

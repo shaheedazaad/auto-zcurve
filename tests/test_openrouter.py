@@ -11,7 +11,7 @@ from auto_zcurve.models import (
     validate_model,
     validate_model_option,
 )
-from auto_zcurve.openrouter import MAX_COMPLETION_ATTEMPTS, extract_pdf, strict_response_schema
+from auto_zcurve.openrouter import MAX_COMPLETION_ATTEMPTS, extract_pdf, list_model_endpoints, strict_response_schema
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
 
 
@@ -184,6 +184,64 @@ class OpenRouterTests(unittest.TestCase):
                 "allow_fallbacks": False,
             },
         )
+
+    def test_extract_pdf_applies_preferred_provider_and_fallback_choice(self):
+        config = parse_extraction_schema(
+            "name: result\neffects:\n  claim:\n    type: string\n    required: true\n"
+        )
+        response = {
+            "model": "vendor/compatible",
+            "choices": [{"message": {"content": '{"effects":[{"claim":"Finding"}]}'}}],
+        }
+        cases = [
+            ("", True, {"require_parameters": True}),
+            ("", False, {"require_parameters": True, "allow_fallbacks": False}),
+            ("deepinfra/fp8", True, {"require_parameters": True, "order": ["deepinfra/fp8"], "allow_fallbacks": True}),
+            ("deepinfra/fp8", False, {"require_parameters": True, "order": ["deepinfra/fp8"], "allow_fallbacks": False}),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = Path(tmp) / "study.pdf"
+            pdf.write_bytes(b"%PDF-fixture")
+            for preferred, allow, expected in cases:
+                with (
+                    self.subTest(preferred=preferred, allow=allow),
+                    patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
+                    patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
+                ):
+                    extract_pdf(
+                        source_path=pdf,
+                        source_name=pdf.name,
+                        api_key="secret",
+                        primary_model="vendor/compatible",
+                        response_schema=build_response_schema(config),
+                        schema_config=config,
+                        instruction_path=Path(tmp) / "unused.md",
+                        preferred_provider=preferred,
+                        allow_fallbacks=allow,
+                    )
+                    self.assertEqual(request.call_args.kwargs["payload"]["provider"], expected)
+
+    def test_list_model_endpoints_keeps_structured_output_endpoints(self):
+        payload = {"data": {"endpoints": [
+            {"tag": "deepinfra/turbo", "provider_name": "DeepInfra", "quantization": "fp8", "supported_parameters": ["structured_outputs"]},
+            {"tag": "groq", "provider_name": "Groq", "quantization": "unknown", "supported_parameters": ["tools"]},
+            {"tag": "google-vertex", "provider_name": "Google Vertex", "quantization": "unknown", "supported_parameters": ["structured_outputs"]},
+            {"tag": "deepinfra/turbo", "provider_name": "DeepInfra", "supported_parameters": ["structured_outputs"]},
+            {"tag": "akashml/fp8", "provider_name": "AkashML", "quantization": "fp8", "supported_parameters": ["structured_outputs"]},
+            {"provider_name": "No tag", "supported_parameters": ["structured_outputs"]},
+            "not an endpoint",
+        ]}}
+        with patch("auto_zcurve.openrouter._request_json", return_value=payload) as request:
+            endpoints = list_model_endpoints("meta-llama/llama 3:free", api_key="secret")
+        self.assertEqual(request.call_args.args[0], "https://openrouter.ai/api/v1/models/meta-llama/llama%203/endpoints")
+        self.assertEqual(endpoints, [
+            {"tag": "akashml/fp8", "name": "AkashML (fp8)"},
+            {"tag": "deepinfra/turbo", "name": "DeepInfra (turbo, fp8)"},
+            {"tag": "google-vertex", "name": "Google Vertex"},
+        ])
+        for bad in [{}, {"data": []}, {"data": {"endpoints": {}}}]:
+            with patch("auto_zcurve.openrouter._request_json", return_value=bad), self.assertRaisesRegex(RuntimeError, "invalid endpoint list"):
+                list_model_endpoints("vendor/model")
 
     def test_extract_pdf_uses_cloudflare_parser_for_deepseek_by_default_mode(self):
         config = parse_extraction_schema(

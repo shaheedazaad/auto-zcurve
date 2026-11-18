@@ -36,6 +36,7 @@ from .config import (
     normalize_default_gemini_model,
     normalize_default_openrouter_model,
     normalize_endpoint_url,
+    normalize_openrouter_provider,
     normalize_response_format,
     normalize_pdf_parser,
     normalize_reasoning_effort,
@@ -51,6 +52,7 @@ from .credentials import (
     saved_api_key_configured,
     save_api_key,
 )
+from .openrouter import list_model_endpoints
 from .models import (
     DEFAULT_MODEL,
     fallback_models,
@@ -422,6 +424,24 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
     }
 
 
+def _openrouter_routing(
+    existing: RunSettings | None,
+    provider: str | None,
+    fallbacks: str | None,
+) -> dict[str, object]:
+    """Resolve the OpenRouter provider preference, keeping saved values for fields the form omitted."""
+    if fallbacks not in (None, "allow", "deny"):
+        raise ValueError("OpenRouter fallbacks must be `allow` or `deny`.")
+    return {
+        "openrouter_provider": normalize_openrouter_provider(
+            provider if provider is not None else (existing.openrouter_provider if existing else "")
+        ),
+        "openrouter_allow_fallbacks": (
+            fallbacks == "allow" if fallbacks is not None else (existing.openrouter_allow_fallbacks if existing else True)
+        ),
+    }
+
+
 def _credential_context(runtime: WebRuntime) -> list[dict[str, object]]:
     return [
         {
@@ -693,6 +713,18 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             )
         return catalog
 
+    @app.get(f"/{token}/api/models/openrouter/endpoints")
+    async def openrouter_model_endpoints(model: str):
+        # The listing is public: send only a key already unlocked this session, never read the store.
+        key = runtime.api_key("openrouter")
+        try:
+            normalized = normalize_model_name(model, "openrouter")
+            return await asyncio.to_thread(list_model_endpoints, normalized, api_key=key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     @app.post(f"/{token}/api/models/openrouter/validate")
     async def validate_openrouter_model(model: str = Form(...)):
         key = await asyncio.to_thread(runtime._load_key_from_store, "openrouter")
@@ -945,6 +977,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         model: str = Form(DEFAULT_MODEL),
         parallel_requests: Optional[int] = Form(None),
         request_delay_sec: Optional[int] = Form(None),
+        openrouter_provider: Optional[str] = Form(None),
+        openrouter_fallbacks: Optional[str] = Form(None),
     ):
         try:
             project = runtime.project(project_id)
@@ -968,6 +1002,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 pdf_parser=current.pdf_parser,
                 reasoning_effort=current.reasoning_effort,
                 service_tier=current.service_tier,
+                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
             )
             save_run_settings(project.path, settings)
         except (OSError, ProjectError, RuntimeError, TypeError, ValueError) as exc:
@@ -981,6 +1016,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         model: Optional[str] = Form(None),
         parallel_requests: int | None = Form(None),
         request_delay_sec: int | None = Form(None),
+        openrouter_provider: Optional[str] = Form(None),
+        openrouter_fallbacks: Optional[str] = Form(None),
     ):
         try:
             project = runtime.project(project_id)
@@ -1012,6 +1049,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 pdf_parser=app_defaults.pdf_parser,
                 reasoning_effort=app_defaults.reasoning_effort,
                 service_tier=app_defaults.service_tier,
+                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
             )
             job = runtime.start_job(project, "run", settings)
         except (ProjectError, RuntimeError, ValueError) as exc:
@@ -1025,6 +1063,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         model: Optional[str] = Form(None),
         parallel_requests: Optional[int] = Form(None),
         request_delay_sec: Optional[int] = Form(None),
+        openrouter_provider: Optional[str] = Form(None),
+        openrouter_fallbacks: Optional[str] = Form(None),
     ):
         try:
             project = runtime.project(project_id)
@@ -1068,6 +1108,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 pdf_parser=app_defaults.pdf_parser,
                 reasoning_effort=app_defaults.reasoning_effort,
                 service_tier=app_defaults.service_tier,
+                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
             )
             job = runtime.start_job(project, "retry", settings)
         except (ProjectError, RuntimeError, ValueError) as exc:
