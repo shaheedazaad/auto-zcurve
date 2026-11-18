@@ -14,7 +14,7 @@ class TerminalFallbackTests(unittest.TestCase):
             root = Path(tmp).resolve()
             with patch.object(Path, 'cwd', return_value=root / 'work'), patch.object(Path, 'home', return_value=root / 'home'):
                 self.assertEqual(tui.display_path(root / 'home/file', base=root / 'other'), '~/file')
-                self.assertEqual(tui.display_path(root / 'elsewhere'), str(root / 'elsewhere'))
+                self.assertEqual(tui.display_path(root / 'elsewhere'), (root / 'elsewhere').as_posix())
                 self.assertEqual(tui.article_summary(root / 'missing')[0], 0)
 
     def test_resize_opt_out_and_tty_open_failure(self):

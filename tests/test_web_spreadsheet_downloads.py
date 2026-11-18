@@ -31,8 +31,8 @@ class SpreadsheetDownloadTests(unittest.TestCase):
         self.addCleanup(env.stop)
         self.project = create_project("Spreadsheet", root=root / "projects")
         self.output = self.project.path / "output"
-        (self.output / "disclosure_table.csv").write_text(DISCLOSURE, encoding="utf-8")
-        (self.output / "run_log.csv").write_text(RUN_LOG, encoding="utf-8")
+        (self.output / "disclosure_table.csv").write_bytes(DISCLOSURE.encode("utf-8"))
+        (self.output / "run_log.csv").write_bytes(RUN_LOG.encode("utf-8"))
         app = w.create_app(token="token", projects_root=root / "projects")
         self.base = "/token/projects/" + self.project.project_id
         self.client = TestClient(app, base_url="http://127.0.0.1")

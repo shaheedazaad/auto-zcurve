@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -50,7 +51,7 @@ class ArtifactRecoveryTests(unittest.TestCase):
             project = Path(tmp)
             result = ExtractionResult(project / 'a.pdf', 'a.pdf', 'ok', raw_response='raw – ü\n', repaired_response='repaired – ü', provider_responses=[{'text': 'é'}])
             a.upsert_extraction(project, result)
-            self.assertEqual(a.raw_response_path(project, 'a.pdf').read_bytes(), 'raw – ü\n'.encode('utf-8'))
+            self.assertEqual(a.raw_response_path(project, 'a.pdf').read_bytes(), 'raw – ü\n'.replace('\n', os.linesep).encode('utf-8'))
             self.assertEqual(a.repaired_response_path(project, 'a.pdf').read_bytes(), 'repaired – ü'.encode('utf-8'))
             provider = a.provider_response_path(project, 'a.pdf').read_text(encoding='utf-8')
             self.assertIn('"text": "é"', provider)
