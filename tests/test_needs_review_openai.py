@@ -69,10 +69,14 @@ class OpenRouterFinishReasonTests(Fixture):
                 self.assertEqual((result.status, result.review_reasons), ("ok", ()))
 
     def test_only_final_successful_attempt_is_checked(self):
-        # A truncated first attempt is retried as before; the clean retry is ok.
-        result = self.extract(openrouter_response(TRUNCATED, finish_reason="length"), openrouter_response(finish_reason="stop"))
+        # An unrepairable first attempt is retried; the clean retry is ok.
+        result = self.extract(openrouter_response("bad json", finish_reason="length"), openrouter_response(finish_reason="stop"))
         self.assertEqual((result.status, result.review_reasons), ("ok", ()))
         self.assertEqual(len(result.provider_responses), 2)
+        # A truncated response that can be repaired is kept and flagged, not retried.
+        result = self.extract(openrouter_response(TRUNCATED, finish_reason="length"))
+        self.assertEqual(result.review_reasons, ("JSON was repaired", "finish reason: length"))
+        self.assertEqual(result.repaired_response, '{"effects": [{"claim": "finding"}]}')
         # A retry after an empty response that then finishes with `length` is flagged.
         result = self.extract({"choices": [{"finish_reason": "stop"}]}, openrouter_response(finish_reason="length"))
         self.assertEqual(result.status, "needs_review")

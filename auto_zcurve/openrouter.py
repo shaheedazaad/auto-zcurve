@@ -15,6 +15,7 @@ from .llm import (
     MAX_PROVIDER_ATTEMPTS,
     ExtractionResult,
     extraction_review_reasons,
+    parse_json_with_repair,
     retry_delay,
     retryable_status,
     review_status,
@@ -354,6 +355,7 @@ def extract_pdf(
         "total_tokens": None,
     }
     raw_text = ""
+    repaired_text: str | None = None
     parsed: object = None
     provider_responses: list[dict[str, Any]] = []
     last_error: RuntimeError | ValueError | None = None
@@ -412,14 +414,15 @@ def extract_pdf(
                 continue
             raise last_error
         try:
-            parsed = json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            last_error = RuntimeError(f"OpenRouter returned invalid JSON: {exc}")
+            parsed, repaired_text = parse_json_with_repair(raw_text, "OpenRouter")
+        except RuntimeError as exc:
+            # Unrepairable output: retry for a fresh response.
+            last_error = exc
             last_error.provider_responses = provider_responses
             if should_retry(attempt):
                 time.sleep(retry_delay(attempt))
                 continue
-            raise last_error from exc
+            raise
 
         normalize_extracted_json(parsed, schema_config)
         try:
@@ -427,6 +430,8 @@ def extract_pdf(
         except ValueError as exc:
             last_error = exc
             last_error.provider_responses = provider_responses
+            last_error.raw_response = raw_text
+            last_error.repaired_response = repaired_text
             if should_retry(attempt):
                 time.sleep(retry_delay(attempt))
                 continue
@@ -439,7 +444,7 @@ def extract_pdf(
         raise RuntimeError("OpenRouter returned JSON that is not a top-level object.")
     # Only the final, successful attempt is checked; earlier attempts were retried.
     review_reasons = extraction_review_reasons(
-        None, [choice_finish_reason(choices[0])], NORMAL_FINISH_REASONS
+        repaired_text, [choice_finish_reason(choices[0])], NORMAL_FINISH_REASONS
     )
     return ExtractionResult(
         source_path=source_path,
@@ -450,6 +455,8 @@ def extract_pdf(
         model_used=str(response.get("model") or primary_model),
         data=parsed,
         raw_json=raw_text,
+        raw_response=raw_text,
+        repaired_response=repaired_text,
         provider_responses=provider_responses,
         duration_sec=round(time.monotonic() - started, 3),
         input_tokens=usage["input_tokens"],
