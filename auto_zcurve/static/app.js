@@ -177,11 +177,12 @@
   };
   const articleMessage = (article) => {
     if (article.error) return `<small class="article-message u-error">${escapeHtml(article.error)}</small>`;
+    const parserWarning = article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
     if (article.status === "needs_review") {
       const reasons = (article.review_reasons || []).join("; ") || "no reason was recorded";
-      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons)}</small>`;
+      return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons)}</small>${parserWarning}`;
     }
-    return article.warning ? `<small class="article-message u-warning">${escapeHtml(article.warning)}</small>` : "";
+    return parserWarning;
   };
   const articleRowState = (status) => ({ ok: "ok", error: "error", needs_review: "needs-review" })[status] || "ready";
   const articleFileIcon = '<span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>';

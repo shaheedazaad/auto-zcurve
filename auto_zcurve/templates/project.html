@@ -304,6 +304,7 @@
                   <strong class="article-name" title="{{ article.name }}">{{ article.name }}</strong>
                   {% if article.error %}<small class="article-message u-error">{{ article.error }}</small>
                   {% elif article.status == "needs_review" %}<small class="article-message u-warning">Needs review: {{ article.review_reasons | join("; ") if article.review_reasons else "no reason was recorded" }}</small>
+                  {% if article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
                   {% elif article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
                 </span>
               </td>

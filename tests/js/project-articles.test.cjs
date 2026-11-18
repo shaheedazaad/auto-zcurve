@@ -136,3 +136,17 @@ test('needs-review extractions show a warning badge, their reasons, and enable r
   assert.equal(h.document.querySelector('.js-retry').dataset.hasFailures, 'true');
   assert.doesNotMatch(h.document.querySelector('.js-run').textContent, /Continue processing/);
 });
+
+test('needs-review rows also show parser warnings, and every message is escaped', async t => {
+  const h = projectMount('', { project: { ...project, pdf_count: 3, successful_count: 1, needs_review_count: 2, failed_count: 0, articles: [
+    { name: 'A both.pdf', status: 'needs_review', review_reasons: ['finish reason: <MAX_TOKENS>'], warning: 'Parser <b>dropped</b> page 3' },
+    { name: 'B reasons.pdf', status: 'needs_review', review_reasons: ['JSON was repaired'] },
+    { name: 'C warning.pdf', status: 'ok', warning: '<img src=x onerror=bad> table skipped' },
+  ] } });
+  t.after(h.close); await flush();
+  const messages = name => [...[...h.document.querySelectorAll('.article-row')].find(row => row.querySelector('.article-name').textContent === name).querySelectorAll('.article-message')].map(node => node.textContent);
+  assert.deepEqual(messages('A both.pdf'), ['Needs review: finish reason: <MAX_TOKENS>', 'Parser <b>dropped</b> page 3']);
+  assert.deepEqual(messages('B reasons.pdf'), ['Needs review: JSON was repaired']);
+  assert.deepEqual(messages('C warning.pdf'), ['<img src=x onerror=bad> table skipped']);
+  assert.equal(h.document.querySelector('[data-article-body] b, [data-article-body] img'), null);
+});
