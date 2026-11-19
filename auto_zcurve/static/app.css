@@ -838,3 +838,24 @@
   .extractor-summary dt { color: var(--muted-foreground); font-size: var(--text-xs); }
   .extractor-summary dd { margin: 0; overflow-wrap: anywhere; }
 }
+
+/* Dialogs: the body scrolls inside the dialog, not the page behind it.
+   Basecoat caps the dialog's height but expects an <article> child to own the
+   scrolling; our dialogs wrap header/section/footer in a <form>, so the
+   section is made the scroll container here. */
+@layer app {
+  html:has(dialog.dialog[open]) { overflow: hidden; }
+  .dialog > * > section {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Keep focus rings on edge fields from being clipped by the scroll box. */
+    margin-inline: calc(-1 * var(--sp-1));
+    padding-inline: var(--sp-1);
+  }
+  /* The extractor form has many fields: widen it so it is less tall. */
+  .extractor-dialog > * { max-width: min(48rem, calc(100% - 2rem)); }
+  @media (width > 48rem) {
+    .extractor-dialog .settings-group > .grid-2 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+}
