@@ -80,3 +80,35 @@ class ConsoleTests(unittest.TestCase):
             progress.advance('secret-key')
         self.assertNotIn('secret-key', out.getvalue())
         self.assertIn('failed [redacted]', out.getvalue())
+
+    def test_secrets_inside_objects_and_renderables_are_redacted(self):
+        from rich.panel import Panel
+        from rich.table import Table
+
+        class Carrier:
+            def __str__(self):
+                return 'key=secret-key'
+
+        out = io.StringIO()
+        with patch.object(console, 'Console', None), redirect_stdout(out):
+            console.CliConsole(['secret-key']).print(Carrier(), 7)
+        self.assertEqual(out.getvalue(), 'key=[redacted] 7\n')
+
+        table = Table(title='secret-key')
+        table.add_column('Key')
+        table.add_row('secret-key')
+        for part in (Carrier(), Panel('secret-key'), table):
+            with self.subTest(part=type(part).__name__):
+                out = io.StringIO()
+                cli = console.CliConsole(['secret-key'])
+                cli.rich = Console(file=out, width=80, color_system=None)
+                cli.print(part)
+                self.assertNotIn('secret-key', out.getvalue())
+                self.assertIn('[redacted]', out.getvalue())
+
+        # Without secrets a renderable is printed as is, keeping its styles.
+        out = io.StringIO()
+        cli = console.CliConsole()
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.print(Panel('plain'))
+        self.assertIn('plain', out.getvalue())

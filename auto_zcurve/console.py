@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import sys
 from contextlib import contextmanager
 from typing import Iterable, Iterator
@@ -18,11 +19,13 @@ try:
         TimeElapsedColumn,
     )
     from rich.table import Table
+    from rich.text import Text
 except Exception:  # pragma: no cover - exercised when optional deps are absent
     Console = None
     Panel = None
     Progress = None
     Table = None
+    Text = None
 
 
 class CliConsole:
@@ -36,8 +39,21 @@ class CliConsole:
         # Escaped so Rich prints the marker instead of reading it as a style tag.
         return text.replace("[redacted]", "\\[redacted]") if self.rich else text
 
+    def _redact_part(self, part: object) -> object:
+        """Redact one printed part, whatever its type."""
+        if isinstance(part, str) or not self.rich:
+            return self.redact(part)
+        if not self.secrets:
+            return part
+        # A Rich renderable's text exists only once rendered, so render it
+        # without styles (a style change could split a key), redact it, and
+        # print the result literally.
+        plain = Console(file=io.StringIO(), width=self.rich.width, color_system=None, highlight=False)
+        plain.print(part, end="")
+        return Text(redact_secrets(plain.file.getvalue(), self.secrets))
+
     def print(self, *parts: object) -> None:
-        parts = tuple(self.redact(part) if isinstance(part, str) else part for part in parts)
+        parts = tuple(self._redact_part(part) for part in parts)
         if self.rich:
             self.rich.print(*parts)
         else:
