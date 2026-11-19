@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -84,6 +85,20 @@ class EndpointTests(unittest.TestCase):
                              schema_config=schema, instruction_path=self.root / "instructions.md",
                              base_url="http://localhost:8000/v1", context_length=100)
         call.assert_not_called()
+
+    def test_pdf_requests_record_their_estimate_and_follow_cancellation(self):
+        schema = parse_extraction_schema("name: result\neffects:\n  claim:\n    type: string\n")
+        event = threading.Event()
+        with patch("auto_zcurve.openai_compatible.pdf_text", return_value="x" * 500) as text, patch(
+            "auto_zcurve.prompts.build_system_prompt", return_value="Extract"
+        ), patch("auto_zcurve.openai_compatible._call", return_value=('{"effects":[]}', {}, "stop")) as call:
+            result = extract_document(source_path=self.root / "study.pdf", source_name="study.pdf", api_key="",
+                                      primary_model="local", response_schema=build_response_schema(schema),
+                                      schema_config=schema, instruction_path=self.root / "instructions.md",
+                                      base_url="http://localhost:8000/v1", cancellation_event=event)
+        self.assertEqual(result.estimated_input_tokens, 100)
+        text.assert_called_once_with(self.root / "study.pdf", event)
+        self.assertIs(call.call_args.kwargs["cancel_event"], event)
 
     def test_blank_pdf_has_actionable_error(self):
         path = self.root / "blank.pdf"

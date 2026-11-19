@@ -197,6 +197,8 @@ test('a slow provider list for an earlier model never replaces the current one',
     assert.deepEqual([...page.document.querySelectorAll('#extractor-openrouter-endpoints option')].map(option => option.value), ['new']);
     field(page, 'model').value = 'vendor/failing';
     field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    // The previous model's providers are cleared while the new list loads.
+    assert.equal(page.document.querySelectorAll('#extractor-openrouter-endpoints option').length, 0);
     page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
     pending[2](json({ detail: 'Down' }, false)); await flush();
     assert.doesNotMatch(status.textContent, /Down/);

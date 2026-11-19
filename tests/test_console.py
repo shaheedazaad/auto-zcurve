@@ -81,6 +81,26 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn('secret-key', out.getvalue())
         self.assertIn('failed [redacted]', out.getvalue())
 
+    def test_markup_cannot_split_a_secret_past_redaction(self):
+        # Invalid markup ('[/oops]', 'ab[/]cd') is printed literally instead of failing.
+        for message in ('ab[red]cd[/red]', 'x abcd [bold]', '[/oops] abcd', 'ab[/]cd abcd'):
+            with self.subTest(message=message):
+                out = io.StringIO()
+                cli = console.CliConsole(['abcd'])
+                cli.rich = Console(file=out, width=80, color_system=None)
+                cli.print(message)
+                cli.error(message)
+                cli.title(message)
+                cli.table(message, [message], [[message]])
+                self.assertNotIn('abcd', out.getvalue())
+                self.assertIn('[redacted]', out.getvalue())
+        # Markup in a message without a key still styles it.
+        out = io.StringIO()
+        cli = console.CliConsole(['abcd'])
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.print('[red]plain[/red]')
+        self.assertEqual(out.getvalue(), 'plain\n')
+
     def test_secrets_inside_objects_and_renderables_are_redacted(self):
         from rich.panel import Panel
         from rich.table import Table

@@ -60,15 +60,18 @@ class OpenRouterTests(unittest.TestCase):
 
         models._OPENROUTER_CACHE = None
 
-    @patch("auto_zcurve.openrouter.list_models", return_value=MODEL_FIXTURES)
+    @patch("auto_zcurve.openrouter.list_models")
     def test_model_catalog_includes_native_pdf_and_structured_text_models(self, list_models):
+        # Like OpenRouter, the catalog leaves out models without structured outputs unless asked.
+        def catalog(*, structured_outputs_only=True, **kwargs):
+            return [item for item in MODEL_FIXTURES
+                    if not structured_outputs_only or "structured_outputs" in item["supported_parameters"]]
+
+        list_models.side_effect = catalog
         # The catalog is offered as suggestions; validate_model_option checks the entered ID.
         suggested = [option.name for option in list_live_models("key", "openrouter")]
-        self.assertEqual(
-            suggested,
-            sorted((item["id"] for item in MODEL_FIXTURES if not item["id"].endswith(":batch")), key=str.lower),
-        )
-        self.assertNotIn("vendor/compatible:batch", suggested)
+        self.assertEqual(suggested, ["deepseek/deepseek-v3.2", "qwen/qwen3.8-max", "vendor/compatible"])
+        self.assertNotIn("structured_outputs_only", list_models.call_args.kwargs)
         deepseek = validate_model_option(
             "openrouter", "deepseek/deepseek-v3.2", "key"
         )

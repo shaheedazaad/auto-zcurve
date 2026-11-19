@@ -266,6 +266,8 @@
         const model = modelField.value.trim();
         if (providerField.value !== "openrouter" || !model) return;
         const request = ++endpointRequest;
+        // The previous model's providers may not serve this one.
+        endpointList.innerHTML = "";
         endpointStatus.textContent = "Loading providers…";
         const query = new URLSearchParams({ model, extractor_id: editing?.id || "" });
         try {

@@ -119,6 +119,7 @@ def extract_document(
     if selected == "openai_compatible":
         kwargs["base_url"] = base_url
         kwargs["response_format"] = response_format
+        kwargs["cancellation_event"] = cancellation_event
     result = implementation(**kwargs)
     if estimated_input_tokens is not None and result.estimated_input_tokens is None:
         result.estimated_input_tokens = estimated_input_tokens

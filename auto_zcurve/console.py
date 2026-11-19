@@ -10,6 +10,8 @@ from .security import redact_secrets
 
 try:
     from rich.console import Console
+    from rich.errors import MarkupError
+    from rich.markup import escape
     from rich.panel import Panel
     from rich.progress import (
         BarColumn,
@@ -35,9 +37,20 @@ class CliConsole:
         self.secrets = list(secrets or [])
 
     def redact(self, value: object) -> str:
-        text = redact_secrets(value, self.secrets)
-        # Escaped so Rich prints the marker instead of reading it as a style tag.
-        return text.replace("[redacted]", "\\[redacted]") if self.rich else text
+        if not self.rich:
+            return redact_secrets(value, self.secrets)
+        text = str(value)
+        # Rich reads markup after this, so a tag inside a key (`ab[red]cd[/red]`)
+        # would hide it from a search of the raw text. Check the text Rich will
+        # show; when it holds a key, print that text literally, redacted.
+        try:
+            shown = Text.from_markup(text).plain
+        except MarkupError:
+            # Not valid markup, so Rich would fail on it: print it literally.
+            return escape(redact_secrets(text, self.secrets))
+        if redact_secrets(shown, self.secrets) == shown and redact_secrets(text, self.secrets) == text:
+            return text
+        return escape(redact_secrets(shown, self.secrets))
 
     def _redact_part(self, part: object) -> object:
         """Redact one printed part, whatever its type."""
