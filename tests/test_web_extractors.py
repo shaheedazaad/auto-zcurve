@@ -40,13 +40,12 @@ class WebExtractorTests(unittest.TestCase):
         self.keyring = FakeKeyring()
         for item in self.patches:
             item.start()
+            self.addCleanup(item.stop)
         self.app = create_app(token=TOKEN, projects_root=self.root)
         self.client = TestClient(self.app, base_url="http://127.0.0.1")
 
     def tearDown(self):
         self.client.close()
-        for item in reversed(self.patches):
-            item.stop()
         self.temporary.cleanup()
 
     def create(self, **values) -> dict:

@@ -364,6 +364,8 @@ def _extractor_view(runtime: WebRuntime, extractor: Extractor) -> dict[str, obje
         "summary": extractor.summary(),
         "settings": extractor.snapshot(),
         "has_key": runtime.has_key(extractor),
+        # False for a key held in memory for this session only.
+        "key_saved": extractor.key_saved or bool(extractor.legacy_credential),
         "requires_key": extractor.requires_key,
     }
 
@@ -377,6 +379,7 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
     chosen = project_extractor(project.path)
     selected = chosen.extractor
     key_ready = selected is not None and (runtime.has_key(selected) or not selected.requires_key)
+    model_ready = selected is not None and bool(selected.model)
     job = runtime.jobs.get(project.project_id)
     return {
         "request": request,
@@ -389,8 +392,9 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
         "extractors": [_extractor_view(runtime, item) for item in load_extractors()],
         "selected_extractor_id": chosen.extractor.id if chosen.extractor else "",
         "selected_extractor_deleted": chosen.deleted,
-        "run_ready": key_ready,
-        "key_missing": selected is not None and not key_ready,
+        "run_ready": key_ready and model_ready,
+        "model_missing": selected is not None and not model_ready,
+        "key_missing": model_ready and not key_ready,
         "is_macos": platform.system() == "Darwin",
         "update_version": runtime.update_version,
     }
@@ -518,6 +522,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 "version": __version__,
                 "extractors": [_extractor_view(runtime, item) for item in load_extractors()],
                 "providers": [(name, provider_label(name)) for name in PROVIDERS],
+                "extractor_defaults": Extractor(id="", name="", provider="gemini", model=""),
                 "keyring_available": runtime.vault.persistent,
                 "is_macos": platform.system() == "Darwin",
                 "app_settings": load_app_settings(),
@@ -585,6 +590,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     @app.post(f"/{token}/extractors/{{extractor_id}}")
     async def edit_extractor(extractor_id: str, request: Request):
+        if get_extractor(extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         values = _extractor_values(dict(await request.form()))
         warnings: list[str] = []
 
