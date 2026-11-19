@@ -12,6 +12,7 @@ from pypdf import PdfWriter
 
 from auto_zcurve.openai_compatible import ProviderError, _call, extract_document, normalize_base_url, pdf_text
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
+from auto_zcurve.sources import SourceError
 
 
 class EndpointTests(unittest.TestCase):
@@ -75,9 +76,9 @@ class EndpointTests(unittest.TestCase):
 
     def test_pdf_text_too_long_for_the_context_limit_is_never_sent(self):
         schema = parse_extraction_schema("name: result\neffects:\n  claim:\n    type: string\n")
-        with patch("auto_zcurve.openai_compatible.pdf_text", return_value="word " * 4000), patch(
+        with patch("auto_zcurve.openai_compatible.pdf_text", return_value="word " * 1000), patch(
             "auto_zcurve.openai_compatible._call"
-        ) as call, self.assertRaisesRegex(Exception, "this model accepts 100"):
+        ) as call, self.assertRaisesRegex(SourceError, "this model accepts 100"):
             extract_document(source_path=self.root / "study.pdf", source_name="study.pdf", api_key="",
                              primary_model="local", response_schema=build_response_schema(schema),
                              schema_config=schema, instruction_path=self.root / "instructions.md",

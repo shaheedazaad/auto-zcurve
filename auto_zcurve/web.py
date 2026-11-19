@@ -631,7 +631,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         warning = None
         if runtime.has_key(removed):
             try:
-                await asyncio.to_thread(runtime.vault.delete, removed.id)
+                await asyncio.to_thread(runtime.vault.delete, removed.id, removed.legacy_credential)
             except VaultUnavailable as exc:
                 warning = f"The extractor was deleted, but its saved key could not be removed. {exc}"
         affected = [
@@ -656,7 +656,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         if extractor is None:
             raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         try:
-            await asyncio.to_thread(runtime.vault.delete, extractor.id)
+            await asyncio.to_thread(runtime.vault.delete, extractor.id, extractor.legacy_credential)
         except VaultUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         set_key_saved(extractor.id, False)

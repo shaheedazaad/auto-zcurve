@@ -1,7 +1,6 @@
 import json
 import tempfile
 import threading
-import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -208,15 +207,22 @@ class RunnerLifecycleTests(unittest.TestCase):
             r._process_paths(paths=[self.source, self.source], workers=2, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=Mock(), cancellation_event=None)
 
     def test_waiting_for_a_slow_source_keeps_polling(self):
-        # The main loop polls every 0.1 s, so a source slower than that makes it wait again.
-        def slow(**kwargs):
-            time.sleep(0.3)
-            return ExtractionResult(self.source, 'a.pdf', 'ok')
+        # The first poll for a result times out, as it does when a source takes longer than 0.1 s.
+        timed_out = []
+        original_queue = r.queue.Queue
+        class SlowQueue(original_queue):
+            def get(self, block=True, timeout=None):
+                # Only the main loop's timed poll; workers take paths with get_nowait.
+                if timeout is not None and not timed_out:
+                    timed_out.append(True)
+                    raise r.queue.Empty
+                return super().get(block, timeout)
 
         progress = Mock()
-        with patch.object(r, '_process_one', side_effect=slow):
+        with patch.object(r.queue, 'Queue', SlowQueue), patch.object(r, '_process_one', return_value=ExtractionResult(self.source, 'a.pdf', 'ok')):
             r._process_paths(paths=[self.source], workers=1, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=progress, cancellation_event=None)
-        progress.advance.assert_called_once()
+        self.assertEqual(timed_out, [True])
+        progress.advance.assert_called_once_with('ok: a.pdf')
 
     def test_retry_can_skip_report_after_processing(self):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])

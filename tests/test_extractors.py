@@ -104,6 +104,13 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         self.assertFalse(copy.key_saved)
         self.assertTrue(ex.get_extractor(original.id).key_saved)
 
+    def test_removing_a_key_drops_an_unmoved_old_key_claim(self):
+        created = ex.create_extractor({"name": "Old", "provider": "gemini", "model": "m"})
+        ex.save_extractors([ex.replace(created, legacy_credential="gemini_api_key")])
+        ex.set_key_saved(created.id, False)
+        self.assertEqual(ex.get_extractor(created.id).legacy_credential, "")
+        self.assertEqual(ex.legacy_claims(), {})
+
     def test_repeated_copies_of_a_long_name_stay_within_the_limit(self):
         original = ex.create_extractor({"name": "L" * ex.NAME_MAX_LENGTH, "provider": "gemini", "model": "m"})
         names = [ex.duplicate_extractor(original.id).name for _ in range(101)]

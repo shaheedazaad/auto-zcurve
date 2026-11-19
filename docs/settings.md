@@ -35,9 +35,9 @@ The list shows each extractor's provider, model, and whether its key is saved.
 | Request timeout | Seconds allowed for one request (default 600). |
 | API key | Optional when creating; see [API keys and privacy](api-key.md). |
 
-For Gemini and OpenRouter, saving an extractor with a key asks the provider
-whether the model can be used with that key, and refuses a model it doesn't
-recognise. Without a key, the extractor is saved and the model is checked when
+For Gemini and OpenRouter, creating an extractor with a key, or changing its
+model on an edit, asks the provider whether the model can be used with that
+key, and refuses a model it doesn't recognise. Without a key, the extractor is saved and the model is checked when
 it first runs. When editing a Gemini or OpenRouter extractor that has a key,
 **Show available models** loads the provider's model list as suggestions.
 OpenAI-compatible servers have no model catalog here: the model ID is passed
@@ -76,8 +76,8 @@ Connect a hosted or local server that supports Chat Completions.
    credentials, a query string, or a fragment.
 2. Enter the exact **Model** ID the server serves.
 3. Choose a **JSON output mode** the server supports.
-4. Optionally enter the model's **Context length** in tokens, so XML articles
-   that are too long fail before they are sent.
+4. Optionally enter the model's **Context length** in tokens, so XML and PDF
+   articles that are clearly too long fail before they are sent.
 5. Add an API key only if the server requires one.
 
 | JSON output mode | What the app requests |

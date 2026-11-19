@@ -20,6 +20,9 @@ XML_TEXT_INPUT_MODE = "xml_text"
 # That is deliberate: the size check below only stops articles that are
 # clearly too long, and never rejects one that might fit.
 CHARS_PER_TOKEN = 3
+# PDF text is mostly prose, at about 4 characters per token in English. A
+# higher ratio keeps the same rule: only clearly oversized text is stopped.
+PDF_CHARS_PER_TOKEN = 5
 
 
 class SourceError(ValueError):
@@ -100,8 +103,8 @@ def read_article_text(path: Path) -> str:
     return decode_xml(path.read_bytes(), path.name)
 
 
-def estimate_tokens(text: str) -> int:
-    return math.ceil(len(text) / CHARS_PER_TOKEN)
+def estimate_tokens(text: str, chars_per_token: int = CHARS_PER_TOKEN) -> int:
+    return math.ceil(len(text) / chars_per_token)
 
 
 def _tokens_display(count: int) -> str:

@@ -185,12 +185,20 @@ class KeyVault:
         self._load()[extractor_id] = api_key
         return self._write()
 
-    def delete(self, extractor_id: str) -> None:
+    def delete(self, extractor_id: str, legacy_credential: str = "") -> None:
+        """Remove a key, and the extractor's old credential item if it hasn't moved yet."""
         keys = self._load()
         removed = keys.pop(extractor_id, None)
         if removed is not None and self.persistent and not self._write():
             keys[extractor_id] = removed
             raise VaultUnavailable(self.UNLOCK_MESSAGE)
+        # An old item that couldn't be moved yet would otherwise bring the key
+        # back next session.
+        if legacy_credential and self.persistent:
+            try:
+                _keyring_module().delete_password(SERVICE_NAME, legacy_credential)
+            except Exception:
+                pass
 
     def secrets(self) -> list[str]:
         return list((self._keys or {}).values())

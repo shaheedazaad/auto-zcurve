@@ -122,9 +122,10 @@ operating system's credential store, through Python Keyring. That item is
 read at most once per app session, the first time a key is needed (a run, a
 retry, saving an extractor with a key, or loading its model list), and is
 written when a key is saved, removed, or migrated. Starting the app or opening
-a page never reads it. If no usable credential store is available, keys are
-kept in memory for the session only; the app never falls back to a plaintext
-file.
+a page never reads it. If no usable credential store is available, or it
+refuses a write, keys are kept in memory for the session only. If the store is
+locked or unreadable, the key is not saved. The app never falls back to a
+plaintext file.
 On macOS, the authorization dialog may identify auto-zcurve's bundled runtime
 as “Python,” sometimes with a version number.
 

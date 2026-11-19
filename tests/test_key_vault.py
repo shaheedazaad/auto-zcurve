@@ -157,6 +157,21 @@ class KeyVaultTests(unittest.TestCase):
         self.assertIn(("auto-zcurve", "openrouter_api_key"), keyring.items)
         self.assertEqual(adopted, [])
 
+    def test_removing_a_key_also_removes_its_unmoved_old_item(self):
+        class LockedKeyring(FakeKeyring):
+            def get_password(self, service, username):
+                if username == "openrouter_api_key":
+                    raise RuntimeError("locked")
+                return super().get_password(service, username)
+
+        keyring = LockedKeyring({("auto-zcurve", "openrouter_api_key"): "old-openrouter"})
+        vault = KeyVault(legacy_claims=lambda: {"o": "openrouter_api_key"})
+        with with_keyring(keyring):
+            self.assertIsNone(vault.get("o"))
+            vault.delete("o", "openrouter_api_key")
+            vault.delete("o", "openrouter_api_key")  # Already gone: tolerated.
+        self.assertNotIn(("auto-zcurve", "openrouter_api_key"), keyring.items)
+
     def test_moving_old_keys_tolerates_items_that_cannot_be_removed(self):
         class StubbornKeyring(FakeKeyring):
             def delete_password(self, service, username):

@@ -338,9 +338,13 @@ def delete_extractor(extractor_id: str) -> Extractor:
 
 
 def set_key_saved(extractor_id: str, saved: bool) -> None:
+    """Record whether the vault holds this extractor's key; a removal also drops any old key claim."""
     extractors = load_extractors()
     index = _index(extractors, extractor_id)
-    extractors[index] = replace(extractors[index], key_saved=saved)
+    changes: dict[str, object] = {"key_saved": saved}
+    if not saved:
+        changes["legacy_credential"] = ""
+    extractors[index] = replace(extractors[index], **changes)
     save_extractors(extractors)
 
 
