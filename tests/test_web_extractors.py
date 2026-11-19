@@ -169,6 +169,32 @@ class WebExtractorTests(unittest.TestCase):
         page = self.client.get(f"/{TOKEN}/projects/{project.project_id}").text
         self.assertIn("was deleted", page)
 
+    def test_deleting_or_unkeying_a_migrated_extractor_removes_its_old_key_item(self):
+        from dataclasses import replace
+        from auto_zcurve.extractors import load_extractors, save_extractors
+
+        for action in ("delete", "key/delete"):
+            with self.subTest(action=action):
+                item = "openai_compatible_api_key"
+                created = self.create(name=f"Migrated {action}", provider="openai_compatible", model="m", base_url="http://h/v1")
+                save_extractors([replace(e, legacy_credential=item) if e.id == created["extractor"]["id"] else e for e in load_extractors()])
+
+                class LockedOldItem(FakeKeyring):
+                    def get_password(self, service, username):
+                        if username == item:
+                            raise RuntimeError("locked")
+                        return super().get_password(service, username)
+
+                self.keyring = LockedOldItem({("auto-zcurve", item): "old-key"})
+                self.app = create_app(token=TOKEN, projects_root=self.root)
+                self.client = TestClient(self.app, base_url="http://127.0.0.1")
+
+                response = self.client.post(f"/{TOKEN}/extractors/{created['extractor']['id']}/{action}", headers=ORIGIN)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn(("auto-zcurve", item), self.keyring.items)
+                self.assertEqual(load_extractors()[-1].legacy_credential if action == "key/delete" else "", "")
+
     def test_deleting_names_projects_that_use_the_extractor_before_confirming(self):
         doomed = self.create(name="Doomed", api_key="key-doomed")
         other = self.create(name="Other")
