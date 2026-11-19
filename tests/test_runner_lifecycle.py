@@ -134,14 +134,27 @@ class RunnerLifecycleTests(unittest.TestCase):
             ('openrouter', {'service_tier': 'priority'}, False),
             ('openrouter', {'reasoning_effort': 'low'}, True),
             ('openai_compatible', {'reasoning_effort': 'low', 'service_tier': 'priority'}, False),
+            ('openrouter', {'openrouter_provider': 'deepinfra'}, True),
+            ('openrouter', {'openrouter_allow_fallbacks': False}, True),
+            ('gemini', {'openrouter_provider': 'deepinfra', 'base_url': 'http://old/v1'}, False),
+            ('openai_compatible', {'base_url': 'http://old/v1'}, True),
+            ('openai_compatible', {'response_format': 'json_object'}, True),
+            ('openai_compatible', {'openrouter_provider': 'deepinfra'}, False),
+            # Runs from before extractors recorded no endpoint, so its absence is not a change.
+            ('openai_compatible', {'legacy': True}, False),
         ]
+        current = {'openrouter_provider': '', 'openrouter_allow_fallbacks': True, 'base_url': 'http://new/v1', 'response_format': 'json_schema'}
         for provider, previous, reprocess in cases:
             with self.subTest(provider=provider, previous=previous):
                 save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
                 path = self.project / '.auto_zcurve/run_settings.json'
                 path.parent.mkdir(exist_ok=True)
-                path.write_text(json.dumps({'extractor': {'provider': provider, 'model': 'test', **previous}}))
-                settings = RunSettings(primary_model='test', provider=provider, request_delay_sec=0)
+                if previous.get('legacy'):
+                    payload = {'provider': provider, 'primary_model': 'test'}
+                else:
+                    payload = {'extractor': {'provider': provider, 'model': 'test', **{**current, **previous}}}
+                path.write_text(json.dumps(payload))
+                settings = RunSettings(primary_model='test', provider=provider, request_delay_sec=0, **current)
                 with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
                     self.run_project(settings=settings)
                 self.assertEqual(process.called, reprocess)

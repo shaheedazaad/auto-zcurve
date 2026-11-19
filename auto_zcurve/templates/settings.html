@@ -51,8 +51,10 @@
           <strong class="row-title">{{ extractor.name }}</strong>
           <span class="row-meta">{{ extractor.provider_label }} · {{ extractor.model or "No model chosen" }}</span>
         </span>
-        {% if extractor.has_key %}
+        {% if extractor.has_key and extractor.key_saved %}
           <span class="badge" data-variant="success">Key saved</span>
+        {% elif extractor.has_key %}
+          <span class="badge" data-variant="outline">Key for this session</span>
         {% elif extractor.requires_key %}
           <span class="badge" data-variant="warning">No key</span>
         {% else %}
@@ -181,7 +183,7 @@
           <div class="field">
             <label for="extractor-reasoning">Reasoning effort</label>
             <select class="select" id="extractor-reasoning" name="reasoning_effort">
-              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if value == "high" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if value == extractor_defaults.reasoning_effort %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
             <p>Used when the model supports reasoning. Higher effort can improve accuracy, at more cost and latency.</p>
           </div>
@@ -203,7 +205,7 @@
         <div class="field" data-provider-fields="gemini">
           <label for="extractor-service-tier">Service tier</label>
           <select class="select" id="extractor-service-tier" name="service_tier">
-            {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if value == "flex" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if value == extractor_defaults.service_tier %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select>
         </div>
 
@@ -217,7 +219,7 @@
             <div class="field">
               <label for="extractor-response-format">JSON output mode</label>
               <select class="select" id="extractor-response-format" name="response_format">
-                {% for value, label in response_format_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                {% for value, label in response_format_labels.items() %}<option value="{{ value }}" {% if value == extractor_defaults.response_format %}selected{% endif %}>{{ label }}</option>{% endfor %}
               </select>
             </div>
             <div class="field">
@@ -232,16 +234,16 @@
         <fieldset class="settings-group"><legend>Requests</legend><div class="grid-2">
           <div class="field">
             <label for="extractor-parallel">Parallel articles</label>
-            <input class="input" id="extractor-parallel" name="parallel_requests" type="number" min="1" max="32" value="1" required>
+            <input class="input" id="extractor-parallel" name="parallel_requests" type="number" min="1" max="32" value="{{ extractor_defaults.parallel_requests }}" required>
           </div>
           <div class="field">
             <label for="extractor-delay">Delay between requests</label>
-            <input class="input" id="extractor-delay" name="request_delay_sec" type="number" min="0" max="3600" value="0" required>
+            <input class="input" id="extractor-delay" name="request_delay_sec" type="number" min="0" max="3600" value="{{ extractor_defaults.request_delay_sec }}" required>
             <p>Seconds between request starts.</p>
           </div>
           <div class="field">
             <label for="extractor-timeout">Request timeout</label>
-            <input class="input" id="extractor-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="600" required>
+            <input class="input" id="extractor-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="{{ extractor_defaults.request_timeout_sec }}" required>
             <p>Seconds allowed for one request.</p>
           </div>
         </div></fieldset>
@@ -251,7 +253,7 @@
           <input class="input" id="extractor-api-key" name="api_key" type="password" autocomplete="off">
           <p data-key-hint>{% if keyring_available %}Saved in your operating system’s credential store.{% else %}Kept in memory for this app session only.{% endif %}</p>
           <div class="cluster" data-key-actions hidden>
-            <span class="badge" data-variant="success">Key saved</span>
+            <span class="badge" data-variant="success" data-key-badge>Key saved</span>
             <button class="btn" data-variant="ghost" data-size="sm" type="button" data-remove-key>Remove key</button>
           </div>
         </div>

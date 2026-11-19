@@ -64,7 +64,11 @@ class OpenRouterTests(unittest.TestCase):
     def test_model_catalog_includes_native_pdf_and_structured_text_models(self, list_models):
         # The catalog is offered as suggestions; validate_model_option checks the entered ID.
         suggested = [option.name for option in list_live_models("key", "openrouter")]
-        self.assertEqual(suggested, sorted((item["id"] for item in MODEL_FIXTURES), key=str.lower))
+        self.assertEqual(
+            suggested,
+            sorted((item["id"] for item in MODEL_FIXTURES if not item["id"].endswith(":batch")), key=str.lower),
+        )
+        self.assertNotIn("vendor/compatible:batch", suggested)
         deepseek = validate_model_option(
             "openrouter", "deepseek/deepseek-v3.2", "key"
         )

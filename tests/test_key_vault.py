@@ -135,13 +135,30 @@ class KeyVaultTests(unittest.TestCase):
         with with_keyring(keyring), self.assertRaises(VaultUnavailable):
             KeyVault().get("a")
 
-    def test_moving_old_keys_tolerates_items_that_cannot_be_read_or_removed(self):
-        class StubbornKeyring(FakeKeyring):
+    def test_an_unreadable_old_key_leaves_every_old_item_for_next_session(self):
+        class LockedKeyring(FakeKeyring):
             def get_password(self, service, username):
                 if username == "openrouter_api_key":
                     raise RuntimeError("locked")
                 return super().get_password(service, username)
 
+        keyring = LockedKeyring({
+            ("auto-zcurve", "gemini_api_key"): "old-gemini",
+            ("auto-zcurve", "openrouter_api_key"): "old-openrouter",
+        })
+        adopted = []
+        vault = KeyVault(
+            legacy_claims=lambda: {"g": "gemini_api_key", "o": "openrouter_api_key"},
+            on_legacy_adopted=adopted.append,
+        )
+        with with_keyring(keyring):
+            vault.get("o")
+        self.assertEqual((keyring.writes, keyring.deletes), (0, 0))
+        self.assertIn(("auto-zcurve", "openrouter_api_key"), keyring.items)
+        self.assertEqual(adopted, [])
+
+    def test_moving_old_keys_tolerates_items_that_cannot_be_removed(self):
+        class StubbornKeyring(FakeKeyring):
             def delete_password(self, service, username):
                 raise RuntimeError("cannot delete")
 
@@ -154,6 +171,18 @@ class KeyVaultTests(unittest.TestCase):
             self.assertEqual(vault.get("g"), "already-moved")
             self.assertIsNone(vault.get("o"))
         self.assertEqual(keyring.vault(), {"g": "already-moved"})
+
+    def test_a_removal_that_cannot_be_saved_is_reported_and_undone(self):
+        class ReadOnlyKeyring(FakeKeyring):
+            def set_password(self, service, username, value):
+                raise RuntimeError("write denied")
+
+        keyring = ReadOnlyKeyring({("auto-zcurve", "extractor_keys"): json.dumps({"keys": {"a": "key-a"}})})
+        vault = KeyVault()
+        with with_keyring(keyring):
+            with self.assertRaises(VaultUnavailable):
+                vault.delete("a")
+            self.assertEqual(vault.get("a"), "key-a")
 
     def test_an_empty_key_is_rejected(self):
         with with_keyring(FakeKeyring()), self.assertRaises(ValueError):

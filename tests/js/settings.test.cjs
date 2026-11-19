@@ -54,7 +54,7 @@ const extractorPage = `<nav class="settings-nav"><a href="#extractors">Extractor
 <div data-provider-fields="gemini"><select name="service_tier"><option value="flex">Flex</option></select></div>
 <div data-provider-fields="openai_compatible"><input name="base_url" required><select name="response_format"><option value="json_schema">Schema</option><option value="none">None</option></select><input name="context_length"></div>
 <input name="parallel_requests" value="1"><input name="request_delay_sec" value="0"><input name="request_timeout_sec" value="600">
-<label data-key-label></label><input name="api_key"><div data-key-actions hidden><button type="button" data-remove-key>Remove</button></div>
+<label data-key-label></label><input name="api_key"><div data-key-actions hidden><span data-key-badge data-variant="success">Key saved</span><button type="button" data-remove-key>Remove</button></div>
 <p class="form-message"></p><button type="button" data-close-extractor-dialog>Cancel</button><button type="submit">Save</button></form></dialog>`;
 const json = (body, ok = true) => ({ ok, json: async () => body });
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -161,6 +161,45 @@ test('a settings link to an extractor opens it for editing', () => {
   try {
     assert.equal(page.document.querySelector('#extractor-dialog').open, true);
     assert.equal(field(page, 'name').value, 'Router');
+    // The hash is cleared so a reload after saving doesn't reopen the dialog.
+    assert.equal(page.window.location.hash, '');
+    assert.equal(page.window.location.pathname, '/token/settings');
+  } finally { page.close(); }
+});
+
+test('the key badge says when a key lasts only for this session', () => {
+  const sessionOnly = { ...extractor, id: 'mem', key_saved: false };
+  const page = mount(extractorPage + row(sessionOnly));
+  try {
+    const badge = page.document.querySelector('[data-key-badge]');
+    page.document.querySelector('#extractor-mem [data-edit-extractor]').click();
+    assert.equal(badge.textContent, 'Key for this session');
+    assert.equal(badge.dataset.variant, 'outline');
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    assert.equal(badge.textContent, 'Key saved');
+    assert.equal(badge.dataset.variant, 'success');
+  } finally { page.close(); }
+});
+
+test('a slow provider list for an earlier model never replaces the current one', async () => {
+  const pending = [];
+  const page = mount(extractorPage, { fetch: () => new Promise(resolve => pending.push(resolve)) });
+  try {
+    const status = page.document.querySelector('[data-openrouter-provider-status]');
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    for (const model of ['vendor/old', 'vendor/new']) {
+      field(page, 'model').value = model;
+      field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    }
+    pending[1](json([{ tag: 'new', name: 'New' }])); await flush();
+    pending[0](json([{ tag: 'old', name: 'Old' }, { tag: 'old2', name: 'Old 2' }])); await flush();
+    assert.match(status.textContent, /1 provider serves/);
+    assert.deepEqual([...page.document.querySelectorAll('#extractor-openrouter-endpoints option')].map(option => option.value), ['new']);
+    field(page, 'model').value = 'vendor/failing';
+    field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    pending[2](json({ detail: 'Down' }, false)); await flush();
+    assert.doesNotMatch(status.textContent, /Down/);
   } finally { page.close(); }
 });
 

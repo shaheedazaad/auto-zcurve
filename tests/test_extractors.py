@@ -47,7 +47,8 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         self.assertEqual((stored["parallel_requests"], stored["request_delay_sec"], stored["request_timeout_sec"]), (3, 5, 120))
         for absent in ("base_url", "openrouter_provider", "response_format", "reasoning_effort", "api_key"):
             self.assertNotIn(absent, stored)
-        self.assertEqual((self.config_dir / "extractors.json").stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":  # Windows has no owner-only file mode.
+            self.assertEqual((self.config_dir / "extractors.json").stat().st_mode & 0o777, 0o600)
 
     def test_invalid_definitions_are_rejected_with_a_reason(self):
         ex.create_extractor({"name": "Main", "provider": "gemini", "model": "gemini-3.6-flash"})
@@ -102,6 +103,13 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         self.assertEqual((copy.model, copy.service_tier), ("gemini-3.6-flash", "standard"))
         self.assertFalse(copy.key_saved)
         self.assertTrue(ex.get_extractor(original.id).key_saved)
+
+    def test_repeated_copies_of_a_long_name_stay_within_the_limit(self):
+        original = ex.create_extractor({"name": "L" * ex.NAME_MAX_LENGTH, "provider": "gemini", "model": "m"})
+        names = [ex.duplicate_extractor(original.id).name for _ in range(101)]
+        self.assertTrue(all(len(name) <= ex.NAME_MAX_LENGTH for name in names))
+        self.assertEqual(names[-1], "L" * (ex.NAME_MAX_LENGTH - 9) + " copy 101")
+        self.assertEqual(len(ex.load_extractors()), 102)
 
     def test_delete_removes_the_definition(self):
         first = ex.create_extractor({"name": "A", "provider": "gemini", "model": "m"})
@@ -180,9 +188,6 @@ class ProjectExtractorTests(ExtractorTestCase):
         path.write_text("{broken", encoding="utf-8")
         self.assertEqual(ex.project_extractor(self.project), ex.ProjectExtractor(None))
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ExtractorMigrationTests(ExtractorTestCase):
@@ -301,3 +306,7 @@ class ExtractorRunTests(ExtractorTestCase):
             ex.check_model(local, None)
         live.assert_not_called()
         validate.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -73,6 +73,17 @@ class EndpointTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 extract_document(**kwargs)
 
+    def test_pdf_text_too_long_for_the_context_limit_is_never_sent(self):
+        schema = parse_extraction_schema("name: result\neffects:\n  claim:\n    type: string\n")
+        with patch("auto_zcurve.openai_compatible.pdf_text", return_value="word " * 4000), patch(
+            "auto_zcurve.openai_compatible._call"
+        ) as call, self.assertRaisesRegex(Exception, "this model accepts 100"):
+            extract_document(source_path=self.root / "study.pdf", source_name="study.pdf", api_key="",
+                             primary_model="local", response_schema=build_response_schema(schema),
+                             schema_config=schema, instruction_path=self.root / "instructions.md",
+                             base_url="http://localhost:8000/v1", context_length=100)
+        call.assert_not_called()
+
     def test_blank_pdf_has_actionable_error(self):
         path = self.root / "blank.pdf"
         writer = PdfWriter()

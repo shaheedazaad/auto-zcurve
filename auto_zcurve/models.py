@@ -78,7 +78,8 @@ def _list_openrouter_models(api_key: str, timeout_sec: int) -> list[ModelOption]
         (
             ModelOption(str(item["id"]), str(item.get("name") or item["id"]), provider="openrouter")
             for item in list_models(api_key=api_key or None, timeout_sec=timeout_sec)
-            if item.get("id")
+            # Batch-only IDs can't run here, so they aren't suggested.
+            if item.get("id") and not str(item["id"]).endswith(":batch")
         ),
         key=lambda option: option.name.lower(),
     )
