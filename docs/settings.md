@@ -102,8 +102,11 @@ the page shows that extractor's settings. **Edit extractor** opens it in
 Settings.
 
 **Run analysis** and **Retry** are available once the chosen extractor has a
-key, or needs none. If you change the extractor's provider, model, or
-reasoning or service settings, the next run reprocesses every article.
+key, or needs none. The next run reprocesses every article if the extractor's
+provider or model changed, or any setting that changes how articles are
+sent: the reasoning effort or route to provider and fallbacks (OpenRouter),
+the service tier (Gemini), or the API base URL, JSON output mode, or context
+length (OpenAI-compatible). Changing the PDF parser does the same.
 
 Each run records the extractor it used, and a copy of its settings, in the
 project. Results and run logs name the extractor that produced each article,
@@ -133,11 +136,22 @@ This view is read-only. Each project has an independent editable copy under
 ## Upgrading from an earlier version
 
 The first time this version starts, it turns your existing provider setup into
-extractors: one for each provider that had a saved key or settings changed
-from the defaults, using the previous default model and settings. A Gemini
-setup that only ever used the default model and service tier, with no saved
-key, doesn't become an extractor. Saved keys move into the new key storage the
-first time a key is needed.
+extractors, using the previous default model and settings. An extractor is
+created for:
+
+- **Gemini**, if it had a saved key, or a default model or service tier other
+  than the old defaults.
+- **OpenRouter**, if it had a saved key or a default model.
+- **OpenAI-compatible**, if it had a saved key or an API base URL.
+
+Any other setting changed on its own, such as OpenRouter reasoning effort
+without a saved key or model, isn't carried over. Saved keys move into the new
+key storage the first time a key is needed.
+
+!!! warning "The upgrade can't be undone"
+    The old settings are removed and old saved keys are deleted once they
+    have moved. If you go back to an earlier version, re-enter your keys and
+    default models there.
 
 Every saved key gets an extractor, so no old key is left behind. If its
 earlier settings are missing or unusable, for example an OpenAI-compatible key

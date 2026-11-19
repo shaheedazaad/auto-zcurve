@@ -97,8 +97,9 @@ does not need an API key.
 
 Back in your project, open the **Run analysis** tab. Choose your extractor
 from the **Extractor** list; the page shows its settings. Click
-**Run analysis**. To process articles faster or change the model, edit the
-extractor in [Settings](settings.md#extractors).
+**Run analysis**. To process articles faster, raise the extractor's
+**Parallel articles** setting; to change the model, edit the extractor. Both
+are in [Settings](settings.md#extractors).
 
 auto-zcurve processes each article in turn (or in parallel, if you raised that
 setting), shows live progress, and lets you know if any article fails —

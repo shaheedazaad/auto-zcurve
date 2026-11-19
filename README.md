@@ -119,9 +119,10 @@ Duplicate filenames are preserved with a numbered suffix.
 Create a Gemini key in [Google AI Studio](https://aistudio.google.com/app/apikey)
 and add it to an extractor. Every extractor's key is kept in one item in the
 operating system's credential store, through Python Keyring. That item is
-read at most once per app session, the first time a key is needed (a run, a
-retry, saving an extractor with a key, or loading its model list), and is
-written when a key is saved, removed, or migrated. Starting the app or opening
+first read when a key is needed (a run, a retry, saving or removing an
+extractor's key, or loading its model list). After a successful read it isn't
+read again that app session; a failed read is retried the next time a key is
+needed. It is written when a key is saved, removed, or migrated. Starting the app or opening
 a page never reads it. If no usable credential store is available, or it
 refuses a write, keys are kept in memory for the session only. If the store is
 locked or unreadable, the key is not saved. The app never falls back to a
