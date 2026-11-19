@@ -1,6 +1,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -205,6 +206,17 @@ class RunnerLifecycleTests(unittest.TestCase):
 
         with patch.object(r.threading, 'Thread', SynchronousThread), patch.object(r, '_process_one', side_effect=ValueError('bad schema')), self.assertRaisesRegex(ValueError, 'bad schema'):
             r._process_paths(paths=[self.source, self.source], workers=2, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=Mock(), cancellation_event=None)
+
+    def test_waiting_for_a_slow_source_keeps_polling(self):
+        # The main loop polls every 0.1 s, so a source slower than that makes it wait again.
+        def slow(**kwargs):
+            time.sleep(0.3)
+            return ExtractionResult(self.source, 'a.pdf', 'ok')
+
+        progress = Mock()
+        with patch.object(r, '_process_one', side_effect=slow):
+            r._process_paths(paths=[self.source], workers=1, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=progress, cancellation_event=None)
+        progress.advance.assert_called_once()
 
     def test_retry_can_skip_report_after_processing(self):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
