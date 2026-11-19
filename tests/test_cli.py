@@ -171,9 +171,6 @@ class CliEntryPointTests(unittest.TestCase):
         for command in ['run', 'retry']:
             with patch.object(cli, command + '_command', return_value=17):
                 self.assertEqual(cli.main([command, '.']), 17)
-        for command in ['gui', 'tui']:
-            with patch('auto_zcurve.tui.run_tui', return_value=19):
-                self.assertEqual(cli.main([command]), 19)
 
     def test_exit_codes_and_user_messages(self):
         for error, expected in [(cli.PreflightError('Missing Python packages: rich'), 2), (KeyboardInterrupt(), 130), (RuntimeError('broken'), 1)]:

@@ -111,9 +111,6 @@ def build_parser() -> argparse.ArgumentParser:
     web = subparsers.add_parser("web", help="Launch the local browser app.")
     web.add_argument("--no-browser", action="store_true", help="Print the local URL without opening a browser.")
     web.add_argument("--port", type=int, help=argparse.SUPPRESS)
-
-    subparsers.add_parser("tui", help="Launch the legacy Textual terminal interface.")
-    subparsers.add_parser("gui", help=argparse.SUPPRESS)
     return parser
 
 
@@ -348,11 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             return launch_web(open_browser=not args.no_browser, port=args.port)
         if args.command == "run":
             return run_command(args, args.project_dir, interactive=False, console=console)
-        if args.command == "retry":
-            return retry_command(args, console)
-        from .tui import run_tui
-
-        return run_tui()
+        return retry_command(args, console)
     except PreflightError as exc:
         console.error(classify_error(exc).compact())
         return 2

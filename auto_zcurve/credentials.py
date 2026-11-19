@@ -9,7 +9,6 @@ from .providers import normalize_provider, provider_definition, provider_label
 
 SERVICE_NAME = "auto-zcurve"
 KEY_NAME = "gemini_api_key"
-LAST_PROJECT_KEY = "last_project_dir"
 SAVED_API_KEY_KEY = "saved_api_key_configured"
 SAVED_API_KEY_KEYS = {
     "gemini": SAVED_API_KEY_KEY,
@@ -150,20 +149,6 @@ def _set_saved_api_key_configured(configured: bool, provider: str = "gemini") ->
         data[preference_key] = True
     else:
         data.pop(preference_key, None)
-    _save_preferences(data)
-
-
-def load_last_project_dir() -> Path | None:
-    value = str(_load_preferences().get(LAST_PROJECT_KEY) or "").strip()
-    if not value:
-        return None
-    path = Path(value).expanduser()
-    return path if path.is_dir() else None
-
-
-def save_last_project_dir(project_dir: Path) -> None:
-    data = _load_preferences()
-    data[LAST_PROJECT_KEY] = str(project_dir.expanduser().resolve())
     _save_preferences(data)
 
 

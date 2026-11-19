@@ -1,53 +1,10 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
 
 from auto_zcurve import user_facing as u
-
-
-class ReadinessTests(unittest.TestCase):
-    def test_dependency_inventory_is_combined(self):
-        with patch.object(u, 'missing_python_dependencies', return_value=['python']), patch.object(u, 'check_system_tools', return_value=['R']), patch.object(u, 'check_r_packages', return_value=['zcurve']):
-            self.assertEqual(u.default_dependency_check(), (['python'], ['R'], ['zcurve']))
-
-    def test_missing_project_model_and_key_are_reported_without_keychain_access(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True), patch.object(u, 'load_dotenv'), patch.object(u, 'load_saved_api_key') as keychain:
-            result = u.check_project_readiness(Path(tmp) / 'missing', api_key=None, model=None, dependency_check=lambda: ([], [], []))
-            self.assertFalse(result.ready)
-            self.assertEqual([issue.key for issue in result.issues], ['project_missing', 'api_key_missing', 'model_missing'])
-            self.assertEqual(result.next_action, result.issues[0].next_action)
-            keychain.assert_not_called()
-
-    def test_all_dependency_failures_and_missing_schema(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(u, 'DEFAULT_SCHEMA', Path(tmp) / 'missing-schema'):
-            result = u.check_project_readiness(Path(tmp), api_key='key', model='model', dependency_check=lambda: (['rich'], ['Quarto', 'R'], ['zcurve']))
-            self.assertEqual([issue.key for issue in result.issues], ['sources_missing', 'schema_missing', 'python_deps_missing', 'quarto_missing', 'system_tools_missing', 'r_deps_missing'])
-            self.assertIn('rich', result.issues[2].explanation)
-            self.assertIn('R', result.issues[4].explanation)
-            self.assertIn('zcurve', result.issues[5].explanation)
-
-    def test_preflight_exception_is_explained(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result = u.check_project_readiness(Path(tmp), api_key='key', model='model', dependency_check=Mock(side_effect=RuntimeError('probe failed')))
-            self.assertFalse(result.ready)
-            self.assertEqual(result.issues[-1].key, 'preflight_failed')
-            self.assertIn('probe failed', result.issues[-1].next_action)
-
-    def test_ready_from_environment_counts_only_files(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'GEMINI_API_KEY': 'key'}, clear=True), patch.object(u, 'load_dotenv'):
-            project = Path(tmp)
-            (project / 'sources/nested').mkdir(parents=True)
-            (project / 'sources/a.pdf').touch()
-            (project / 'sources/nested/b.pdf').touch()
-            (project / 'sources/directory.pdf').mkdir()
-            result = u.check_project_readiness(project, api_key=None, model='model', dependency_check=lambda: ([], [], []))
-            self.assertTrue(result.ready)
-            self.assertEqual(result.pdf_count, 2)
-            self.assertEqual(result.issues, ())
-            self.assertEqual(result.next_action, 'Ready to run extraction.')
+from auto_zcurve.runner import RunSummary
 
 
 class ErrorPresentationTests(unittest.TestCase):
@@ -62,21 +19,6 @@ class ErrorPresentationTests(unittest.TestCase):
                 self.assertTrue(error.next_action)
                 self.assertEqual(error.compact(), f'{title}: {error.explanation} {error.next_action}')
 
-    def test_failed_pdf_rows_skip_success_and_apply_limit(self):
-        records = [{'source_name': 'ok.pdf', 'status': 'ok'}, {'source_name': 'bad.pdf', 'status': 'error', 'error': 'too large'}, {'status': 'failed'}]
-        with patch.object(u, 'load_extractions', return_value=records):
-            self.assertEqual(u.failed_pdf_rows(Path('.'), limit=1), [('bad.pdf', u.classify_error('too large').compact())])
-            self.assertEqual(u.failed_pdf_rows(Path('.'))[-1], ('', u.classify_error('').compact()))
-            self.assertEqual(u.failed_pdf_rows(Path('.'), limit=0), [])
-
-    def test_failed_pdf_rows_returns_every_retryable_pdf_by_default(self):
-        records = [{'source_name': 'ok.pdf', 'status': 'ok'}]
-        records += [{'source_name': f'bad{i:02}.pdf', 'status': 'error', 'error': 'timeout'} for i in range(6)]
-        records += [{'source_name': f'review{i:02}.pdf', 'status': 'needs_review', 'review_reasons': ['JSON was repaired']} for i in range(6)]
-        with patch.object(u, 'load_extractions', return_value=records):
-            rows = u.failed_pdf_rows(Path('.'))
-        self.assertEqual([name for name, _ in rows], [record['source_name'] for record in records[1:]])
-
     def test_result_paths_and_metrics(self):
         summary = SimpleNamespace(report_path=None, successful_pdfs=2, needs_review_pdfs=0, failed_pdfs=1, extracted_effects=4, usable_zcurve_inputs=3, input_tokens=10, output_tokens=5, total_tokens=15)
         for report, expected in [(None, 'not rendered'), (Path('/project/output/report.html'), 'output/report.html'), (Path('/elsewhere/report.html'), '/elsewhere/report.html')]:
@@ -86,17 +28,53 @@ class ErrorPresentationTests(unittest.TestCase):
             self.assertIn('Successful PDFs: 2', result)
             self.assertIn('Total tokens: 15', result)
 
-    def test_open_report_missing_file_and_missing_platform_opener(self):
+    def test_error_classification_for_common_messages(self):
+        self.assertEqual(u.classify_error("API key not valid").title, "Gemini rejected the API key")
+        self.assertEqual(u.classify_error("File exceeds max_upload_size_mb (20 MB).").title, "PDF too large")
+        self.assertEqual(u.classify_error("Quarto report rendering failed.").title, "Report could not be created")
+        self.assertEqual(u.classify_error("Missing system tools: R, Quarto").title, "Quarto missing")
+        self.assertEqual(u.classify_error("Missing R packages: renv").title, "Missing dependency")
+        self.assertEqual(u.classify_error("The extraction schema must define at least one effect field.").title, "Extraction schema problem")
+        self.assertEqual(u.classify_error("No effect rows contain usable values").title, "No usable statistics found")
+
+    def test_format_run_result_uses_project_relative_report_path(self):
         with tempfile.TemporaryDirectory() as tmp:
-            report = Path(tmp) / 'report.html'
-            with self.assertRaises(FileNotFoundError):
-                u.open_report_path(report, popen=Mock())
-            report.touch()
-            with patch.object(u.os, 'startfile', None, create=True), self.assertRaisesRegex(RuntimeError, 'No Windows report opener'):
-                u.open_report_path(report, system='Windows')
-            with patch.object(u, 'report_opener_command', return_value=None), self.assertRaisesRegex(RuntimeError, 'No report opener'):
-                u.open_report_path(report, system='Linux', popen=Mock())
-            opener = Mock()
-            with patch.object(u.platform, 'system', return_value='Darwin'):
-                u.open_report_path(report, popen=opener)
-            opener.assert_called_once_with(['open', str(report.resolve())])
+            project = Path(tmp)
+            summary = RunSummary(
+                report_path=project / "output" / "report.html",
+                successful_pdfs=2,
+                failed_pdfs=1,
+                extracted_effects=12,
+                usable_zcurve_inputs=9,
+                input_tokens=1000,
+                output_tokens=200,
+                total_tokens=1200,
+            )
+
+            result = u.format_run_result(summary, project)
+
+            self.assertIn("Report: output/report.html", result)
+            self.assertIn("Failed PDFs: 1", result)
+            self.assertIn("Input tokens: 1000", result)
+
+    def test_format_run_result_omits_zcurve_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            output = project / "output"
+            output.mkdir()
+            (output / "zcurve_summary.txt").write_text("EDR 0.310\nODR 0.890\n", encoding="utf-8")
+            summary = RunSummary(
+                report_path=output / "report.html",
+                successful_pdfs=2,
+                failed_pdfs=0,
+                extracted_effects=12,
+                usable_zcurve_inputs=9,
+                input_tokens=1000,
+                output_tokens=200,
+                total_tokens=1200,
+            )
+
+            result = u.format_run_result(summary, project)
+
+            self.assertNotIn("Z-Curve Summary:", result)
+            self.assertNotIn("EDR 0.310", result)

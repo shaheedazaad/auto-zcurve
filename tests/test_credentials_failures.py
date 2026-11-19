@@ -81,15 +81,11 @@ class PreferenceTests(unittest.TestCase):
     def test_saving_preserves_preferences_even_if_chmod_unsupported(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(c, 'credentials_path', return_value=Path(tmp) / 'nested/prefs.json'), patch.object(Path, 'chmod', side_effect=OSError('unsupported')):
             c._save_preferences({'other': 3})
-            c.save_last_project_dir(Path(tmp))
-            self.assertEqual(c.load_last_project_dir(), Path(tmp).resolve())
             self.assertEqual(c._load_preferences()['other'], 3)
             self.assertTrue(c.credentials_path().read_text().endswith('\n'))
 
-    def test_last_project_must_be_existing_directory(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            file = Path(tmp) / 'file'
-            file.touch()
-            for value, expected in [(None, None), ('', None), (str(file), None), (str(file / 'missing'), None), (tmp, Path(tmp))]:
-                with patch.object(c, '_load_preferences', return_value={c.LAST_PROJECT_KEY: value}):
-                    self.assertEqual(c.load_last_project_dir(), expected)
+    def test_preferences_with_retired_last_project_key_still_load(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(c, 'credentials_path', return_value=Path(tmp) / 'prefs.json'):
+            c.credentials_path().write_text('{"last_project_dir": "/old/project", "saved_api_key_configured": true}\n')
+            self.assertTrue(c.saved_api_key_configured('gemini'))
+            self.assertFalse(c.saved_api_key_configured('openrouter'))
