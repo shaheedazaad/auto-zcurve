@@ -366,7 +366,7 @@ def _extractor_view(runtime: WebRuntime, extractor: Extractor) -> dict[str, obje
         "settings": extractor.snapshot(),
         "has_key": runtime.has_key(extractor),
         # False for a key held in memory for this session only.
-        "key_saved": extractor.key_saved or bool(extractor.legacy_credential),
+        "key_saved": extractor.has_saved_key,
         "requires_key": extractor.requires_key,
     }
 
