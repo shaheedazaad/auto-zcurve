@@ -7,7 +7,9 @@ contain an API key. Keys live in the credential-store vault
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
@@ -48,6 +50,7 @@ PROVIDER_FIELDS = {
 }
 NAME_MAX_LENGTH = 60
 LEGACY_DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+LEGACY_DEFAULT_SERVICE_TIER = "flex"
 # Saved-key flags in the old preferences.json, by provider.
 LEGACY_SAVED_KEY_FLAGS = {
     "gemini": "saved_api_key_configured",
@@ -111,7 +114,7 @@ class Extractor:
             rows.append(("Route to provider", self.openrouter_provider or "Automatic"))
             rows.append(("Fallbacks", "Allowed" if self.openrouter_allow_fallbacks else "Not allowed"))
         if self.provider == "openai_compatible":
-            rows.append(("API base URL", self.base_url))
+            rows.append(("API base URL", self.base_url or "Not set"))
             rows.append(("JSON output mode", RESPONSE_FORMAT_LABELS[self.response_format]))
             if self.context_length:
                 rows.append(("Context length", f"{self.context_length:,} tokens"))
@@ -119,6 +122,20 @@ class Extractor:
         rows.append(("Delay between requests", f"{self.request_delay_sec} s"))
         rows.append(("Request timeout", f"{self.request_timeout_sec} s"))
         return rows
+
+
+# Every read-modify-write of the extractors file holds this lock, so requests
+# handled on worker threads can't overwrite each other's changes. It is
+# reentrant because mutations call load_extractors, which may migrate.
+_LOCK = threading.RLock()
+
+
+def _serialized(function):
+    @functools.wraps(function)
+    def locked(*args, **kwargs):
+        with _LOCK:
+            return function(*args, **kwargs)
+    return locked
 
 
 def extractors_path() -> Path:
@@ -147,7 +164,12 @@ def _bool_field(value: object, default: bool) -> bool:
 
 
 def _build(values: Mapping[str, object], *, extractor_id: str, require_model: bool = True) -> Extractor:
-    """Validate raw values into an extractor, keeping only its provider's fields."""
+    """Validate raw values into an extractor, keeping only its provider's fields.
+
+    `require_model=False` accepts a saved or migrated extractor that still
+    lacks its model or, for OpenAI-compatible, its base URL; it can't run
+    until they are set.
+    """
     try:
         provider = normalize_provider(str(values.get("provider") or ""))
     except ValueError as exc:
@@ -184,7 +206,7 @@ def _build(values: Mapping[str, object], *, extractor_id: str, require_model: bo
             )
         else:
             base_url = normalize_endpoint_url(str(values.get("base_url") or ""))
-            if not base_url:
+            if not base_url and require_model:
                 raise ExtractorError("Enter the API base URL of your OpenAI-compatible server.")
             context = values.get("context_length")
             extractor = replace(
@@ -212,10 +234,12 @@ def _stored(extractor: Extractor) -> dict[str, object]:
     return record
 
 
+@_serialized
 def save_extractors(extractors: list[Extractor]) -> None:
     path = extractors_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".json.tmp")
+    # A unique name, so a writer outside this lock can't share the temporary file.
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(
             json.dumps({"version": 1, "extractors": [_stored(item) for item in extractors]}, indent=2) + "\n",
@@ -230,6 +254,7 @@ def save_extractors(extractors: list[Extractor]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+@_serialized
 def load_extractors() -> list[Extractor]:
     """Return every extractor in creation order."""
     path = extractors_path()
@@ -256,6 +281,7 @@ def _check_unique_name(extractors: list[Extractor], name: str, extractor_id: str
         raise ExtractorError(f"An extractor called “{name}” already exists.")
 
 
+@_serialized
 def create_extractor(
     values: Mapping[str, object],
     *,
@@ -287,6 +313,7 @@ def _index(extractors: list[Extractor], extractor_id: str) -> int:
     raise ExtractorError("That extractor no longer exists.")
 
 
+@_serialized
 def update_extractor(
     extractor_id: str,
     values: Mapping[str, object],
@@ -317,6 +344,7 @@ def update_extractor(
     return updated
 
 
+@_serialized
 def duplicate_extractor(extractor_id: str) -> Extractor:
     """Copy every setting except the key, under a new unused name."""
     extractors = load_extractors()
@@ -335,6 +363,7 @@ def duplicate_extractor(extractor_id: str) -> Extractor:
     return copy
 
 
+@_serialized
 def delete_extractor(extractor_id: str) -> Extractor:
     extractors = load_extractors()
     removed = extractors.pop(_index(extractors, extractor_id))
@@ -342,6 +371,7 @@ def delete_extractor(extractor_id: str) -> Extractor:
     return removed
 
 
+@_serialized
 def set_key_saved(extractor_id: str, saved: bool) -> None:
     extractors = load_extractors()
     index = _index(extractors, extractor_id)
@@ -365,6 +395,12 @@ def _migrate_legacy_settings() -> list[Extractor]:
     vault moves that key the first time it is opened. The extractors file is
     written before old settings are removed, so an interrupted migration is
     never repeated and never loses anything.
+
+    An extractor is created for each provider with a saved-key flag, or with
+    settings that differ from the old defaults. Every saved-key flag yields
+    an extractor, even one whose old settings are missing or unusable, so no
+    old key is left behind: such an extractor waits for its model or base
+    URL to be entered before it can run.
     """
     settings_file = app_settings_path()
     old = _read_json_object(settings_file)
@@ -375,7 +411,13 @@ def _migrate_legacy_settings() -> list[Extractor]:
         if old.get(name) is not None
     }
     candidates: list[dict[str, object]] = []
-    if flags.get(LEGACY_SAVED_KEY_FLAGS["gemini"]) is True or "default_gemini_model" in old:
+    gemini_model = str(old.get("default_gemini_model") or "").strip()
+    gemini_tier = str(old.get("service_tier") or "").strip().lower()
+    if (
+        flags.get(LEGACY_SAVED_KEY_FLAGS["gemini"]) is True
+        or gemini_model not in ("", LEGACY_DEFAULT_GEMINI_MODEL)
+        or gemini_tier not in ("", LEGACY_DEFAULT_SERVICE_TIER)
+    ):
         candidates.append({
             "provider": "gemini",
             "model": old.get("default_gemini_model") or LEGACY_DEFAULT_GEMINI_MODEL,
@@ -387,7 +429,7 @@ def _migrate_legacy_settings() -> list[Extractor]:
             "model": old.get("default_openrouter_model") or "",
             "reasoning_effort": old.get("reasoning_effort"),
         })
-    if old.get("openai_base_url"):
+    if flags.get(LEGACY_SAVED_KEY_FLAGS["openai_compatible"]) is True or old.get("openai_base_url"):
         candidates.append({
             "provider": "openai_compatible",
             "model": "",
@@ -409,7 +451,11 @@ def _migrate_legacy_settings() -> list[Extractor]:
         try:
             migrated.append(_build(values, extractor_id=str(uuid.uuid4()), require_model=False))
         except ExtractorError:
-            continue
+            if not has_key:
+                continue
+            # Keep the key with an extractor that asks for its settings again.
+            bare = {name: values[name] for name in ("provider", "name", "key_saved", "legacy_credential")}
+            migrated.append(_build(bare, extractor_id=str(uuid.uuid4()), require_model=False))
     save_extractors(migrated)
     if settings_file.is_file():
         save_app_settings(load_app_settings())
@@ -422,6 +468,7 @@ def legacy_claims() -> dict[str, str]:
     return {item.id: item.legacy_credential for item in load_extractors() if item.legacy_credential}
 
 
+@_serialized
 def record_legacy_adoption(result: Mapping[str, bool]) -> None:
     """Record which migrated extractors received their old key."""
     extractors = load_extractors()
@@ -435,6 +482,8 @@ def run_settings_for(extractor: Extractor, app_settings: AppSettings) -> RunSett
     """The concrete settings a run or retry uses with this extractor."""
     if not extractor.model:
         raise ExtractorError(f"Choose a model for the “{extractor.name}” extractor in Settings before running.")
+    if extractor.provider == "openai_compatible" and not extractor.base_url:
+        raise ExtractorError(f"Enter the API base URL for the “{extractor.name}” extractor in Settings before running.")
     return RunSettings(
         primary_model=extractor.model,
         provider=extractor.provider,

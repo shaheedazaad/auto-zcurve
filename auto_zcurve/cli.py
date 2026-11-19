@@ -148,7 +148,9 @@ def _run_inputs(
         extractor_key,
         fallback=lambda _current: ask_for_extractor(interactive, console),
     )
-    return settings, key or ""
+    api_key = key or ""
+    console.secrets.append(api_key)
+    return settings, api_key
 
 
 def guided(console: CliConsole) -> int:

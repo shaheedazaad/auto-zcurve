@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -103,6 +104,29 @@ class CliExtractorTests(unittest.TestCase):
         self.assertEqual([row[3] for row in rows], ["saved", "not set (optional)", "not set"])
         with patch.object(cli, "CliConsole", return_value=Mock()):
             self.assertEqual(cli.main(["extractors"]), 0)
+
+    def test_run_and_retry_never_print_the_extractors_key(self):
+        sentinel = "sk-sentinel-4f9c2e"
+        lab = create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
+        KeyVault().set(lab.id, sentinel)
+        set_key_saved(lab.id, True)
+        (self.project / "sources").mkdir()
+
+        def leak(**kwargs):
+            console = kwargs["console"]
+            console.info(f"Using {sentinel}")
+            console.warn(f"Provider echoed {sentinel}")
+            console.table("Echo", ["Key"], [[sentinel]])
+            # This error's compact message echoes its text, so the key would reach cli.main's output.
+            raise RuntimeError(f"Prompt for {sentinel} has 9 tokens; this model accepts 5.")
+
+        for command, runner in [("run", "run_project"), ("retry", "retry_project")]:
+            out, err = io.StringIO(), io.StringIO()
+            with self.subTest(command=command), patch.object(cli, runner, side_effect=leak), redirect_stdout(out), redirect_stderr(err):
+                code = cli.main([command, str(self.project), "--extractor", "Lab", "--yes", "--skip-preflight"])
+            self.assertEqual(code, 1)
+            self.assertIn("Prompt for [redacted] has 9 tokens", out.getvalue())
+            self.assertNotIn(sentinel, out.getvalue() + err.getvalue())
 
 
 class CliCommandTests(unittest.TestCase):

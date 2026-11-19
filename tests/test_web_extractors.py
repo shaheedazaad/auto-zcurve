@@ -13,6 +13,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from auto_zcurve import credentials
+from auto_zcurve.extractors import ExtractorError
+from auto_zcurve.config import RunSettings, save_run_settings
 from auto_zcurve.models import ModelOption
 from auto_zcurve.projects import create_project
 from auto_zcurve.runner import RunSummary
@@ -167,6 +169,32 @@ class WebExtractorTests(unittest.TestCase):
         page = self.client.get(f"/{TOKEN}/projects/{project.project_id}").text
         self.assertIn("was deleted", page)
 
+    def test_deleting_names_projects_that_use_the_extractor_before_confirming(self):
+        doomed = self.create(name="Doomed", api_key="key-doomed")
+        other = self.create(name="Other")
+        doomed_id = doomed["extractor"]["id"]
+        saved = self.project_with_source("Saved choice")
+        self.client.post(f"/{TOKEN}/projects/{saved.project_id}/settings", data={"extractor_id": doomed_id}, headers=ORIGIN)
+        last_run = self.project_with_source("Last run only")
+        save_run_settings(last_run.path, RunSettings(primary_model="gemini-3.6-flash", provider="gemini", extractor_id=doomed_id))
+        moved_on = self.project_with_source("Moved on")
+        save_run_settings(moved_on.path, RunSettings(primary_model="gemini-3.6-flash", provider="gemini", extractor_id=doomed_id))
+        self.client.post(f"/{TOKEN}/projects/{moved_on.project_id}/settings", data={"extractor_id": other["extractor"]["id"]}, headers=ORIGIN)
+        self.project_with_source("Unconfigured")
+        self.keyring.reads = 0
+        self.app.state.runtime.vault = credentials.KeyVault()
+
+        listed = self.client.get(f"/{TOKEN}/api/extractors/{doomed_id}/projects")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(sorted(listed.json()["projects"]), ["Last run only", "Saved choice"])
+        self.assertEqual(self.client.get(f"/{TOKEN}/api/extractors/{other['extractor']['id']}/projects").json(), {"projects": ["Moved on"]})
+        self.assertEqual(self.client.get(f"/{TOKEN}/api/extractors/{'f' * 8}/projects").status_code, 404)
+        self.assertEqual(self.client.get(f"/{TOKEN}/settings").status_code, 200)
+        self.assertEqual(self.keyring.reads, 0)
+
+        deleted = self.client.post(f"/{TOKEN}/extractors/{doomed_id}/delete", headers=ORIGIN).json()
+        self.assertEqual(sorted(deleted["projects"]), ["Last run only", "Saved choice"])
+
     def test_replacing_and_removing_a_key(self):
         created = self.create(api_key="old")
         extractor_id = created["extractor"]["id"]
@@ -195,6 +223,18 @@ class WebExtractorTests(unittest.TestCase):
         with patch.object(credentials, "_keyring_module", side_effect=credentials.CredentialStoreUnavailable("none")):
             response = self.client.post(f"/{TOKEN}/extractors/{extractor_id}/key", data={"api_key": "k"}, headers=ORIGIN)
         self.assertIn("kept for this app session only", response.json()["warning"])
+
+    def test_deleting_a_missing_extractor_never_scans_projects(self):
+        self.project_with_source()
+        with patch("auto_zcurve.web.project_extractor") as scan:
+            response = self.client.post(f"/{TOKEN}/extractors/{'f' * 8}/delete", headers=ORIGIN)
+        self.assertEqual(response.status_code, 404)
+        scan.assert_not_called()
+        # Deleted by another request between the check and the removal.
+        doomed = self.create()["extractor"]["id"]
+        with patch("auto_zcurve.web.delete_extractor", side_effect=ExtractorError("That extractor no longer exists.")):
+            response = self.client.post(f"/{TOKEN}/extractors/{doomed}/delete", headers=ORIGIN)
+        self.assertEqual(response.status_code, 404)
 
     def test_deleting_an_extractor_whose_key_cannot_be_removed_warns(self):
         created = self.create(api_key="k")

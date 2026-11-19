@@ -51,6 +51,12 @@ async function main() {
       assert.equal(document.querySelector('#extractor-provider').disabled, true);
       assert.equal(document.querySelector('[data-provider-fields=gemini]').hidden, false);
       assert.equal(document.querySelector('#extractor-base-url').disabled, true);
+      const asked = [];
+      window.confirm = message => { asked.push(message); return false; };
+      document.querySelector('.js-delete-extractor').dispatchEvent(new window.Event('submit', { cancelable: true }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.equal(asked.length, 1);
+      assert.match(asked[0], /Template integration/, 'The delete confirmation must name affected projects');
     }
     assert.deepEqual(errors, []);
   } finally {

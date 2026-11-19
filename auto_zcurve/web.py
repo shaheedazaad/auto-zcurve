@@ -33,7 +33,6 @@ from .config import (
     RunSettings,
     load_app_settings,
     load_run_settings,
-    load_selected_extractor_id,
     normalize_pdf_parser,
     save_app_settings,
     save_selected_extractor_id,
@@ -85,7 +84,7 @@ from .security import redact_secrets
 from .sources import discover_sources, is_source_name, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES, spreadsheet_safe_csv, spreadsheet_safe_name
 from .user_facing import classify_error
-from .providers import PROVIDERS, provider_label
+from .providers import PROVIDERS, normalize_provider, provider_label
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -622,8 +621,26 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return _extractor_response(copy.id)
 
+    def _projects_using(extractor_id: str) -> list[str]:
+        """Names of projects whose next run would use this extractor, saved or from their last run."""
+        return [
+            item.name for item in list_projects(root=projects_root)
+            if (chosen := project_extractor(item.path).extractor) is not None and chosen.id == extractor_id
+        ]
+
+    @app.get(f"/{token}/api/extractors/{{extractor_id}}/projects")
+    async def extractor_projects(extractor_id: str):
+        """Projects that would be left without this extractor if it were deleted. Never opens the key vault."""
+        if await asyncio.to_thread(get_extractor, extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        return {"projects": await asyncio.to_thread(_projects_using, extractor_id)}
+
     @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
     async def remove_extractor(extractor_id: str):
+        # Check first so a stale request returns 404 without scanning projects.
+        if get_extractor(extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        affected = await asyncio.to_thread(_projects_using, extractor_id)
         try:
             removed = await asyncio.to_thread(delete_extractor, extractor_id)
         except ExtractorError as exc:
@@ -634,14 +651,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 await asyncio.to_thread(runtime.vault.delete, removed.id)
             except VaultUnavailable as exc:
                 warning = f"The extractor was deleted, but its saved key could not be removed. {exc}"
-
-        def affected_projects() -> list[str]:
-            return [
-                item.name for item in list_projects(root=projects_root)
-                if load_selected_extractor_id(item.path) == removed.id
-            ]
-
-        return {"deleted": True, "projects": await asyncio.to_thread(affected_projects), "warning": warning}
+        return {"deleted": True, "projects": affected, "warning": warning}
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/key")
     async def replace_extractor_key(extractor_id: str, api_key: str = Form(...)):
@@ -690,6 +700,26 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             options = await asyncio.to_thread(list_live_models, key or "", extractor.provider)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return [{"id": option.name, "name": option.display_name} for option in options]
+
+    @app.post(f"/{token}/api/models")
+    async def typed_key_models(provider: str = Form(...), api_key: str = Form("")):
+        """Model suggestions before an extractor is saved, using the key typed into the form.
+
+        The key is sent to the provider for this one request only: it is never
+        stored, logged, or included in the response or an error message.
+        """
+        key = api_key.strip()
+        try:
+            selected = normalize_provider(provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=redact_secrets(exc, [key])) from None
+        if selected == "gemini" and not key:
+            raise HTTPException(status_code=400, detail="Enter an API key to load Gemini models.")
+        try:
+            options = await asyncio.to_thread(list_live_models, key, selected)
+        except Exception as exc:  # Provider SDK errors vary; any of them must reach the user redacted.
+            raise HTTPException(status_code=503, detail=redact_secrets(exc, [key]) or "Models could not be loaded.") from None
         return [{"id": option.name, "name": option.display_name} for option in options]
 
     @app.get(f"/{token}/api/models/openrouter/endpoints")
@@ -898,7 +928,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         """The settings and key for a run or retry with the chosen extractor."""
         chosen = None
         if extractor_id:
-            chosen = get_extractor(extractor_id)
+            chosen = await asyncio.to_thread(get_extractor, extractor_id)
             if chosen is None:
                 raise ValueError("That extractor no longer exists. Choose another.")
         return await asyncio.to_thread(prepare_run, project.path, chosen, runtime.key_for)
