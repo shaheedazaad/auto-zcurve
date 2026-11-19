@@ -316,6 +316,8 @@ def write_run_log_csv(project_dir: Path, rows: list[dict[str, Any]]) -> None:
         "model",
         "provider_used",
         "model_used",
+        "extractor_id",
+        "extractor_name",
         "retry",
         "error",
         "started_at",
