@@ -1,8 +1,8 @@
 # Legacy auto-zcurve Interfaces
 
 > [!WARNING]
-> **The CLI, terminal UI, and arbitrary-folder workflow are deprecated and will
-> be removed in a future version of auto-zcurve. New work should use the local
+> **The CLI and arbitrary-folder workflow are deprecated and will be removed
+> in a future version of auto-zcurve. New work should use the local
 > browser app documented in [README.md](README.md).**
 
 These interfaces remain temporarily available for reproducibility, automation,
@@ -46,17 +46,6 @@ project/
 If `extraction_instructions.md` is absent, the bundled default instructions are
 used. The CLI does not automatically invalidate old results when this file or
 the extraction schema is edited; remove stale outputs or use `--force` yourself.
-
-## Legacy terminal interface
-
-Launch the terminal UI with:
-
-```sh
-auto-zcurve tui
-```
-
-The hidden `auto-zcurve gui` compatibility alias launches the same terminal
-interface. Neither command launches a native desktop application.
 
 ## Python-only installation
 

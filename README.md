@@ -177,13 +177,13 @@ mkdocs serve
 
 Then open the printed local address in your browser. `pip install -e ".[docs]"`
 also works if you already have (or want) a full editable install, but it pulls
-in every runtime dependency (FastAPI, google-genai, textual, ...) too, which
+in every runtime dependency (FastAPI, google-genai, ...) too, which
 is unnecessary just to read or edit the docs and can be slow on a plain
 system `pip`.
 
 ## Legacy interfaces
 
-The CLI, TUI, arbitrary-folder workflow, and Python-only installation route
+The CLI, arbitrary-folder workflow, and Python-only installation route
 are deprecated. Their documentation has moved to [LEGACY.md](LEGACY.md).
 
 ## Development

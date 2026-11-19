@@ -175,7 +175,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
         log = load_run_log(self.project)[-1]
         self.assertEqual((log["status"], log["retry"], log["error"]), ("error", True, "network timeout"))
         self.assertEqual(r.summarize(self.project, None).extracted_effects, 1 + 2)
-        self.assertIn(("review.pdf", "Needs review: JSON was repaired; last retry failed: " + u.classify_error("network timeout").compact()), u.failed_pdf_rows(self.project))
+        self.assertEqual(u.retry_reason(record), "Needs review: JSON was repaired; last retry failed: " + u.classify_error("network timeout").compact())
 
     def test_successful_retry_replaces_needs_review_result_and_clears_failed_retry(self):
         self.retry_review(RuntimeError("network timeout"))
@@ -212,11 +212,6 @@ class ArtifactAndRunnerTests(unittest.TestCase):
     def test_user_facing_rows_and_run_result(self):
         self.saved_states()
         save_extractions(self.project, load_extractions(self.project) + [{"source_name": "unexplained.pdf", "status": "needs_review"}])
-        self.assertEqual(u.failed_pdf_rows(self.project), [
-            ("review.pdf", "Needs review: finish reason: MAX_TOKENS"),
-            ("failed.pdf", u.classify_error("network timeout").compact()),
-            ("unexplained.pdf", "Needs review: no reason was recorded"),
-        ])
         text = u.format_run_result(r.summarize(self.project, None), self.project)
         self.assertIn("Needs review PDFs: 2", text)
         self.assertIn("Needs review:\n  review.pdf: finish reason: MAX_TOKENS\n  unexplained.pdf: no reason was recorded", text)
