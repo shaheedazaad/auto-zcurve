@@ -106,7 +106,7 @@ requests, request timeout, and maximum file size. **Extraction preferences**
 groups the PDF parser and reasoning setting. Click **Save settings** to save
 these controls. Provider settings are saved separately and remain unchanged.
 
-![Run defaults showing parallel PDFs, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
+![Run defaults showing parallel articles, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
 
 Projects can save their own parallel-request and delay values on **Run
 analysis**. Model defaults may also prefill these fields. The PDF parser

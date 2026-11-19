@@ -29,6 +29,7 @@ from auto_zcurve.sources import (
     XML_TEXT_INPUT_MODE,
     SourceError,
     check_context_length,
+    check_xml_file,
     decode_xml,
     discover_sources,
     estimate_tokens,
@@ -77,6 +78,37 @@ class SourceFormatTests(unittest.TestCase):
                 decode_xml(data, "a.xml")
         self.assertEqual(decode_xml("﻿  <a/>".encode("utf-8"), "a.xml"), "  <a/>")
         self.assertEqual(decode_xml(JATS_XML.encode(), "a.xml"), JATS_XML)
+
+    def test_file_check_reads_in_chunks_and_matches_whole_file_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "a.xml"
+            cases = [
+                ("\ufeff" + " " * 5 + "<a>Müller — 研究</a>").encode("utf-8"),  # BOM, whitespace and multi-byte chars split across chunks
+                b"     \n   ",
+                b"    hello <a/>",
+                b"<a>" + b"x" * 20 + b"\x00</a>",
+                b"<a>" + b"x" * 20 + b"\xc3",
+            ]
+            for data in cases:
+                path.write_bytes(data)
+                with self.subTest(data=data):
+                    try:
+                        decode_xml(data, "a.xml")
+                        expected = None
+                    except SourceError as exc:
+                        expected = str(exc)
+                    try:
+                        check_xml_file(path, "a.xml", chunk_size=3)
+                        actual = None
+                    except SourceError as exc:
+                        actual = str(exc)
+                    self.assertEqual(actual, expected)
+
+    def test_legacy_pdf_hash_is_never_written_for_xml(self):
+        xml = ExtractionResult(Path("a.xml"), "a.xml", "error", source_format="xml", source_sha256="x", source_pdf_sha256="legacy")
+        self.assertIsNone(xml.pdf_sha256)
+        self.assertEqual(ExtractionResult(Path("a.pdf"), "a.pdf", "ok", source_pdf_sha256="legacy").pdf_sha256, "legacy")
+        self.assertEqual(ExtractionResult(Path("a.pdf"), "a.pdf", "ok", source_format="pdf", source_sha256="s").pdf_sha256, "s")
 
     def test_context_check_names_both_numbers_and_skips_unknown_limits(self):
         with self.assertRaises(SourceError) as caught:

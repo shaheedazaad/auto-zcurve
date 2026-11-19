@@ -57,8 +57,10 @@ article content:
   your computer; a remote server receives the text.
 
 **XML articles** are sent the same way to every provider: the file's full
-text, exactly as uploaded, inside the request. No file is uploaded and no
-parser service is used.
+text, decoded as UTF-8 (a leading byte-order mark is dropped) and otherwise
+unchanged, inside the request. No file is uploaded and no parser service is
+used. If the article is clearly longer than the model's known context window,
+the article fails with an error and nothing is sent; it is never shortened.
 
 Article content may itself contain author names or other personal information.
 Provider credentials are sent for authentication. Projects and reports are

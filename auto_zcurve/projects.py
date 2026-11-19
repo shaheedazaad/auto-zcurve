@@ -29,7 +29,7 @@ from .llm import STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, record_review_rea
 from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
-from .sources import SourceError, decode_xml, discover_sources, source_format
+from .sources import SourceError, check_xml_file, discover_sources, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES
 
 
@@ -252,7 +252,7 @@ def _check_upload_content(path: Path, name: str, size: int) -> None:
     """Reject an upload whose content does not match its source format."""
     if source_format(name) == "xml":
         try:
-            decode_xml(path.read_bytes(), name)
+            check_xml_file(path, name)
         except SourceError as exc:
             raise ProjectError(str(exc)) from None
         return

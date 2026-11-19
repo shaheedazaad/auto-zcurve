@@ -10,9 +10,9 @@ statistical results, and creates a z-curve analysis report with a plot, summary
 statistics, and full disclosure table.
 
 The default interface is a private browser app running only on your computer.
-Your articles, projects, and results stay local; only the PDF, its locally
-parsed text, or an XML file's text is sent to the selected LLM provider during
-extraction.
+Your articles, projects, and results stay local; extraction sends the selected
+provider the project instructions and schema, together with the PDF, its locally
+parsed text, or an XML file's text.
 
 **Note:** I have validated statistic extraction as part of a study, which is currently under peer review. The preprint citation is below, and details of the validation are in the supplemental material.
 
@@ -72,7 +72,7 @@ In the app:
 
 1. Create a named project.
 2. Add several PDF or XML articles by dragging or choosing files. XML is sent
-   to the model as text, exactly as uploaded.
+   to the model as UTF-8 text, without parsing.
 3. Review or customize the project’s extraction instructions and extraction schema.
 4. Open **Settings**, expand a provider to configure its connection and default model, and set run defaults.
 5. Select a Gemini model for the project.

@@ -31,8 +31,9 @@ The app is installed and run from the command line, but is designed for
 auto-zcurve is a small program that runs **on your own computer** and opens
 in your normal web browser — it is not a website you sign up for. Nothing
 about your project is uploaded anywhere, with one exception: when you run an
-analysis, each article's PDF or text is sent to the AI
-provider you've configured, because that is how the statistics get extracted.
+analysis, the project's instructions and schema, together with each article's
+PDF or text, are sent to the AI provider you've configured, because that is how
+the statistics get extracted.
 Nothing else leaves your computer.
 
 See [Getting an API key](api-key.md) for what that sending step involves and

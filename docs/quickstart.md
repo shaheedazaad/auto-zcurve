@@ -36,8 +36,8 @@ Nothing is sent anywhere yet — this just registers the files in your project.
 
 !!! note "XML articles"
     auto-zcurve does not convert or tidy XML. When you run the analysis, the
-    file's full contents are sent to the AI model as text, exactly as you
-    uploaded it, with every provider. Some things to know:
+    file's full contents are sent to the AI model as UTF-8 text, unparsed and
+    unshortened, with every provider. Some things to know:
 
     - **Text only.** Images, and any supplementary files the XML only links
       to, are not available to the model.

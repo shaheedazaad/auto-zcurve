@@ -4,9 +4,10 @@
 
 Yes, with one specific exception. auto-zcurve runs entirely on your own
 computer — it's not a hosted website, and your projects are never uploaded
-anywhere. The one exception: when you run an analysis, each article (the
-PDF, its parsed text, or an XML file's text) is sent to the AI provider you've configured, because that's
-how statistics get extracted from it. See
+anywhere. The one exception: when you run an analysis, the project's
+instructions and schema, together with each article (the PDF, its parsed text,
+or an XML file's text), are sent to the AI provider you've configured, because
+that's how statistics get extracted from it. See
 [Getting an API key](api-key.md#what-gets-sent-to-the-provider) for exactly
 what that involves.
 

@@ -104,7 +104,7 @@
           <option value="{{ value }}" {% if app_settings.openai_response_format == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
-        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included. XML files are sent as they are.</p>
+        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included. XML files are sent as text, without parsing.</p>
       </div>
       <div class="section-head-actions">
         <p class="form-message u-sm" role="status"></p>

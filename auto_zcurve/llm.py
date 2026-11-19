@@ -142,7 +142,7 @@ class ExtractionResult:
     @property
     def pdf_sha256(self) -> str | None:
         """The value saved as `source_pdf_sha256`: set for PDF sources only."""
-        if self.source_pdf_sha256:
+        if self.source_format in (None, "pdf") and self.source_pdf_sha256:
             return self.source_pdf_sha256
         return self.source_sha256 if self.source_format == "pdf" else None
 

@@ -1002,7 +1002,7 @@
     if (providerSelect.value === "gemini") {
       modelHint.textContent = "Gemini receives the original PDF (or an XML file as text) and returns schema-validated structured data.";
     } else if (providerSelect.value === "openai_compatible") {
-      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text (scanned pages need OCR); XML files are sent as they are.";
+      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text (scanned pages need OCR); XML files are sent as text, without parsing.";
     } else {
       modelHint.textContent = "Enter an exact OpenRouter model ID. It must be validated before it can run.";
     }
