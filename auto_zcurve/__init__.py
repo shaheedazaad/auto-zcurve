@@ -1,3 +1,3 @@
 """auto-zcurve CLI package."""
 
-__version__ = "0.12.9"
+__version__ = "0.13.0"
