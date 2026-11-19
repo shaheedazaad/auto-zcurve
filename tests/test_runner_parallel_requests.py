@@ -92,6 +92,7 @@ class RunnerParallelRequestTests(unittest.TestCase):
             )
             with (
                 patch("auto_zcurve.runner.validate_model_option", return_value=model),
+                patch("auto_zcurve.runner.resolve_max_output_tokens", return_value=None),
                 patch("auto_zcurve.runner.extract_document", side_effect=fake_extract_pdf),
             ):
                 summary = run_project(
@@ -167,6 +168,7 @@ class RunnerParallelRequestTests(unittest.TestCase):
 
             with (
                 patch("auto_zcurve.runner.validate_model_option", return_value=model),
+                patch("auto_zcurve.runner.resolve_max_output_tokens", return_value=None),
                 patch("auto_zcurve.runner.extract_document", side_effect=blocked_extract),
             ):
                 controller = threading.Thread(target=control_run)
@@ -229,6 +231,7 @@ class RunnerParallelRequestTests(unittest.TestCase):
             )
             with (
                 patch("auto_zcurve.runner.validate_model_option", return_value=model),
+                patch("auto_zcurve.runner.resolve_max_output_tokens", return_value=None),
                 patch("auto_zcurve.runner.extract_document", side_effect=fake_extract_pdf),
             ):
                 summary = run_project(

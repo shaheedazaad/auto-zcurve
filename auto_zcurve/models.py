@@ -15,6 +15,8 @@ class ModelOption:
     context_length: int | None = None
     supports_reasoning: bool = False
     endpoint_order: tuple[str, ...] = ()
+    # The output cap sent with each request; None sends none.
+    max_output_tokens: int | None = None
 
 
 def strip_models_prefix(model: str) -> str:
@@ -147,6 +149,35 @@ def validate_model_option(
                            input_mode="cloudflare_pdf", context_length=matched.get("context_length"),
                            supports_reasoning=bool(matched.get("reasoning")))
     return ModelOption(normalized, normalized, provider="gemini")
+
+
+def resolve_max_output_tokens(
+    provider: str,
+    model: str,
+    configured: int | None,
+    api_key: str,
+    *,
+    openrouter_provider: str = "",
+    timeout_sec: int = 30,
+) -> int | None:
+    """The output cap a run sends: the extractor's own, else OpenRouter's endpoint default.
+
+    The extractor's own value is sent as set. Gemini and OpenAI-compatible
+    servers get no cap unless one is set, so their own default applies.
+    Raises RuntimeError when OpenRouter's endpoint list can't be read.
+    """
+    if configured:
+        return configured
+    if normalize_provider(provider) != "openrouter":
+        return None
+    from .openrouter import endpoint_output_limit
+
+    return endpoint_output_limit(
+        model,
+        preferred_provider=openrouter_provider,
+        api_key=api_key or None,
+        timeout_sec=timeout_sec,
+    )
 
 
 def validate_model(

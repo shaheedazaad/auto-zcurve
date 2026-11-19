@@ -54,6 +54,31 @@ class EndpointTests(unittest.TestCase):
                 else:
                     self.assertEqual(payload["response_format"]["type"], mode)
                 self.assertEqual(json.loads(text), {"effects": []})
+                self.assertNotIn("max_tokens", payload)
+
+    def test_a_maximum_output_is_sent_as_max_tokens(self):
+        response = {"choices": [{"message": {"content": '{"effects":[]}'}}]}
+        with patch("auto_zcurve.openai_compatible.urllib.request.urlopen",
+                   return_value=io.BytesIO(json.dumps(response).encode())) as request:
+            _call(model="local-model", api_key="", prompt="Extract", base_url="http://localhost:8000/v1",
+                  response_schema={"type": "object"}, max_output_tokens=8192)
+        self.assertEqual(json.loads(request.call_args.args[0].data)["max_tokens"], 8192)
+
+    def test_openai_itself_receives_the_maximum_output_as_max_completion_tokens(self):
+        response = {"choices": [{"message": {"content": '{"effects":[]}'}}]}
+        cases = {"https://api.openai.com/v1/": "max_completion_tokens", "https://api.example.com/v1": "max_tokens",
+                 "http://127.0.0.1:1234/v1": "max_tokens"}
+        for base_url, key in cases.items():
+            for cap in (8192, None):
+                with self.subTest(base_url=base_url, cap=cap), patch(
+                    "auto_zcurve.openai_compatible.urllib.request.urlopen",
+                    return_value=io.BytesIO(json.dumps(response).encode()),
+                ) as request:
+                    _call(model="gpt-5", api_key="", prompt="Extract", base_url=base_url,
+                          response_schema={"type": "object"}, max_output_tokens=cap)
+                    payload = json.loads(request.call_args.args[0].data)
+                    sent = {name: payload[name] for name in ("max_tokens", "max_completion_tokens") if name in payload}
+                    self.assertEqual(sent, {key: cap} if cap else {})
 
     def test_extraction_validates_even_prompt_only_responses(self):
         schema = parse_extraction_schema("name: result\neffects:\n  claim:\n    type: string\n    required: true\n")

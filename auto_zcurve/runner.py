@@ -23,7 +23,7 @@ from .artifacts import (
 from .config import RunSettings, load_app_settings, load_run_settings, save_run_settings
 from .console import CliConsole
 from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
-from .models import ModelOption, resolve_input_mode, validate_model_option
+from .models import ModelOption, resolve_input_mode, resolve_max_output_tokens, validate_model_option
 from .paths import DEFAULT_SCHEMA
 from .providers import extract_document, normalize_provider
 from .projects import project_instruction_path
@@ -280,6 +280,7 @@ def _process_one(
             openrouter_allow_fallbacks=settings.openrouter_allow_fallbacks,
             base_url=settings.base_url,
             response_format=settings.response_format,
+            max_output_tokens=model_option.max_output_tokens,
         )
         _raise_if_cancelled(cancellation_event)
     except RunCancelled:
@@ -442,6 +443,45 @@ def extraction_settings_changed(previous_settings: RunSettings | None, settings:
     )
 
 
+def _model_option(
+    settings: RunSettings,
+    api_key: str,
+    console: CliConsole,
+    cancellation_event: object | None,
+) -> ModelOption:
+    """Check the model and settle how every request of this run reaches it."""
+    timeout_sec = min(settings.request_timeout_sec, 30)
+    model_option = validate_model_option(
+        settings.provider,
+        settings.primary_model,
+        api_key,
+        timeout_sec=timeout_sec,
+        context_length=settings.context_length,
+    )
+    _raise_if_cancelled(cancellation_event)
+    try:
+        max_output_tokens = resolve_max_output_tokens(
+            settings.provider,
+            model_option.name,
+            settings.max_output_tokens,
+            api_key,
+            openrouter_provider=settings.openrouter_provider,
+            timeout_sec=timeout_sec,
+        )
+    except RuntimeError as exc:
+        max_output_tokens = None
+        console.warn(
+            f"Couldn't look up the endpoints' maximum output ({redact_secrets(exc, [api_key])}); "
+            "requests are sent without an output limit, so the provider's default applies."
+        )
+    _raise_if_cancelled(cancellation_event)
+    return replace(
+        model_option,
+        input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
+        max_output_tokens=max_output_tokens,
+    )
+
+
 def run_project(
     *,
     project_dir: Path,
@@ -483,18 +523,7 @@ def run_project(
         )
 
     run_id = str(uuid.uuid4())
-    model_option = validate_model_option(
-        settings.provider,
-        settings.primary_model,
-        api_key,
-        timeout_sec=min(settings.request_timeout_sec, 30),
-        context_length=settings.context_length,
-    )
-    _raise_if_cancelled(cancellation_event)
-    model_option = replace(
-        model_option,
-        input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
-    )
+    model_option = _model_option(settings, api_key, console, cancellation_event)
     settings.primary_model = model_option.name
     if not to_process or not provider_or_model_changed:
         save_run_settings(project_dir, settings)
@@ -575,18 +604,7 @@ def retry_project(
         return summarize(project_dir, existing_report if existing_report.exists() else None)
 
     paths = [project_dir / "sources" / name for name in failures]
-    model_option = validate_model_option(
-        settings.provider,
-        settings.primary_model,
-        api_key,
-        timeout_sec=min(settings.request_timeout_sec, 30),
-        context_length=settings.context_length,
-    )
-    _raise_if_cancelled(cancellation_event)
-    model_option = replace(
-        model_option,
-        input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
-    )
+    model_option = _model_option(settings, api_key, console, cancellation_event)
     settings.primary_model = model_option.name
     if rerun_all_after_change is None:
         rerun_all_after_change = load_app_settings().retry_extractor_change == "rerun_all"

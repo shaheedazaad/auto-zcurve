@@ -53,7 +53,7 @@ const extractorPage = `<nav class="settings-nav"><a href="#extractors">Extractor
 <select name="openrouter_allow_fallbacks"><option value="allow">Allow</option><option value="deny">Deny</option></select></div>
 <div data-provider-fields="gemini"><select name="service_tier"><option value="flex">Flex</option></select></div>
 <div data-provider-fields="openai_compatible"><input name="base_url" required><select name="response_format"><option value="json_schema">Schema</option><option value="none">None</option></select><input name="context_length"></div>
-<input name="parallel_requests" value="1"><input name="request_delay_sec" value="0"><input name="request_timeout_sec" value="600">
+<input name="max_output_tokens"><input name="parallel_requests" value="1"><input name="request_delay_sec" value="0"><input name="request_timeout_sec" value="600">
 <label data-key-label></label><input name="api_key"><div data-key-actions hidden><span data-key-badge data-variant="success">Key saved</span><button type="button" data-remove-key>Remove</button></div>
 <p class="form-message"></p><button type="button" data-close-extractor-dialog>Cancel</button><button type="submit">Save</button></form></dialog>`;
 const json = (body, ok = true) => ({ ok, json: async () => body });
@@ -153,6 +153,20 @@ test('editing a keyless endpoint offers no model list and keeps empty values', (
     assert.equal(page.document.querySelector('[data-key-actions]').hidden, true);
     assert.equal(field(page, 'context_length').value, '');
     assert.equal(field(page, 'base_url').value, 'http://h/v1');
+  } finally { page.close(); }
+});
+
+test('the maximum output placeholder says what an empty value means for the provider', () => {
+  const page = mount(extractorPage);
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    assert.equal(field(page, 'max_output_tokens').placeholder, 'Model maximum');
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(field(page, 'max_output_tokens').placeholder, 'Endpoint maximum');
+    page.document.querySelector('#extractor-loc [data-edit-extractor]').click();
+    assert.equal(field(page, 'max_output_tokens').placeholder, 'Server default');
+    assert.equal(field(page, 'max_output_tokens').value, '');
   } finally { page.close(); }
 });
 

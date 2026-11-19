@@ -42,7 +42,16 @@ RESPONSE_FORMAT_LABELS = {
     "json_object": "JSON object",
     "none": "Prompt only",
 }
-COMMON_FIELDS = ("name", "provider", "model", "request_timeout_sec", "parallel_requests", "request_delay_sec")
+COMMON_FIELDS = (
+    "name", "provider", "model", "max_output_tokens", "request_timeout_sec", "parallel_requests", "request_delay_sec",
+)
+MAX_OUTPUT_TOKENS_LIMIT = 100_000_000
+# What an empty maximum output means for each provider.
+DEFAULT_OUTPUT_LABELS = {
+    "gemini": "Model maximum",
+    "openrouter": "Endpoint maximum",
+    "openai_compatible": "Server default",
+}
 PROVIDER_FIELDS = {
     "gemini": ("service_tier",),
     "openrouter": ("reasoning_effort", "openrouter_provider", "openrouter_allow_fallbacks"),
@@ -76,6 +85,8 @@ class Extractor:
     request_timeout_sec: int = 600
     parallel_requests: int = 1
     request_delay_sec: int = 0
+    # None uses the provider's own limit; see DEFAULT_OUTPUT_LABELS.
+    max_output_tokens: int | None = None
     service_tier: str = "flex"
     reasoning_effort: str = "high"
     openrouter_provider: str = ""
@@ -122,6 +133,10 @@ class Extractor:
             rows.append(("JSON output mode", RESPONSE_FORMAT_LABELS[self.response_format]))
             if self.context_length:
                 rows.append(("Context length", f"{self.context_length:,} tokens"))
+        rows.append((
+            "Maximum output",
+            f"{self.max_output_tokens:,} tokens" if self.max_output_tokens else DEFAULT_OUTPUT_LABELS[self.provider],
+        ))
         rows.append(("Parallel articles", str(self.parallel_requests)))
         rows.append(("Delay between requests", f"{self.request_delay_sec} s"))
         rows.append(("Request timeout", f"{self.request_timeout_sec} s"))
@@ -195,6 +210,9 @@ def _build(values: Mapping[str, object], *, extractor_id: str, require_model: bo
         request_timeout_sec=_int_field(values, "request_timeout_sec", "Request timeout", 30, 3600, defaults.request_timeout_sec),
         parallel_requests=_int_field(values, "parallel_requests", "Parallel articles", 1, 32, defaults.parallel_requests),
         request_delay_sec=_int_field(values, "request_delay_sec", "Delay between requests", 0, 3600, defaults.request_delay_sec),
+        max_output_tokens=_int_field(
+            values, "max_output_tokens", "Maximum output", 1, MAX_OUTPUT_TOKENS_LIMIT, 0
+        ) or None,
         key_saved=_bool_field(values.get("key_saved"), False),
         legacy_credential=str(values.get("legacy_credential") or ""),
     )
@@ -549,6 +567,7 @@ def run_settings_for(extractor: Extractor, app_settings: AppSettings) -> RunSett
         base_url=extractor.base_url,
         response_format=extractor.response_format,
         context_length=extractor.context_length,
+        max_output_tokens=extractor.max_output_tokens,
         extractor_id=extractor.id,
         extractor=extractor.snapshot(),
     )
