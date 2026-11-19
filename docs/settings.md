@@ -35,11 +35,14 @@ The list shows each extractor's provider, model, and whether its key is saved.
 | Request timeout | Seconds allowed for one request (default 600). |
 | API key | Optional when creating; see [API keys and privacy](api-key.md). |
 
-When you save an extractor with a key, the app asks the provider whether the
-model can be used with that key, and refuses a model it doesn't recognise.
-Without a key, the extractor is saved and the model is checked when it first
-runs. When editing an extractor that has a key, **Show available models**
-loads the provider's model list as suggestions.
+For Gemini and OpenRouter, saving an extractor with a key asks the provider
+whether the model can be used with that key, and refuses a model it doesn't
+recognise. Without a key, the extractor is saved and the model is checked when
+it first runs. When editing a Gemini or OpenRouter extractor that has a key,
+**Show available models** loads the provider's model list as suggestions.
+OpenAI-compatible servers have no model catalog here: the model ID is passed
+to the configured server as entered, and the server reports a model it
+doesn't know.
 
 ### Gemini
 

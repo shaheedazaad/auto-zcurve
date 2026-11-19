@@ -187,20 +187,23 @@ def _call(
 def extract_document(*, source_path, source_name, api_key, primary_model,
                      response_schema, schema_config, instruction_path,
                      request_timeout_sec=600, reasoning_effort=None, article_text=None,
-                     base_url="", response_format="json_schema", **kwargs):
+                     base_url="", response_format="json_schema", context_length=None, **kwargs):
     from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
     from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
     from .prompts import build_system_prompt
     from .schema import normalize_extracted_json, validate_extracted_json
 
     started = time.monotonic()
-    from .sources import XML_TEXT_INPUT_MODE
+    from .sources import XML_TEXT_INPUT_MODE, check_context_length, estimate_tokens
 
     if article_text is not None:
         prompt = build_system_prompt(schema_config, instruction_path, "xml") + "\n\nArticle text:\n" + article_text
         input_mode = XML_TEXT_INPUT_MODE
     else:
-        prompt = build_system_prompt(schema_config, instruction_path) + "\n\nArticle text:\n" + pdf_text(source_path, None)
+        # XML text is checked before dispatch; PDF text exists only once extracted here.
+        document_text = pdf_text(source_path, None)
+        check_context_length(estimate_tokens(document_text), context_length)
+        prompt = build_system_prompt(schema_config, instruction_path) + "\n\nArticle text:\n" + document_text
         input_mode = "local_text"
     text, tokens, finish_reason = _call(
         model=primary_model, api_key=api_key or "",

@@ -322,10 +322,14 @@ def duplicate_extractor(extractor_id: str) -> Extractor:
     extractors = load_extractors()
     original = extractors[_index(extractors, extractor_id)]
     taken = {item.name.casefold() for item in extractors}
-    base = f"{original.name[:NAME_MAX_LENGTH - 8]} copy"
-    name, counter = base, 2
-    while name.casefold() in taken:
-        name, counter = f"{base} {counter}", counter + 1
+    counter = 1
+    while True:
+        suffix = " copy" if counter == 1 else f" copy {counter}"
+        # Shorten the original name so the suffix always fits the limit.
+        name = original.name[:NAME_MAX_LENGTH - len(suffix)].rstrip() + suffix
+        if name.casefold() not in taken:
+            break
+        counter += 1
     copy = replace(original, id=str(uuid.uuid4()), name=name, key_saved=False, legacy_credential="")
     save_extractors([*extractors, copy])
     return copy

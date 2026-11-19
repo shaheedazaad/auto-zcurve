@@ -81,6 +81,12 @@ test('choosing an extractor saves it, shows its settings, and gates runs on its 
   assert.equal(h.document.querySelector('[data-extractor-summary=lab]').hidden, true);
   assert.equal(h.document.querySelector('[data-extractor-deleted]').hidden, true);
   assert.equal(h.document.querySelector('[data-edit-extractor-link]').getAttribute('href'), '/token/settings#extractor-nokey');
+  assert.equal(h.document.querySelector('[data-run-model-prompt]').hidden, true);
+  for (const link of h.document.querySelectorAll('[data-setup-extractor-link]')) assert.equal(link.getAttribute('href'), '/token/settings#extractor-nokey');
+  h.select('nomodel'); await flush();
+  assert.equal(h.document.querySelector('.js-run').disabled, true);
+  assert.equal(h.document.querySelector('[data-run-model-prompt]').hidden, false);
+  assert.equal(h.document.querySelector('[data-run-credential-prompt]').hidden, true);
   h.select('local'); await flush();
   assert.equal(h.document.querySelector('.js-run').disabled, false);
 });
