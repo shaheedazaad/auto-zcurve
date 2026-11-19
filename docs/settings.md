@@ -130,9 +130,18 @@ This view is read-only. Each project has an independent editable copy under
 ## Upgrading from an earlier version
 
 The first time this version starts, it turns your existing provider setup into
-extractors: one for each provider that had a saved key or saved settings,
-using the previous default model and settings. Saved keys move into the new
-key storage the first time a key is needed. Projects whose last run used the
+extractors: one for each provider that had a saved key or settings changed
+from the defaults, using the previous default model and settings. A Gemini
+setup that only ever used the default model and service tier, with no saved
+key, doesn't become an extractor. Saved keys move into the new key storage the
+first time a key is needed.
+
+Every saved key gets an extractor, so no old key is left behind. If its
+earlier settings are missing or unusable, for example an OpenAI-compatible key
+saved without an API base URL, the extractor keeps the key and shows the
+missing setting as **Not set**. Edit it to enter the model and, for
+OpenAI-compatible, the API base URL before running it. Delete the extractor
+if you no longer need that key. Projects whose last run used the
 same provider and model as one of these extractors select it automatically;
 others ask you to choose one.
 

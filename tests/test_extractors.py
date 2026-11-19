@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -253,6 +254,48 @@ class ExtractorMigrationTests(ExtractorTestCase):
     def test_unusable_old_settings_are_skipped(self):
         self.write_legacy({"default_gemini_model": "gemini-x", "openai_base_url": "ftp://not-allowed"})
         self.assertEqual([item.name for item in ex.load_extractors()], ["Gemini"])
+
+    def test_default_only_gemini_settings_create_no_extractor(self):
+        self.write_legacy({"default_gemini_model": "gemini-3.6-flash", "service_tier": "flex", "parallel_requests": 4})
+        self.assertEqual(ex.load_extractors(), [])
+
+    def test_a_non_default_gemini_setting_creates_an_extractor(self):
+        self.write_legacy({"default_gemini_model": "gemini-3.6-flash", "service_tier": "priority"})
+        (gemini,) = ex.load_extractors()
+        self.assertEqual((gemini.model, gemini.service_tier, gemini.key_saved), ("gemini-3.6-flash", "priority", False))
+
+    def test_an_endpoint_key_without_a_base_url_keeps_an_extractor_that_asks_for_one(self):
+        from auto_zcurve.config import AppSettings
+
+        self.write_legacy({"openai_response_format": "none"}, {"openai_compatible_saved_api_key_configured": True})
+        with patch("auto_zcurve.credentials._keyring_module", side_effect=AssertionError("keychain read")):
+            (local,) = ex.load_extractors()
+        self.assertEqual((local.provider, local.base_url, local.response_format), ("openai_compatible", "", "none"))
+        self.assertTrue(local.key_saved)
+        self.assertIn(("API base URL", "Not set"), local.summary())
+        self.assertEqual(ex.legacy_claims(), {local.id: "openai_compatible_api_key"})
+        with self.assertRaisesRegex(ex.ExtractorError, "API base URL"):
+            ex.run_settings_for(replace(local, model="q"), AppSettings())
+        with self.assertRaisesRegex(ex.ExtractorError, "API base URL"):
+            ex.update_extractor(local.id, {**local.snapshot(), "model": "q"})
+        fixed = ex.update_extractor(local.id, {**local.snapshot(), "model": "q", "base_url": "http://h/v1"})
+        self.assertEqual(ex.run_settings_for(fixed, AppSettings()).base_url, "http://h/v1")
+        self.assertEqual(ex.legacy_claims(), {local.id: "openai_compatible_api_key"})
+
+    def test_a_saved_key_survives_unusable_old_settings(self):
+        self.write_legacy({"openai_base_url": "ftp://not-allowed"}, {"openai_compatible_saved_api_key_configured": True})
+        (local,) = ex.load_extractors()
+        self.assertEqual((local.base_url, local.response_format), ("", "json_schema"))
+        self.assertEqual(ex.legacy_claims(), {local.id: "openai_compatible_api_key"})
+
+    def test_migration_is_safe_to_rerun(self):
+        preferences = {"openai_compatible_saved_api_key_configured": True}
+        self.write_legacy({"default_gemini_model": "gemini-3.6-flash"}, preferences)
+        migrated = ex.load_extractors()
+        # An interrupted cleanup leaves old files behind; they are not migrated again.
+        self.write_legacy({"default_gemini_model": "gemini-x"}, preferences)
+        self.assertEqual(ex.load_extractors(), migrated)
+        self.assertEqual([item.provider for item in migrated], ["openai_compatible"])
 
     def test_fresh_install_has_no_extractors(self):
         self.assertEqual(ex.load_extractors(), [])
