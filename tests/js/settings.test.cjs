@@ -252,6 +252,33 @@ test('a new extractor loads model suggestions on request with the typed key', as
   } finally { page.close(); }
 });
 
+test('a model list that arrives after the provider changed is ignored', async () => {
+  const pending = [];
+  const page = mount(extractorPage, { fetch: () => new Promise(resolve => pending.push(resolve)) });
+  try {
+    const load = page.document.querySelector('[data-load-models]');
+    const hint = page.document.querySelector('[data-model-hint]');
+    const options = () => page.document.querySelectorAll('#extractor-model-options option').length;
+    page.document.querySelector('[data-new-extractor]').click();
+    field(page, 'api_key').value = 'typed-key';
+    load.click();
+    assert.equal(load.disabled, true);
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.disabled, false);
+    const openrouterHint = hint.textContent;
+    pending[0](json([{ id: 'gemini-x', name: 'Gemini X' }])); await flush();
+    assert.equal(options(), 0);
+    assert.equal(hint.textContent, openrouterHint);
+    // A stale failure is ignored too, including after the dialog is reopened.
+    load.click();
+    page.document.querySelector('[data-new-extractor]').click();
+    pending[1](json({ detail: 'Offline' }, false)); await flush();
+    assert.doesNotMatch(hint.textContent, /Offline/);
+    assert.equal(load.disabled, false);
+  } finally { page.close(); }
+});
+
 test('choosing an OpenRouter model lists the providers serving it', async () => {
   for (const [response, ok, expected] of [
     [[{ tag: 'a/b', name: 'A' }, { tag: 'c', name: 'C' }], true, /2 providers serve/],

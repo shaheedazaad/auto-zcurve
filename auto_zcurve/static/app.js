@@ -168,9 +168,14 @@
         openai_compatible: "The exact model ID your server serves.",
       };
       let editing = null;
+      // Only the latest model-list request may update the suggestions, so a slow
+      // answer for an earlier provider or extractor can't overwrite them.
+      let modelRequest = 0;
 
       const showProviderFields = () => {
         const provider = providerField.value;
+        modelRequest += 1;
+        loadModels.disabled = false;
         extractorForm.querySelectorAll("[data-provider-fields]").forEach((group) => {
           const active = group.dataset.providerFields === provider;
           group.hidden = !active;
@@ -230,6 +235,7 @@
          saved key; otherwise the key typed into the form is sent for this one
          request and never stored (OpenRouter's catalog also loads without one). */
       loadModels.addEventListener("click", async () => {
+        const request = ++modelRequest;
         loadModels.disabled = true;
         modelHint.textContent = "Loading models…";
         try {
@@ -243,15 +249,16 @@
             response = await fetch(`/${token}/api/models`, { method: "POST", body: data, cache: "no-store" });
           }
           const payload = await response.json().catch(() => ({}));
+          if (request !== modelRequest) return;
           if (!response.ok) throw new Error(payload.detail || "Models could not be loaded.");
           modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
           modelHint.textContent = payload.length
             ? `${payload.length} model${payload.length === 1 ? "" : "s"} available. Start typing to filter.`
             : "The provider returned no models for this key.";
         } catch (error) {
-          modelHint.textContent = error.message;
+          if (request === modelRequest) modelHint.textContent = error.message;
         } finally {
-          loadModels.disabled = false;
+          if (request === modelRequest) loadModels.disabled = false;
         }
       });
 
