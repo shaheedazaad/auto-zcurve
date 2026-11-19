@@ -50,9 +50,9 @@ from .extractors import (
     get_extractor,
     legacy_claims,
     load_extractors,
+    prepare_run,
     project_extractor,
     record_legacy_adoption,
-    run_settings_for,
     set_key_saved,
     update_extractor,
 )
@@ -246,14 +246,14 @@ class WebRuntime:
 
     def has_key(self, extractor: Extractor) -> bool:
         """Whether a key is saved or held for this session, without opening the credential store."""
-        return extractor.key_saved or bool(extractor.legacy_credential) or self.vault.cached(extractor.id) is not None
+        return extractor.has_saved_key or self.vault.cached(extractor.id) is not None
 
     def key_for(self, extractor: Extractor) -> str | None:
         """Blocking: may open the credential store once. Call via a threadpool from async routes."""
         cached = self.vault.cached(extractor.id)
         if cached is not None:
             return cached
-        if not (extractor.key_saved or extractor.legacy_credential):
+        if not extractor.has_saved_key:
             return None
         return self.vault.get(extractor.id)
 
@@ -575,7 +575,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         def create() -> dict:
             created = create_extractor(values, check=lambda item: check_model(item, api_key) if api_key else None)
             warning = _save_key(created, api_key) if api_key else None
-            if not api_key and created.provider != "openai_compatible":
+            if not api_key and created.requires_key:
                 warning = "Saved without a key. Add one before running; the model will be checked when it runs."
             return _extractor_response(created.id, warning)
 
@@ -590,7 +590,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         warnings: list[str] = []
 
         def check(current: Extractor, updated: Extractor) -> None:
-            if updated.model == current.model or updated.provider == "openai_compatible":
+            if updated.model == current.model or not updated.requires_key:
                 return
             try:
                 key = runtime.key_for(current)
@@ -610,7 +610,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     @app.post(f"/{token}/extractors/{{extractor_id}}/duplicate")
     async def copy_extractor(extractor_id: str):
         try:
-            copy = duplicate_extractor(extractor_id)
+            copy = await asyncio.to_thread(duplicate_extractor, extractor_id)
         except ExtractorError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return _extractor_response(copy.id)
@@ -618,7 +618,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
     async def remove_extractor(extractor_id: str):
         try:
-            removed = delete_extractor(extractor_id)
+            removed = await asyncio.to_thread(delete_extractor, extractor_id)
         except ExtractorError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         warning = None
@@ -627,15 +627,18 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 await asyncio.to_thread(runtime.vault.delete, removed.id)
             except VaultUnavailable as exc:
                 warning = f"The extractor was deleted, but its saved key could not be removed. {exc}"
-        affected = [
-            item.name for item in list_projects(root=projects_root)
-            if load_selected_extractor_id(item.path) == removed.id
-        ]
-        return {"deleted": True, "projects": affected, "warning": warning}
+
+        def affected_projects() -> list[str]:
+            return [
+                item.name for item in list_projects(root=projects_root)
+                if load_selected_extractor_id(item.path) == removed.id
+            ]
+
+        return {"deleted": True, "projects": await asyncio.to_thread(affected_projects), "warning": warning}
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/key")
     async def replace_extractor_key(extractor_id: str, api_key: str = Form(...)):
-        extractor = get_extractor(extractor_id)
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
         if extractor is None:
             raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         if not api_key.strip():
@@ -886,27 +889,12 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     async def _prepare_run(project: ManagedProject, extractor_id: str | None) -> tuple[RunSettings, str | None]:
         """The settings and key for a run or retry with the chosen extractor."""
+        chosen = None
         if extractor_id:
-            extractor = get_extractor(extractor_id)
-            if extractor is None:
+            chosen = get_extractor(extractor_id)
+            if chosen is None:
                 raise ValueError("That extractor no longer exists. Choose another.")
-            save_selected_extractor_id(project.path, extractor.id)
-        else:
-            chosen = project_extractor(project.path)
-            if chosen.extractor is None:
-                raise ValueError(
-                    "The extractor used for this project was deleted. Choose another."
-                    if chosen.deleted else "Choose an extractor for this project before running."
-                )
-            extractor = chosen.extractor
-        settings = run_settings_for(extractor, load_app_settings())
-        try:
-            key = await asyncio.to_thread(runtime.key_for, extractor)
-        except VaultUnavailable as exc:
-            raise ValueError(str(exc)) from exc
-        if extractor.requires_key and not key:
-            raise ValueError(f"Add an API key for the “{extractor.name}” extractor in Settings before running.")
-        return settings, key
+        return await asyncio.to_thread(prepare_run, project.path, chosen, runtime.key_for)
 
     @app.post(f"/{token}/projects/{{project_id}}/run")
     async def start_run(project_id: str, extractor_id: Optional[str] = Form(None)):

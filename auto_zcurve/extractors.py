@@ -88,6 +88,11 @@ class Extractor:
     def requires_key(self) -> bool:
         return self.provider != "openai_compatible"
 
+    @property
+    def has_saved_key(self) -> bool:
+        """Whether the key vault holds a key for this extractor (or will, once its old key moves)."""
+        return self.key_saved or bool(self.legacy_credential)
+
     def applicable_fields(self) -> tuple[str, ...]:
         return COMMON_FIELDS + PROVIDER_FIELDS[self.provider]
 
@@ -500,3 +505,36 @@ def project_extractor(project_dir: Path) -> ProjectExtractor:
     if match is not None:
         save_selected_extractor_id(project_dir, match.id)
     return ProjectExtractor(match)
+
+
+def _refuse_unchosen(current: ProjectExtractor) -> Extractor:
+    raise RuntimeError(
+        "The extractor used for this project was deleted. Choose another."
+        if current.deleted else "Choose an extractor for this project before running."
+    )
+
+
+def prepare_run(
+    project_dir: Path,
+    chosen: Extractor | None,
+    read_key: Callable[[Extractor], str | None],
+    *,
+    fallback: Callable[[ProjectExtractor], Extractor] = _refuse_unchosen,
+) -> tuple[RunSettings, str | None]:
+    """The settings and key for a run or retry.
+
+    Uses `chosen` if given, else the project's extractor, else whatever
+    `fallback` returns (by default it refuses); the result is saved as the
+    project's extractor. `read_key` reads the extractor's key and may block.
+    A run that needs a key and has none is refused with RuntimeError.
+    """
+    extractor = chosen
+    if extractor is None:
+        current = project_extractor(project_dir)
+        extractor = current.extractor or fallback(current)
+    save_selected_extractor_id(project_dir, extractor.id)
+    settings = run_settings_for(extractor, load_app_settings())
+    key = read_key(extractor)
+    if extractor.requires_key and not key:
+        raise RuntimeError(f"Add an API key for the “{extractor.name}” extractor in Settings before running.")
+    return settings, key

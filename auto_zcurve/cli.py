@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from .artifacts import load_extractions
-from .config import RunSettings, load_app_settings, save_selected_extractor_id
+from .config import RunSettings
 from .console import CliConsole
 from .credentials import KeyVault, VaultUnavailable
 from .extractors import (
@@ -13,9 +13,8 @@ from .extractors import (
     find_extractor_by_name,
     legacy_claims,
     load_extractors,
-    project_extractor,
+    prepare_run,
     record_legacy_adoption,
-    run_settings_for,
 )
 from .preflight import PreflightError, run_preflight
 from .runner import ensure_project_layout, retry_project, run_project
@@ -61,40 +60,35 @@ def prompt_extractor(console: CliConsole) -> Extractor | None:
     return extractors[int(answer) - 1] if answer.isdigit() and 0 < int(answer) <= len(extractors) else None
 
 
-def choose_extractor(name: str | None, project_dir: Path, interactive: bool, console: CliConsole) -> Extractor:
-    """The extractor to run with: named with --extractor, else the project's, else asked for."""
-    if name:
-        extractor = find_extractor_by_name(name)
-        if extractor is None:
-            raise RuntimeError(f"No extractor is called “{name}”. Available extractors: {_extractor_names()}.")
-    else:
-        extractor = project_extractor(project_dir).extractor
-        if extractor is None and interactive:
-            extractor = prompt_extractor(console)
-        if extractor is None:
-            if not load_extractors():
-                raise RuntimeError(
-                    "No extractors exist yet. Create one in the browser app (run `auto-zcurve`) under Settings."
-                )
-            raise RuntimeError(f"Choose an extractor with --extractor NAME. Available extractors: {_extractor_names()}.")
-    save_selected_extractor_id(project_dir, extractor.id)
+def named_extractor(name: str | None) -> Extractor | None:
+    """The extractor named with --extractor, if any."""
+    if not name:
+        return None
+    extractor = find_extractor_by_name(name)
+    if extractor is None:
+        raise RuntimeError(f"No extractor is called “{name}”. Available extractors: {_extractor_names()}.")
     return extractor
 
 
+def ask_for_extractor(interactive: bool, console: CliConsole) -> Extractor:
+    """For a project without an extractor: ask which to use, or explain how to choose."""
+    extractor = prompt_extractor(console) if interactive else None
+    if extractor is not None:
+        return extractor
+    if not load_extractors():
+        raise RuntimeError("No extractors exist yet. Create one in the browser app (run `auto-zcurve`) under Settings.")
+    raise RuntimeError(f"Choose an extractor with --extractor NAME. Available extractors: {_extractor_names()}.")
+
+
 def extractor_key(extractor: Extractor) -> str:
-    """The extractor's saved API key; "" for a keyless OpenAI-compatible server."""
-    key = None
-    if extractor.key_saved or extractor.legacy_credential:
-        vault = KeyVault(legacy_claims=legacy_claims, on_legacy_adopted=record_legacy_adoption)
-        try:
-            key = vault.get(extractor.id)
-        except VaultUnavailable as exc:
-            raise RuntimeError(str(exc)) from exc
-    if extractor.requires_key and not key:
-        raise RuntimeError(
-            f"The “{extractor.name}” extractor has no API key. Add one in the browser app under Settings."
-        )
-    return key or ""
+    """The extractor's saved API key; "" when none is saved."""
+    if not extractor.has_saved_key:
+        return ""
+    vault = KeyVault(legacy_claims=legacy_claims, on_legacy_adopted=record_legacy_adoption)
+    try:
+        return vault.get(extractor.id) or ""
+    except VaultUnavailable as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def list_extractors_command(console: CliConsole) -> int:
@@ -107,7 +101,7 @@ def list_extractors_command(console: CliConsole) -> int:
         ["Name", "Provider", "Model", "API key"],
         [
             (item.name, item.provider_label, item.model or "not set",
-             "saved" if item.key_saved or item.legacy_credential else ("not set" if item.requires_key else "not set (optional)"))
+             "saved" if item.has_saved_key else ("not set" if item.requires_key else "not set (optional)"))
             for item in extractors
         ],
     )
@@ -148,8 +142,13 @@ def _run_inputs(
     interactive: bool,
     console: CliConsole,
 ) -> tuple[RunSettings, str]:
-    extractor = choose_extractor(args.extractor, project_dir, interactive, console)
-    return run_settings_for(extractor, load_app_settings()), extractor_key(extractor)
+    settings, key = prepare_run(
+        project_dir,
+        named_extractor(args.extractor),
+        extractor_key,
+        fallback=lambda _current: ask_for_extractor(interactive, console),
+    )
+    return settings, key or ""
 
 
 def guided(console: CliConsole) -> int:
