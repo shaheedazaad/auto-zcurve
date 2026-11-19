@@ -106,6 +106,18 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}, clear=False):
             save_app_settings(AppSettings(retry_extractor_change="sometimes"))
             self.assertEqual(load_app_settings().retry_extractor_change, "rerun_all")
+            save_app_settings(AppSettings(retry_extractor_change=" Keep_Results "))
+            self.assertEqual(load_app_settings().retry_extractor_change, "keep_results")
+
+    def test_an_unreadable_last_run_counts_as_no_previous_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            path = project / ".auto_zcurve" / "run_settings.json"
+            path.parent.mkdir()
+            for contents in ("{broken", "[]"):
+                with self.subTest(contents=contents):
+                    path.write_text(contents, encoding="utf-8")
+                    self.assertIsNone(load_run_settings(project))
 
 
 if __name__ == "__main__":

@@ -593,10 +593,7 @@ def project_extractor(project_dir: Path) -> ProjectExtractor:
     chosen = load_selected_extractor_id(project_dir)
     if chosen:
         return ProjectExtractor(by_id.get(chosen), deleted=chosen not in by_id)
-    try:
-        previous = load_run_settings(project_dir)
-    except (OSError, TypeError, ValueError):
-        previous = None
+    previous = load_run_settings(project_dir)
     if previous is None:
         return ProjectExtractor(None)
     if previous.extractor_id:

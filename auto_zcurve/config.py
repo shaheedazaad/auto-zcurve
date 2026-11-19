@@ -23,7 +23,7 @@ RETRY_EXTRACTOR_CHANGE_LABELS = {
 
 
 def normalize_retry_extractor_change(value: object) -> str:
-    choice = str(value or "rerun_all").strip()
+    choice = str(value or "rerun_all").strip().lower()
     return choice if choice in RETRY_EXTRACTOR_CHANGE_LABELS else "rerun_all"
 
 
@@ -239,14 +239,21 @@ def load_run_settings(project_dir: Path) -> RunSettings | None:
     """Read the settings of the project's last run or retry.
 
     Current files hold an extractor snapshot; files from before extractors
-    hold flat provider and model fields and are still read.
+    hold flat provider and model fields and are still read. An unreadable or
+    corrupt file counts as no previous run, so the next run or retry can
+    replace it.
     """
     path = settings_path(project_dir)
     if not path.exists():
         return None
 
-    with path.open("r", encoding="utf-8") as handle:
-        raw = json.load(handle)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
 
     snapshot = raw.get("extractor") if isinstance(raw.get("extractor"), dict) else None
     source = snapshot if snapshot is not None else raw
