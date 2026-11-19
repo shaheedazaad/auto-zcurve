@@ -318,7 +318,10 @@ class OpenRouterTests(unittest.TestCase):
                         max_output_tokens=limit,
                     )
                 payload = request.call_args.kwargs["payload"]
-                self.assertEqual(payload.get("max_tokens"), limit)
+                if limit is None:
+                    self.assertNotIn("max_tokens", payload)
+                else:
+                    self.assertEqual(payload["max_tokens"], limit)
 
     def test_extract_pdf_uses_cloudflare_parser_for_deepseek_by_default_mode(self):
         config = parse_extraction_schema(

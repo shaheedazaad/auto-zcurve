@@ -184,6 +184,8 @@ def _default_output_limit(endpoint: dict[str, Any]) -> int | None:
         context_length = 0
     if limit > 0 and context_length > 0:
         limit = min(limit, context_length - input_token_reserve(context_length))
+    # An endpoint too small to hold both the article and any output can't serve
+    # these requests, so it doesn't count towards the lowest limit.
     return limit if limit > 0 else None
 
 

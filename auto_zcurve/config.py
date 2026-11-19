@@ -102,7 +102,7 @@ class RunSettings:
     base_url: str = ""
     response_format: str = "json_schema"
     context_length: int | None = None
-    # None uses the provider's own limit (for OpenRouter, the endpoints' maximum).
+    # None uses the provider's own limit (for OpenRouter, the lowest endpoint limit; see endpoint_output_limit).
     max_output_tokens: int | None = None
     extractor_id: str = ""
     # Every non-secret setting of the extractor when the run started.

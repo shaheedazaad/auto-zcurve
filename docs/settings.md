@@ -59,14 +59,19 @@ When **Maximum output** is empty:
   starts. If **Route to provider** is set, that provider's limit is used,
   since OpenRouter tries it first. Otherwise, or if that provider states no
   limit for the model, the lowest limit among the providers serving the model
-  with structured output is used. Either way, the limit leaves room in the model's
-  context for the article (a quarter of the context, at least 32,768 tokens).
+  with structured output is used. Where a provider states its context length,
+  the limit leaves room in it for the article (a quarter of the context, at
+  least 32,768 tokens); a provider whose context is too small for that is left
+  out. If the lookup fails, the run warns and sends no limit, so OpenRouter's
+  default applies.
 - **OpenAI-compatible** servers use their own default.
 
 An article with many effects can need a lot of output. If articles come back
 with `finish reason: MAX_TOKENS` or `length` (see
 [Needs review](results.md#needs-review)), raise the maximum output, lower the
 reasoning effort, or route OpenRouter to a provider with a higher limit.
+Changing the maximum output doesn't make **Run analysis** re-extract articles;
+use **Retry** for the ones that need review.
 
 ### Gemini
 

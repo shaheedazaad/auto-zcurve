@@ -468,7 +468,7 @@ def _model_option(
             openrouter_provider=settings.openrouter_provider,
             timeout_sec=timeout_sec,
         )
-    except RuntimeError as exc:
+    except Exception as exc:  # A failed lookup must not stop the run; any network error will do.
         max_output_tokens = None
         console.warn(
             f"Couldn't look up the endpoints' maximum output ({redact_secrets(exc, [api_key])}); "

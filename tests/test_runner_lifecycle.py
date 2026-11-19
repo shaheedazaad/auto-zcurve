@@ -130,7 +130,7 @@ class RunnerLifecycleTests(unittest.TestCase):
 
     def test_an_unreadable_endpoint_list_sends_no_output_limit_and_warns(self):
         settings = RunSettings(primary_model='test', provider='openrouter', request_delay_sec=0)
-        self.resolve_limit.side_effect = RuntimeError('OpenRouter request failed: secret leaked')
+        self.resolve_limit.side_effect = ConnectionResetError('connection to secret reset')
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
         with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction) as extract:
             self.retry(settings=settings)
