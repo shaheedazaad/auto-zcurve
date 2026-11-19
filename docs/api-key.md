@@ -36,17 +36,20 @@ or an available Linux secret service. The app never writes keys to its
 settings files, project folders, logs, or results downloads, and never sends
 them to the browser page.
 
-That item is opened at most once per app session, the first time a key is
-needed: when you run or retry a project, save an extractor with a key, or ask
-for its model list. Starting the app, opening Settings, or opening a project
-never reads it. Your computer may ask for permission when it is opened.
+That item is first opened when a key is needed: when you run or retry a
+project, save or remove an extractor's key, or ask for its model list. Once it
+has been read, it isn't opened again that app session; if it couldn't be read,
+for example because you denied access, the app asks again the next time a key
+is needed. Starting the app, opening Settings, or opening a project never
+reads it. Your computer may ask for permission when it is opened.
 
 If no usable credential store is available, keys are kept in memory for the
 current app session only, and Settings says so.
 
-If saved keys can't be read, for example because access was denied, the
-action that needed a key stops with a message. The app never replaces saved
-keys it couldn't read, so other extractors' keys are not lost.
+If saved keys can't be read, for example because access was denied, actions
+that require a saved key to proceed stop with a message. Editing a model
+still saves, and the model is checked when it runs. The app never replaces
+saved keys it couldn't read, so other extractors' keys are not lost.
 
 !!! note "macOS Keychain prompt"
     The prompt may identify the bundled runtime as “Python” rather than

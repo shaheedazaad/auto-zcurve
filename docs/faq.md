@@ -96,15 +96,17 @@ This is expected — auto-zcurve's bundled runtime is Python underneath, and
 macOS sometimes surfaces that name (occasionally with a version number)
 instead of "auto-zcurve" in the authorization prompt. Approving it lets
 auto-zcurve read the keys you've stored in your Keychain. All extractors'
-keys share one Keychain item, so you are asked at most once per session.
+keys share one Keychain item, so you are asked once per session, or again
+if you denied access the first time.
 
 ## How do I use a different model?
 
 Edit the project's extractor in **Settings** and enter any model ID the
 provider offers, or create a new extractor and choose it on the project's
-**Run analysis** tab. **Show available models** lists the provider's current
-models, using the extractor's saved key or the key typed into the form
-(OpenRouter's list needs no key).
+**Run analysis** tab. For Gemini and OpenRouter, **Show available models**
+lists the provider's current models, using the extractor's saved key or the
+key typed into the form (OpenRouter's list needs no key). OpenAI-compatible
+endpoints have no list; enter the model ID your server serves.
 
 ## Where are my projects actually stored?
 

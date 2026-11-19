@@ -22,7 +22,7 @@ auto-zcurve retry /path/to/project --yes
 Runs use an extractor created in the browser app under **Settings**. The
 extractor sets the provider, model, API key, and request settings;
 `auto-zcurve extractors` lists them. Without `--extractor`, a project uses
-the extractor it ran with last. API keys come only from the extractor's saved
+the extractor chosen for it in the browser app or used by its last run. API keys come only from the extractor's saved
 key, never from environment variables or `.env` files.
 
 Common options include:
