@@ -95,32 +95,39 @@ class WebValidationTests(unittest.TestCase):
     def test_typed_key_model_suggestions_never_store_or_echo_the_key(self):
         key = 'typed-secret-key-123'
         url = '/token/api/models'
-        self.assertEqual(self.client.post(url, data={'provider': 'bad', 'api_key': key}).status_code, 400)
-        response = self.client.post(url, data={'provider': 'gemini'})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Enter an API key', response.json()['detail'])
-        self.assertEqual(self.client.post(url, data={'provider': 'openai_compatible', 'api_key': key}).json(), [])
-        with patch.object(w, 'list_live_models', return_value=[ModelOption('v/m', 'V M')]) as live:
-            self.assertEqual(self.client.post(url, data={'provider': 'openrouter'}).json(), [{'id': 'v/m', 'name': 'V M'}])
-        live.assert_called_once_with('', 'openrouter')
-        with patch.object(w, 'list_live_models', return_value=[ModelOption('g', 'G')]) as live:
-            response = self.client.post(url, data={'provider': 'gemini', 'api_key': f' {key} '})
-        live.assert_called_once_with(key, 'gemini')
-        self.assertNotIn(key, response.text)
-        for error in [RuntimeError(f'rejected key {key}'), ValueError(key), Exception(f'https://x/?key={key}')]:
-            with self.subTest(error=type(error).__name__), patch.object(w, 'list_live_models', side_effect=error):
-                response = self.client.post(url, data={'provider': 'gemini', 'api_key': key})
-                self.assertEqual(response.status_code, 503)
-                self.assertNotIn(key, response.text)
-                self.assertIn('[redacted]', response.json()['detail'])
-        with patch.object(w, 'list_live_models', side_effect=Exception(key)):
-            self.assertEqual(self.client.post(url, data={'provider': 'gemini', 'api_key': key}).json()['detail'], '[redacted]')
-        with patch.object(w, 'list_live_models', side_effect=Exception()):
-            self.assertEqual(self.client.post(url, data={'provider': 'gemini', 'api_key': key}).json()['detail'], 'Models could not be loaded.')
-        with patch.object(credentials, '_keyring_module', return_value=FakeKeyring()) as keyring:
+        keyring = FakeKeyring()
+        # Every request below runs with a credential store that records each use.
+        with patch.object(credentials, '_keyring_module', return_value=keyring) as store:
+            response = self.client.post(url, data={'provider': 'bad', 'api_key': key})
+            self.assertEqual(response.status_code, 400)
+            self.assertNotIn(key, response.text)
+            response = self.client.post(url, data={'provider': 'gemini'})
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('Enter an API key', response.json()['detail'])
+            self.assertEqual(self.client.post(url, data={'provider': 'openai_compatible', 'api_key': key}).json(), [])
+            with patch.object(w, 'list_live_models', return_value=[ModelOption('v/m', 'V M')]) as live:
+                self.assertEqual(self.client.post(url, data={'provider': 'openrouter'}).json(), [{'id': 'v/m', 'name': 'V M'}])
+            live.assert_called_once_with('', 'openrouter')
+            with patch.object(w, 'list_live_models', return_value=[ModelOption('g', 'G')]) as live:
+                response = self.client.post(url, data={'provider': 'gemini', 'api_key': f' {key} '})
+            live.assert_called_once_with(key, 'gemini')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), [{'id': 'g', 'name': 'G'}])
+            self.assertNotIn(key, response.text)
+            for error in [RuntimeError(f'rejected key {key}'), ValueError(key), Exception(f'https://x/?key={key}')]:
+                with self.subTest(error=type(error).__name__), patch.object(w, 'list_live_models', side_effect=error):
+                    response = self.client.post(url, data={'provider': 'gemini', 'api_key': key})
+                    self.assertEqual(response.status_code, 503)
+                    self.assertNotIn(key, response.text)
+                    self.assertIn('[redacted]', response.json()['detail'])
+            with patch.object(w, 'list_live_models', side_effect=Exception(key)):
+                self.assertEqual(self.client.post(url, data={'provider': 'gemini', 'api_key': key}).json()['detail'], '[redacted]')
+            with patch.object(w, 'list_live_models', side_effect=Exception()):
+                self.assertEqual(self.client.post(url, data={'provider': 'gemini', 'api_key': key}).json()['detail'], 'Models could not be loaded.')
             with patch.object(w, 'list_live_models', return_value=[]):
-                self.client.post(url, data={'provider': 'gemini', 'api_key': key})
-        keyring.assert_not_called()
+                self.assertEqual(self.client.post(url, data={'provider': 'gemini', 'api_key': key}).json(), [])
+        store.assert_not_called()
+        self.assertEqual((keyring.reads, keyring.writes, keyring.items), (0, 0, {}))
         config_dir = Path(self.tmp.name)
         for path in config_dir.rglob('*'):
             if path.is_file():
