@@ -112,6 +112,13 @@ the service tier (Gemini), or the API base URL or JSON output mode
 context length doesn't: it only decides whether an article is sent, and
 articles it stopped are recorded as failed, so **Retry** picks them up.
 
+**Retry** with a different extractor re-extracts only the failed and
+needs-review articles. By default the project keeps its last run's settings,
+so the next **Run analysis** re-runs every article with the new extractor and
+all results come from one setup. To keep the other articles' results instead,
+change **Retrying with a different extractor** under
+[Files and parsing](#files-and-parsing).
+
 Each run records the extractor it used, and a copy of its settings, in the
 project. Results and run logs name the extractor that produced each article,
 so editing or deleting an extractor later doesn't change what past results
@@ -125,6 +132,9 @@ These settings apply to every project:
 - **PDF parser**, how PDF content is prepared before it reaches the model. It
   does not change the OpenAI-compatible provider's local text input, and it
   does not apply to XML articles, which are always sent as text.
+- **Retrying with a different extractor**: **Re-run every article on the next
+  run** (the default) or **Keep other articles' results**. See
+  [Choosing an extractor for a project](#choosing-an-extractor-for-a-project).
 
 Click **Save settings** to save them.
 

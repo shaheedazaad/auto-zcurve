@@ -122,6 +122,16 @@
           </div>
         </div></fieldset>
 
+        <fieldset class="settings-group"><legend>Retries</legend>
+          <div class="field">
+            <label for="retry-extractor-change">Retrying with a different extractor</label>
+            <select class="select" id="retry-extractor-change" name="retry_extractor_change">
+              {% for value, label in retry_extractor_change_labels.items() %}<option value="{{ value }}" {% if app_settings.retry_extractor_change == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <p>When a retry uses an extractor whose model or settings differ from the project's last run. Re-running keeps every article's results from one setup; keeping results mixes them.</p>
+          </div>
+        </fieldset>
+
       </div>
       <div class="panel-foot">
         <p class="form-message u-sm" role="status"></p>

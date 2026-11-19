@@ -28,6 +28,7 @@ from .config import (
     DEFAULTS,
     PDF_PARSER_LABELS,
     REASONING_EFFORT_LABELS,
+    RETRY_EXTRACTOR_CHANGE_LABELS,
     SERVICE_TIER_LABELS,
     AppSettings,
     RunSettings,
@@ -534,6 +535,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 "is_macos": platform.system() == "Darwin",
                 "app_settings": load_app_settings(),
                 "pdf_parser_labels": PDF_PARSER_LABELS,
+                "retry_extractor_change_labels": RETRY_EXTRACTOR_CHANGE_LABELS,
                 "reasoning_effort_labels": REASONING_EFFORT_LABELS,
                 "service_tier_labels": SERVICE_TIER_LABELS,
                 "response_format_labels": RESPONSE_FORMAT_LABELS,
@@ -546,11 +548,18 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def update_settings(
         pdf_parser: str = Form(DEFAULTS["pdf_parser"]),
         max_upload_size_mb: int = Form(DEFAULTS["max_upload_size_mb"]),
+        retry_extractor_change: Optional[str] = Form(None),
     ):
         try:
             settings = AppSettings(
                 pdf_parser=normalize_pdf_parser(pdf_parser),
                 max_upload_size_mb=max(1, min(int(max_upload_size_mb), 512)),
+                # A form without the field keeps the saved choice.
+                retry_extractor_change=(
+                    retry_extractor_change
+                    if retry_extractor_change is not None
+                    else load_app_settings().retry_extractor_change
+                ),
             )
             save_app_settings(settings)
         except (OSError, TypeError, ValueError) as exc:

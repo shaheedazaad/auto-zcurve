@@ -195,6 +195,16 @@ class WebExtractorTests(unittest.TestCase):
                 self.assertNotIn(("auto-zcurve", item), self.keyring.items)
                 self.assertEqual(load_extractors()[-1].legacy_credential if action == "key/delete" else "", "")
 
+    def test_the_retry_choice_is_offered_saved_and_kept_when_omitted(self):
+        page = self.client.get(f"/{TOKEN}/settings").text
+        self.assertIn('<option value="rerun_all" selected>Re-run every article on the next run</option>', page)
+        saved = self.client.post(f"/{TOKEN}/settings", data={"pdf_parser": "native", "max_upload_size_mb": "64", "retry_extractor_change": "keep_results"}, headers=ORIGIN)
+        self.assertEqual(saved.status_code, 200)
+        self.assertIn('<option value="keep_results" selected>', self.client.get(f"/{TOKEN}/settings").text)
+        self.client.post(f"/{TOKEN}/settings", data={"pdf_parser": "native", "max_upload_size_mb": "32"}, headers=ORIGIN)
+        from auto_zcurve.config import load_app_settings
+        self.assertEqual((load_app_settings().max_upload_size_mb, load_app_settings().retry_extractor_change), (32, "keep_results"))
+
     def test_deleting_names_projects_that_use_the_extractor_before_confirming(self):
         doomed = self.create(name="Doomed", api_key="key-doomed")
         other = self.create(name="Other")

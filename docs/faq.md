@@ -112,8 +112,10 @@ endpoints have no list; enter the model ID your server serves.
 
 The file that holds your extractors is damaged or can't be opened, so the app
 stops rather than risk saving over it. The message names the file. Fix it, or
-move it somewhere else to start with no extractors; your saved API keys are
-kept separately and aren't affected.
+move it somewhere else. Without the file, the app starts with no extractors,
+unless settings or saved keys from a version before extractors are still
+there, in which case it recreates extractors from them as it does on upgrade.
+Your saved API keys are kept separately and aren't affected.
 
 ## Where are my projects actually stored?
 

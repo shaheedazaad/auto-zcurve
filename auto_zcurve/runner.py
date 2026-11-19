@@ -20,7 +20,7 @@ from .artifacts import (
     upsert_extraction,
     utc_now,
 )
-from .config import RunSettings, load_run_settings, save_run_settings
+from .config import RunSettings, load_app_settings, load_run_settings, save_run_settings
 from .console import CliConsole
 from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .models import ModelOption, resolve_input_mode, validate_model_option
@@ -407,35 +407,14 @@ def _process_paths(
         raise
 
 
-def run_project(
-    *,
-    project_dir: Path,
-    settings: RunSettings,
-    assume_yes: bool,
-    interactive: bool,
-    force: bool,
-    skip_report: bool,
-    console: CliConsole,
-    api_key: str,
-    cancellation_event: threading.Event | None = None,
-) -> RunSummary | None:
-    _raise_if_cancelled(cancellation_event)
-    if not ensure_project_layout(project_dir, assume_yes, interactive, console):
-        return None
-
-    sources = discover_sources(project_dir)
-    console.info(f"Discovered {len(sources)} article(s) in {project_dir / 'sources'}.")
-    if not sources:
-        console.warn("Add PDF or XML articles to sources/ before running extraction.")
-        return None
-
-    previous_settings = load_run_settings(project_dir)
+def extraction_settings_changed(previous_settings: RunSettings | None, settings: RunSettings) -> bool:
+    """Whether results from the previous run's settings would differ from these settings' results."""
     provider = normalize_provider(settings.provider)
     # Each provider-specific setting is compared only for the provider that uses it.
     # Endpoint, output mode and OpenRouter routing are recorded only in extractor
     # snapshots, so they are compared only when the previous run has one.
     snapshot = bool(previous_settings and previous_settings.extractor is not None)
-    provider_or_model_changed = bool(
+    return bool(
         previous_settings
         and (
             normalize_provider(previous_settings.provider) != provider
@@ -461,6 +440,31 @@ def run_project(
             )
         )
     )
+
+
+def run_project(
+    *,
+    project_dir: Path,
+    settings: RunSettings,
+    assume_yes: bool,
+    interactive: bool,
+    force: bool,
+    skip_report: bool,
+    console: CliConsole,
+    api_key: str,
+    cancellation_event: threading.Event | None = None,
+) -> RunSummary | None:
+    _raise_if_cancelled(cancellation_event)
+    if not ensure_project_layout(project_dir, assume_yes, interactive, console):
+        return None
+
+    sources = discover_sources(project_dir)
+    console.info(f"Discovered {len(sources)} article(s) in {project_dir / 'sources'}.")
+    if not sources:
+        console.warn("Add PDF or XML articles to sources/ before running extraction.")
+        return None
+
+    provider_or_model_changed = extraction_settings_changed(load_run_settings(project_dir), settings)
     existing = latest_by_source(load_extractions(project_dir))
     to_process = [
         path
@@ -546,7 +550,17 @@ def retry_project(
     console: CliConsole,
     api_key: str,
     cancellation_event: threading.Event | None = None,
+    rerun_all_after_change: bool | None = None,
 ) -> RunSummary | None:
+    """Re-extract failed and needs-review sources.
+
+    When the extractor's settings differ from the project's last run, by
+    default they are not recorded as the project's settings, so the next run
+    re-runs every article with them. With `rerun_all_after_change` False (the
+    app setting "Keep other articles' results"), they are recorded and the
+    next run keeps the other articles' existing results. None reads the app
+    setting.
+    """
     _raise_if_cancelled(cancellation_event)
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
@@ -574,7 +588,22 @@ def retry_project(
         input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
     )
     settings.primary_model = model_option.name
-    save_run_settings(project_dir, settings)
+    if rerun_all_after_change is None:
+        rerun_all_after_change = load_app_settings().retry_extractor_change == "rerun_all"
+    if extraction_settings_changed(load_run_settings(project_dir), settings):
+        if rerun_all_after_change:
+            console.info(
+                "This retry uses different extractor settings from the project's last run. "
+                "The next run will re-run every article with them."
+            )
+        else:
+            console.info(
+                "This retry uses different extractor settings from the project's last run. "
+                "Other articles keep their existing results."
+            )
+            save_run_settings(project_dir, settings)
+    else:
+        save_run_settings(project_dir, settings)
     run_id = str(uuid.uuid4())
     workers = max(1, min(settings.parallel_requests, len(paths)))
     worker_label = "worker" if workers == 1 else "workers"

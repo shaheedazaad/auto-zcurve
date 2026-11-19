@@ -15,6 +15,18 @@ PDF_PARSER_LABELS = {
     "cloudflare-ai": "Cloudflare AI",
     "native": "Model-native PDF",
 }
+# What a retry does when its extractor settings differ from the project's last run.
+RETRY_EXTRACTOR_CHANGE_LABELS = {
+    "rerun_all": "Re-run every article on the next run",
+    "keep_results": "Keep other articles' results",
+}
+
+
+def normalize_retry_extractor_change(value: object) -> str:
+    choice = str(value or "rerun_all").strip()
+    return choice if choice in RETRY_EXTRACTOR_CHANGE_LABELS else "rerun_all"
+
+
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 REASONING_EFFORT_LABELS = {
     "none": "Off",
@@ -69,6 +81,7 @@ class AppSettings:
 
     pdf_parser: str = DEFAULTS["pdf_parser"]
     max_upload_size_mb: int = DEFAULTS["max_upload_size_mb"]
+    retry_extractor_change: str = "rerun_all"
 
 
 @dataclass
@@ -134,6 +147,7 @@ def load_app_settings() -> AppSettings:
                 1,
                 min(int(raw.get("max_upload_size_mb") or DEFAULTS["max_upload_size_mb"]), 512),
             ),
+            retry_extractor_change=normalize_retry_extractor_change(raw.get("retry_extractor_change")),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return AppSettings()
@@ -143,6 +157,7 @@ def save_app_settings(settings: AppSettings) -> None:
     normalized = AppSettings(
         pdf_parser=normalize_pdf_parser(settings.pdf_parser),
         max_upload_size_mb=max(1, min(int(settings.max_upload_size_mb), 512)),
+        retry_extractor_change=normalize_retry_extractor_change(settings.retry_extractor_change),
     )
     path = app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,6 +168,7 @@ def save_app_settings(settings: AppSettings) -> None:
                 {
                     "pdf_parser": normalized.pdf_parser,
                     "max_upload_size_mb": normalized.max_upload_size_mb,
+                    "retry_extractor_change": normalized.retry_extractor_change,
                 },
                 indent=2,
             )

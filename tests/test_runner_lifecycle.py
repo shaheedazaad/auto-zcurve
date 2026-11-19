@@ -1,14 +1,15 @@
 import json
+import os
 import tempfile
 import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from auto_zcurve import runner as r
 from auto_zcurve.artifacts import save_extractions, load_extractions, load_run_log
-from auto_zcurve.config import RunSettings, save_run_settings
+from auto_zcurve.config import AppSettings, RunSettings, load_run_settings, save_app_settings, save_run_settings
 from auto_zcurve.models import ModelOption
 from auto_zcurve.llm import ExtractionResult
 
@@ -24,6 +25,10 @@ class RunnerLifecycleTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name)
+        # Retries read the app settings; keep them out of the real config directory.
+        config = patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.project / 'config')})
+        config.start()
+        self.addCleanup(config.stop)
         (self.project / 'sources').mkdir()
         (self.project / 'extraction_schema.yml').write_text('effects: {claim: {type: string}}')
         self.source = self.project / 'sources/a.pdf'
@@ -235,6 +240,34 @@ class RunnerLifecycleTests(unittest.TestCase):
             r._process_paths(paths=[self.source], workers=1, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=progress, cancellation_event=None)
         self.assertEqual(timed_out, [True])
         progress.advance.assert_called_once_with('ok: a.pdf')
+
+    def test_retry_with_changed_settings_reruns_everything_next_by_default(self):
+        save_run_settings(self.project, RunSettings(primary_model='old', request_delay_sec=0))
+        for setting, kwargs, recorded in [
+            (None, {}, 'old'),  # App default: re-run every article next time.
+            ('rerun_all', {}, 'old'),
+            ('keep_results', {}, 'test'),
+            ('keep_results', {'rerun_all_after_change': True}, 'old'),  # An explicit choice wins.
+        ]:
+            with self.subTest(setting=setting, kwargs=kwargs):
+                save_run_settings(self.project, RunSettings(primary_model='old', request_delay_sec=0))
+                if setting:
+                    save_app_settings(AppSettings(retry_extractor_change=setting))
+                save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
+                console = MagicMock()
+                with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths'):
+                    self.retry(console=console, **kwargs)
+                self.assertEqual(load_run_settings(self.project).primary_model, recorded)
+                message = ' '.join(str(call.args[0]) for call in console.info.call_args_list)
+                self.assertIn('re-run every article' if recorded == 'old' else 'keep their existing results', message)
+
+        # Unchanged settings are always recorded, and say nothing about a change.
+        save_run_settings(self.project, RunSettings(primary_model='test', request_delay_sec=0))
+        console = MagicMock()
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths'):
+            self.retry(console=console)
+        console.info.assert_not_called()
+        self.assertEqual(load_run_settings(self.project).primary_model, 'test')
 
     def test_retry_can_skip_report_after_processing(self):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])

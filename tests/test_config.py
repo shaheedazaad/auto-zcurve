@@ -94,13 +94,18 @@ class ConfigTests(unittest.TestCase):
     def test_app_settings_default_to_native_and_persist(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}, clear=False):
-                self.assertEqual(load_app_settings(), AppSettings(pdf_parser="native", max_upload_size_mb=128))
-                save_app_settings(AppSettings(pdf_parser="cloudflare-ai", max_upload_size_mb=64))
+                self.assertEqual(load_app_settings(), AppSettings(pdf_parser="native", max_upload_size_mb=128, retry_extractor_change="rerun_all"))
+                save_app_settings(AppSettings(pdf_parser="cloudflare-ai", max_upload_size_mb=64, retry_extractor_change="keep_results"))
                 loaded = load_app_settings()
                 stored = json.loads(Path(tmp, "auto-zcurve", "settings.json").read_text(encoding="utf-8"))
 
-        self.assertEqual(loaded, AppSettings(pdf_parser="cloudflare-ai", max_upload_size_mb=64))
-        self.assertEqual(stored, {"pdf_parser": "cloudflare-ai", "max_upload_size_mb": 64})
+        self.assertEqual(loaded, AppSettings(pdf_parser="cloudflare-ai", max_upload_size_mb=64, retry_extractor_change="keep_results"))
+        self.assertEqual(stored, {"pdf_parser": "cloudflare-ai", "max_upload_size_mb": 64, "retry_extractor_change": "keep_results"})
+
+    def test_an_unknown_retry_choice_falls_back_to_rerunning_everything(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}, clear=False):
+            save_app_settings(AppSettings(retry_extractor_change="sometimes"))
+            self.assertEqual(load_app_settings().retry_extractor_change, "rerun_all")
 
 
 if __name__ == "__main__":

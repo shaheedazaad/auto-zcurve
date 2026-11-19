@@ -297,7 +297,7 @@ class ExtractorMigrationTests(ExtractorTestCase):
 
         self.assertFalse((self.config_dir / "preferences.json").exists())
         remaining = json.loads((self.config_dir / "settings.json").read_text(encoding="utf-8"))
-        self.assertEqual(remaining, {"pdf_parser": "native", "max_upload_size_mb": 64})
+        self.assertEqual(remaining, {"pdf_parser": "native", "max_upload_size_mb": 64, "retry_extractor_change": "rerun_all"})
         self.assertEqual(ex.load_extractors(), migrated)
 
     def test_moved_keys_clear_the_migration_markers(self):
