@@ -7,6 +7,7 @@ from typing import Any
 
 from .llm import ExtractionResult
 from .schema import ExtractionSchema
+from .sources import XML_TEXT_INPUT_MODE, check_context_length, estimate_tokens, read_article_text, source_format
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def provider_definition(provider: str | None) -> ProviderDefinition:
     return PROVIDER_REGISTRY[normalize_provider(provider)]
 
 
-def extract_pdf(
+def extract_document(
     *,
     provider: str,
     source_path: Path,
@@ -79,9 +80,24 @@ def extract_pdf(
     openrouter_provider: str = "",
     openrouter_allow_fallbacks: bool = True,
 ) -> ExtractionResult:
+    """Extract one source of any source format with the selected provider.
+
+    An XML source is read here as article text and checked against the
+    model's known context length, so an oversized article fails before any
+    request is sent. Its text is never truncated.
+    """
     selected = normalize_provider(provider)
+    fmt = source_format(source_path) or "pdf"
+    article_text = None
+    estimated_input_tokens = None
+    if fmt == "xml":
+        if input_mode != XML_TEXT_INPUT_MODE:
+            raise ValueError(f"XML sources must be sent as article text, not with input mode {input_mode}.")
+        article_text = read_article_text(source_path)
+        estimated_input_tokens = estimate_tokens(article_text)
+        check_context_length(estimated_input_tokens, context_length)
     module = importlib.import_module(PROVIDER_REGISTRY[selected].adapter_module)
-    implementation = getattr(module, "extract_pdf")
+    implementation = getattr(module, "extract_document")
     kwargs = dict(
         source_path=source_path,
         source_name=source_name,
@@ -97,10 +113,15 @@ def extract_pdf(
         reasoning_effort=reasoning_effort,
         endpoint_order=endpoint_order,
     )
+    if article_text is not None:
+        kwargs["article_text"] = article_text
     if selected == "gemini":
         kwargs["service_tier"] = service_tier
         kwargs["cancellation_event"] = cancellation_event
     if selected == "openrouter":
         kwargs["preferred_provider"] = openrouter_provider
         kwargs["allow_fallbacks"] = openrouter_allow_fallbacks
-    return implementation(**kwargs)
+    result = implementation(**kwargs)
+    if estimated_input_tokens is not None and result.estimated_input_tokens is None:
+        result.estimated_input_tokens = estimated_input_tokens
+    return result

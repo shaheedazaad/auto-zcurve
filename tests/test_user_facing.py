@@ -9,7 +9,7 @@ from auto_zcurve.runner import RunSummary
 
 class ErrorPresentationTests(unittest.TestCase):
     def test_error_categories_preserve_detail_and_give_next_action(self):
-        cases = [('OPENROUTER_API_KEY required', 'OpenRouter API key missing'), ('OpenRouter API key missing', 'OpenRouter API key missing'), ('GEMINI_API_KEY required', 'Gemini API key missing'), ('OpenRouter 403', 'OpenRouter rejected the API key'), ('invalid api key', 'Gemini rejected the API key'), ('maximum size exceeded', 'PDF too large'), ('Missing system tools: Quarto', 'Quarto missing'), ('Missing R packages: zcurve', 'Missing dependency'), ('Quarto is not installed', 'Quarto missing'), ('report rendering failed', 'Report could not be created'), ('schema JSON required', 'Extraction schema problem'), ('OpenRouter request failed', 'OpenRouter request failed'), ('network timeout', 'Gemini request failed'), ('no usable statistics', 'No usable statistics found'), ('unexpected failure', 'Run failed')]
+        cases = [('OPENROUTER_API_KEY required', 'OpenRouter API key missing'), ('OpenRouter API key missing', 'OpenRouter API key missing'), ('GEMINI_API_KEY required', 'Gemini API key missing'), ('OpenRouter 403', 'OpenRouter rejected the API key'), ('invalid api key', 'Gemini rejected the API key'), ('maximum size exceeded', 'Article too large'), ('Missing system tools: Quarto', 'Quarto missing'), ('Missing R packages: zcurve', 'Missing dependency'), ('Quarto is not installed', 'Quarto missing'), ('report rendering failed', 'Report could not be created'), ('schema JSON required', 'Extraction schema problem'), ('OpenRouter request failed', 'OpenRouter request failed'), ('network timeout', 'Gemini request failed'), ('no usable statistics', 'No usable statistics found'), ('unexpected failure', 'Run failed')]
         for detail, title in cases:
             with self.subTest(detail=detail):
                 error = u.classify_error(RuntimeError(detail))
@@ -25,12 +25,12 @@ class ErrorPresentationTests(unittest.TestCase):
             summary.report_path = report
             result = u.format_run_result(summary, Path('/project'))
             self.assertEqual(result.splitlines()[0], 'Report: ' + expected)
-            self.assertIn('Successful PDFs: 2', result)
+            self.assertIn('Successful articles: 2', result)
             self.assertIn('Total tokens: 15', result)
 
     def test_error_classification_for_common_messages(self):
         self.assertEqual(u.classify_error("API key not valid").title, "Gemini rejected the API key")
-        self.assertEqual(u.classify_error("File exceeds max_upload_size_mb (20 MB).").title, "PDF too large")
+        self.assertEqual(u.classify_error("File exceeds max_upload_size_mb (20 MB).").title, "Article too large")
         self.assertEqual(u.classify_error("Quarto report rendering failed.").title, "Report could not be created")
         self.assertEqual(u.classify_error("Missing system tools: R, Quarto").title, "Quarto missing")
         self.assertEqual(u.classify_error("Missing R packages: renv").title, "Missing dependency")
@@ -54,7 +54,7 @@ class ErrorPresentationTests(unittest.TestCase):
             result = u.format_run_result(summary, project)
 
             self.assertIn("Report: output/report.html", result)
-            self.assertIn("Failed PDFs: 1", result)
+            self.assertIn("Failed articles: 1", result)
             self.assertIn("Input tokens: 1000", result)
 
     def test_format_run_result_omits_zcurve_summary(self):

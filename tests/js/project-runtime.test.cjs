@@ -7,7 +7,7 @@ test('run streams progress, shows slow-extraction warning, cancels, and handles 
   for (const status of ['complete', 'failed', 'cancelled']) {
     const h = projectMount('', { project }); t.after(h.close); await flush();
     h.select('openai_compatible'); await flush();
-    assert.match(h.document.querySelector('.js-run').textContent, /Continue processing 2 PDFs/);
+    assert.match(h.document.querySelector('.js-run').textContent, /Continue processing 2 articles/);
     await h.click('.js-run');
     assert.equal(h.calls.at(-1)[0], '/token/projects/project/run');
     assert.equal(h.calls.at(-1)[1].body.get('provider'), 'openai_compatible');

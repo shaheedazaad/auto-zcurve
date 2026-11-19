@@ -56,6 +56,10 @@ article content:
   the API base URL you configured. A local server can keep that request on
   your computer; a remote server receives the text.
 
+**XML articles** are sent the same way to every provider: the file's full
+text, exactly as uploaded, inside the request. No file is uploaded and no
+parser service is used.
+
 Article content may itself contain author names or other personal information.
 Provider credentials are sent for authentication. Projects and reports are
 stored on your computer; the app does not upload the entire project folder.

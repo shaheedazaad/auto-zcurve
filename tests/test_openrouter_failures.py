@@ -95,12 +95,12 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
 
     def test_unsupported_input_mode(self):
         with self.assertRaisesRegex(RuntimeError, 'Unsupported OpenRouter input mode'):
-            p.extract_pdf(**self.kwargs, input_mode='local_text')
+            p.extract_document(**self.kwargs, input_mode='local_text')
 
     def test_retryable_transport_failure_then_success(self):
         error = p._OpenRouterRequestError('busy', status_code=503, retry_after_sec=0.5, raw_response={'error': 'busy'})
         with patch.object(p, '_request_json', side_effect=[error, self.success()]):
-            result = p.extract_pdf(**self.kwargs)
+            result = p.extract_document(**self.kwargs)
         self.sleep.assert_called_once_with(0.5)
         self.assertEqual(result.model_used, 'actual/model')
         self.assertEqual(result.total_tokens, 7)
@@ -114,7 +114,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
                 engines.append(kwargs['payload']['plugins'][0]['pdf']['engine'])
                 raise errors[len(engines) - 1]
             with self.subTest(mode=mode), patch.object(p, '_request_json', side_effect=request), self.assertRaisesRegex(p._OpenRouterRequestError, 'bad') as caught:
-                p.extract_pdf(**self.kwargs, input_mode=mode)
+                p.extract_document(**self.kwargs, input_mode=mode)
             self.assertEqual(len(engines), attempts)
             self.assertEqual(caught.exception.provider_responses, [])
             if mode == 'cloudflare_pdf':
@@ -127,7 +127,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
                 engines.append(json.loads(request.data)['plugins'][0]['pdf']['engine'])
                 return io.BytesIO(body if len(engines) == 1 else json.dumps(self.success()).encode())
             with self.subTest(body=body), patch.object(p.urllib.request, 'urlopen', side_effect=urlopen):
-                result = p.extract_pdf(**self.kwargs, input_mode='cloudflare_pdf')
+                result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
             self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
             self.assertEqual(result.model_used, 'actual/model')
 
@@ -135,17 +135,17 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
         cases = [({'error': {'code': 503, 'message': 'busy'}}, 'generation failed'), ({'choices': [{'finish_reason': 'length'}], 'usage': {'completion_tokens': 10, 'completion_tokens_details': {'reasoning_tokens': 9}}}, 'reasoning tokens: 9'), ({'choices': [{'message': {'content': 'bad json'}}]}, 'invalid JSON'), ({'choices': [{'message': {'content': '{"effects":[{}]}'}}]}, 'Missing required field')]
         for response, message in cases:
             with self.subTest(message=message), patch.object(p, '_request_json', return_value=response) as request, self.assertRaisesRegex((ValueError, RuntimeError), message) as caught:
-                p.extract_pdf(**self.kwargs)
+                p.extract_document(**self.kwargs)
             self.assertEqual(request.call_count, 3)
             self.assertEqual(len(caught.exception.provider_responses), 3)
             with patch.object(p, '_request_json', side_effect=[response, self.success()]):
-                result = p.extract_pdf(**self.kwargs)
+                result = p.extract_document(**self.kwargs)
             self.assertEqual(result.status, 'ok')
             self.assertEqual(len(result.provider_responses), 2)
 
     def test_valid_json_is_ok_without_repair(self):
         with patch.object(p, '_request_json', return_value=self.success()) as request:
-            result = p.extract_pdf(**self.kwargs)
+            result = p.extract_document(**self.kwargs)
         request.assert_called_once()
         self.assertEqual((result.status, result.review_reasons), ('ok', ()))
         self.assertEqual(result.raw_response, '{"effects":[{"claim":"finding"}]}')
@@ -155,7 +155,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
         raw = '{"effects":[{"claim":"finding"}]'
         response = {'choices': [{'message': {'content': raw}, 'finish_reason': 'length'}]}
         with patch.object(p, '_request_json', return_value=response) as request:
-            result = p.extract_pdf(**self.kwargs)
+            result = p.extract_document(**self.kwargs)
         request.assert_called_once()
         self.sleep.assert_not_called()
         self.assertEqual(result.status, 'needs_review')
@@ -167,7 +167,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
     def test_unrepairable_json_retries_then_keeps_raw_response(self):
         bad = {'choices': [{'message': {'content': 'bad json'}}]}
         with patch.object(p, '_request_json', return_value=bad) as request, self.assertRaisesRegex(RuntimeError, 'OpenRouter returned invalid JSON') as caught:
-            p.extract_pdf(**self.kwargs)
+            p.extract_document(**self.kwargs)
         self.assertEqual(request.call_count, 3)
         self.assertEqual(caught.exception.raw_response, 'bad json')
         self.assertEqual(len(caught.exception.provider_responses), 3)
@@ -175,7 +175,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
     def test_repaired_json_that_fails_validation_is_retried(self):
         invalid = {'choices': [{'message': {'content': '{"effects":[{}]'}}]}
         with patch.object(p, '_request_json', side_effect=[invalid, self.success()]) as request:
-            result = p.extract_pdf(**self.kwargs)
+            result = p.extract_document(**self.kwargs)
         self.assertEqual(request.call_count, 2)
         self.assertEqual((result.status, result.review_reasons), ('ok', ()))
         self.assertIsNone(result.repaired_response)
@@ -186,6 +186,6 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
             self.assertEqual(actual, retryable)
             self.assertIn('generation failed', detail)
         with patch.object(p, '_request_json', return_value={'error': {'code': 401}}) as request, self.assertRaisesRegex(RuntimeError, 'generation failed'):
-            p.extract_pdf(**self.kwargs)
+            p.extract_document(**self.kwargs)
         request.assert_called_once()
         self.assertIn('unknown', p._empty_response_error({}))

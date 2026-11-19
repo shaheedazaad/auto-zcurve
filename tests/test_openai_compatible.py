@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from auto_zcurve.config import AppSettings, load_app_settings, save_app_settings
-from auto_zcurve.openai_compatible import ProviderError, _call, extract_pdf, normalize_base_url, pdf_text
+from auto_zcurve.openai_compatible import ProviderError, _call, extract_document, normalize_base_url, pdf_text
 from auto_zcurve.projects import create_project
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
 from auto_zcurve.web import create_app
@@ -69,14 +69,14 @@ class EndpointTests(unittest.TestCase):
         ), patch("auto_zcurve.openai_compatible._call", return_value=(
             '{"effects":[{"claim":"Finding"}]}', {"input_tokens": 10, "output_tokens": 5}, "stop"
         )):
-            result = extract_pdf(**kwargs)
+            result = extract_document(**kwargs)
         self.assertEqual(result.provider_used, "openai_compatible")
         self.assertEqual(result.total_tokens, 15)
         with patch("auto_zcurve.openai_compatible.pdf_text", return_value="Study"), patch(
             "auto_zcurve.prompts.build_system_prompt", return_value="Extract"
         ), patch("auto_zcurve.openai_compatible._call", return_value=('{"effects":[{}]}', {}, None)):
             with self.assertRaises(ValueError):
-                extract_pdf(**kwargs)
+                extract_document(**kwargs)
 
     def test_blank_pdf_has_actionable_error(self):
         path = self.root / "blank.pdf"

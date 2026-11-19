@@ -30,7 +30,7 @@ for (const action of ['reset', 'delete']) {
       t.after(h.close); await flush(); await h.submit(`.js-${action}-project`);
       const posts = h.calls.filter(([, request]) => request?.method === 'POST');
       assert.equal(posts.length, Number(confirm));
-      assert.match(h.confirmations[0], action === 'delete' ? /My project/ : /PDFs, instructions, and the extraction schema will be kept/);
+      assert.match(h.confirmations[0], action === 'delete' ? /My project/ : /Source files, instructions, and the extraction schema will be kept/);
       if (confirm && !ok) assert.deepEqual(h.alerts, ['Action rejected']);
       if (confirm && ok) { assert.equal(h.browserErrors.length, 1); assert.match(h.browserErrors[0].message, /navigation/i); }
     }

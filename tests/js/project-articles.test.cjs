@@ -10,7 +10,7 @@ test('articles paginate and sort numeric effects and names; provider output is s
   assert.equal(rows().length, 10); assert.equal(rows()[0], 'Paper 00.pdf');
   assert.equal(h.document.querySelector('[data-article-body] img'), null);
   assert.equal(h.document.querySelector('.article-message').textContent, '<img src=x onerror=bad>');
-  assert.equal(h.document.querySelector('[data-pdf-count]').textContent, '12 PDFs');
+  assert.equal(h.document.querySelector('[data-pdf-count]').textContent, '12 files');
   assert.equal(h.document.querySelector('[data-token-count]').textContent, '660');
   await h.click('.js-page-next'); assert.equal(rows().length, 2);
   assert.equal(h.document.querySelector('[data-page-status]').textContent, 'Page 2 of 2');
@@ -63,7 +63,7 @@ test('PDF uploads handle drops, selection, empty inputs, plural messages, and fa
     assert.equal(posts.length, count ? 1 : 0);
     if (count) {
       assert.equal(posts[0][1].body.getAll('files').length, count);
-      assert.equal(h.document.querySelector('.upload-message').textContent, ok ? `Added ${count} PDF${count === 1 ? '' : 's'}.` : 'Invalid PDF');
+      assert.equal(h.document.querySelector('.upload-message').textContent, ok ? `Added ${count} file${count === 1 ? '' : 's'}.` : 'Invalid PDF');
       assert.ok(h.document.querySelector('.upload-message').classList.contains('layout'));
     }
   }
@@ -96,7 +96,7 @@ test('unknown article states and missing sort values render safely, while failed
     { name: 'Done.pdf', status: 'ok', effects: 2, raw_response: '{}' },
   ] }, fetch: async url => failRefresh && url.includes('/api/projects/') ? { ok: false, json: async () => ({ detail: 'Unavailable' }) } : undefined });
   t.after(h.close); await flush();
-  assert.match(h.document.querySelector('.js-run').textContent, /Continue processing 1 PDF/);
+  assert.match(h.document.querySelector('.js-run').textContent, /Continue processing 1 article/);
   await h.click('[data-sort-key=effects]');
   assert.equal(h.document.querySelector('.article-name').textContent, 'Unknown.pdf');
   assert.equal(h.document.querySelector('.article-status').textContent, 'Ready');

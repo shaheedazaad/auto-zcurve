@@ -426,7 +426,7 @@
     event.preventDefault();
     const form = event.currentTarget;
     const confirmed = await confirmDestructive(
-      "This permanently removes all extraction results, reports, plots, and processing logs. PDFs, instructions, and the extraction schema will be kept.",
+      "This permanently removes all extraction results, reports, plots, and processing logs. Source files, instructions, and the extraction schema will be kept.",
       { title: "Clear all project outputs?", confirmLabel: "Clear all outputs" }
     );
     if (!confirmed) return;
@@ -443,7 +443,7 @@
     const form = event.currentTarget;
     const name = form.dataset.projectName || "this project";
     const confirmed = await confirmDestructive(
-      `This permanently deletes “${name}”, including its PDFs, settings, and all results. This cannot be undone.`,
+      `This permanently deletes “${name}”, including its source files, settings, and all results. This cannot be undone.`,
       { title: "Delete this project?", confirmLabel: "Delete project" }
     );
     if (!confirmed) return;
@@ -548,7 +548,7 @@
       const data = new FormData(schemaForm);
       if (schemaForm.dataset.hasResults === "true") {
         const confirmed = await confirmDestructive(
-          "Changing the extraction schema will permanently delete the current report, extraction results, and processing logs. Every PDF will need to be processed again. Continue?"
+          "Changing the extraction schema will permanently delete the current report, extraction results, and processing logs. Every article will need to be processed again. Continue?"
         );
         if (!confirmed) return;
         data.set("confirm_reset", "yes");
@@ -597,7 +597,7 @@
     });
     const visibleArticles = sortedArticles.slice(start, start + pageSize);
     if (!visibleArticles.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDFs from the Sources tab to begin.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDF or XML files from the Sources tab to begin.</td></tr>';
     } else {
       tbody.innerHTML = visibleArticles.map((article) => `
         <tr class="article-row article-row-${articleRowState(article.status)}">
@@ -635,7 +635,7 @@
           <td class="u-muted u-sm u-nowrap">${escapeHtml(source.added_display || "")}</td>
           <td><a class="btn" data-variant="outline" data-size="sm" href="/${token}/projects/${projectId}/sources/${encodeURIComponent(source.name)}" target="_blank" rel="noopener">Open</a></td>
         </tr>`).join("")
-      : '<tr class="empty-row"><td colspan="4" class="table-empty-cell">No PDFs yet. Drop some above to add them to this project.</td></tr>';
+      : '<tr class="empty-row"><td colspan="4" class="table-empty-cell">No articles yet. Drop PDF or XML files above to add them to this project.</td></tr>';
     const pagination = document.querySelector("[data-source-pagination]");
     if (pagination) {
       pagination.hidden = sources.length <= pageSize;
@@ -657,7 +657,7 @@
     currentArticles = project.articles;
     renderArticlePage();
     renderSourcePage();
-    document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} PDFs`;
+    document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} file${project.pdf_count === 1 ? "" : "s"}`;
     document.querySelector("[data-token-count]").textContent = project.total_tokens;
     const extracted = project.successful_count + (project.needs_review_count || 0);
     const articleCount = document.querySelector("[data-article-count]");
@@ -670,7 +670,7 @@
     currentRunButton.dataset.hasPdfs = project.pdf_count > 0 ? "true" : "false";
     const remaining = Math.max(0, project.pdf_count - extracted);
     currentRunButton.innerHTML = extracted > 0 && remaining > 0
-      ? `Continue processing ${remaining} PDF${remaining === 1 ? "" : "s"} <span>→</span>`
+      ? `Continue processing ${remaining} article${remaining === 1 ? "" : "s"} <span>→</span>`
       : "Run analysis <span>→</span>";
     const currentRetryButton = document.querySelector(".js-retry");
     currentRetryButton.dataset.hasFailures = project.failed_count > 0 || project.needs_review_count > 0 ? "true" : "false";
@@ -714,7 +714,7 @@
     const button = event.target.closest(".js-delete-response");
     if (!button) return;
     const sourceName = button.dataset.sourceName;
-    if (!window.confirm(`Delete the saved response for “${sourceName}”? The PDF will remain and can be rerun.`)) return;
+    if (!window.confirm(`Delete the saved response for “${sourceName}”? The source file will remain and can be rerun.`)) return;
     button.disabled = true;
     const data = new FormData();
     data.set("source_name", sourceName);
@@ -758,10 +758,10 @@
     if (!files?.length) return;
     const data = new FormData();
     Array.from(files).forEach((file) => data.append("files", file));
-    uploadMessage.textContent = `Adding ${files.length} PDF${files.length === 1 ? "" : "s"}…`;
+    uploadMessage.textContent = `Adding ${files.length} file${files.length === 1 ? "" : "s"}…`;
     try {
       const result = await postForm(upload.action, data);
-      uploadMessage.textContent = `Added ${result.saved.length} PDF${result.saved.length === 1 ? "" : "s"}.`;
+      uploadMessage.textContent = `Added ${result.saved.length} file${result.saved.length === 1 ? "" : "s"}.`;
       setMessageState(uploadMessage, "upload-message form-message success-text");
       fileInput.value = "";
       recentUploads = new Set(result.saved);
@@ -789,7 +789,7 @@
       const data = new FormData(instructionsForm);
       if (instructionsForm.dataset.hasResults === "true") {
         const confirmed = await confirmDestructive(
-          "Changing extraction instructions will permanently delete the current report, extraction results, and processing logs. Every PDF will need to be processed again. Continue?"
+          "Changing extraction instructions will permanently delete the current report, extraction results, and processing logs. Every article will need to be processed again. Continue?"
         );
         if (!confirmed) return;
         data.set("confirm_reset", "yes");
@@ -1000,9 +1000,9 @@
     if (!modelHint || !providerSelect || !modelInput) return;
     const selectedModel = currentModelCatalog.find((item) => item.id === modelInput.value.trim());
     if (providerSelect.value === "gemini") {
-      modelHint.textContent = "Gemini receives the original PDF and returns schema-validated structured data.";
+      modelHint.textContent = "Gemini receives the original PDF (or an XML file as text) and returns schema-validated structured data.";
     } else if (providerSelect.value === "openai_compatible") {
-      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text; scanned pages need OCR.";
+      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text (scanned pages need OCR); XML files are sent as they are.";
     } else {
       modelHint.textContent = "Enter an exact OpenRouter model ID. It must be validated before it can run.";
     }

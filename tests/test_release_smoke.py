@@ -94,7 +94,7 @@ class ReleaseSmokeTests(unittest.TestCase):
                 raw_json="{}",
             )
             results = {pdf.name: result, truncated_pdf.name: truncated}
-            with patch("auto_zcurve.runner.extract_pdf", side_effect=lambda **kwargs: results[kwargs["source_name"]]):
+            with patch("auto_zcurve.runner.extract_document", side_effect=lambda **kwargs: results[kwargs["source_name"]]):
                 summary = run_project(
                     project_dir=project,
                     settings=RunSettings(primary_model="gemini-3.6-flash", parallel_requests=1),

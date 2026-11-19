@@ -66,7 +66,7 @@ class GeminiAdapterTests(unittest.TestCase):
                     data = {'effects': []}
                     kwargs = dict(source_path=source, source_name='nested/' + filename, api_key='secret', primary_model='models/gemini-test', response_schema={'type': 'object'}, schema_config=object(), instruction_path=Path(tmp) / 'instructions.md')
                     with patch('google.genai.Client', return_value=client) as constructor, patch.object(gemini, 'build_system_prompt', return_value='prompt'), patch.object(gemini, '_generate', return_value=(data, json.dumps(data), 'repaired', {'input_tokens': 5, 'output_tokens': 2, 'total_tokens': 7}, ['STOP'])), patch.object(gemini, 'validate_extracted_json') as validate, patch.object(gemini.time, 'monotonic', side_effect=[1, 1.25]):
-                        result = gemini.extract_pdf(**kwargs)
+                        result = gemini.extract_document(**kwargs)
                     constructor.assert_called_once_with(api_key='secret')
                     self.assertEqual(uploads, [(b'%PDF-test', {'display_name': expected, 'mime_type': 'application/pdf'})])
                     validate.assert_called_once_with(data, kwargs['schema_config'])
@@ -78,7 +78,7 @@ class GeminiAdapterTests(unittest.TestCase):
                     self.assertEqual(result.repaired_response, 'repaired')
                     with patch('google.genai.Client', return_value=client), patch.object(gemini, 'build_system_prompt', return_value='prompt'), patch.object(gemini, '_generate', return_value=(data, 'raw', 'repaired', {}, [])), patch.object(gemini, 'validate_extracted_json', side_effect=ValueError('schema mismatch')):
                         with self.assertRaisesRegex(ValueError, 'schema mismatch') as caught:
-                            gemini.extract_pdf(**kwargs)
+                            gemini.extract_document(**kwargs)
                         self.assertEqual(caught.exception.raw_response, 'raw')
                         self.assertEqual(caught.exception.repaired_response, 'repaired')
 
@@ -91,4 +91,4 @@ class GeminiAdapterTests(unittest.TestCase):
             return original_import(name, globals, locals, fromlist, level)
 
         with patch('builtins.__import__', side_effect=import_without_google_genai), self.assertRaisesRegex(RuntimeError, 'google-genai is not installed'):
-            gemini.extract_pdf(source_path=Path('a.pdf'), source_name='a.pdf', api_key='key', primary_model='gemini', response_schema={}, schema_config=object(), instruction_path=Path('prompt'))
+            gemini.extract_document(source_path=Path('a.pdf'), source_name='a.pdf', api_key='key', primary_model='gemini', response_schema={}, schema_config=object(), instruction_path=Path('prompt'))

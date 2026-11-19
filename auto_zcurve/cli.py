@@ -92,8 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="LLM provider (default: saved setting or gemini).")
     run.add_argument("--model", help="Primary provider model ID.")
     run.add_argument("--api-key", help="Selected provider's API key for this run. Not stored.")
-    run.add_argument("--parallel", type=int, help="Number of PDFs to process at the same time.")
-    run.add_argument("--force", action="store_true", help="Reprocess PDFs even if they already succeeded.")
+    run.add_argument("--parallel", type=int, help="Number of articles to process at the same time.")
+    run.add_argument("--force", action="store_true", help="Reprocess articles even if they already succeeded.")
     run.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     run.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
 
@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     retry.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="Override the saved LLM provider.")
     retry.add_argument("--model", help="Override the saved provider model.")
     retry.add_argument("--api-key", help="Selected provider's API key for this retry. Not stored.")
-    retry.add_argument("--parallel", type=int, help="Number of PDFs to retry at the same time.")
+    retry.add_argument("--parallel", type=int, help="Number of articles to retry at the same time.")
     retry.add_argument("--source", action="append", help="Retry only this source path relative to sources/.")
     retry.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     retry.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
@@ -162,7 +162,7 @@ def _settings_from_args(
 
 
 def guided(console: CliConsole) -> int:
-    console.title("Guided PDF extraction and z-curve reporting")
+    console.title("Guided article extraction and z-curve reporting")
     project_dir = prompt_project_dir()
     args = argparse.Namespace(
         model=None,
@@ -251,9 +251,9 @@ def retry_command(args: argparse.Namespace, console: CliConsole) -> int:
 def print_summary(summary, console: CliConsole, project_dir: Path | None = None) -> None:
     rows = [
         ("Report", str(summary.report_path) if summary.report_path else "not rendered"),
-        ("Successful PDFs", summary.successful_pdfs),
-        ("Needs review PDFs", summary.needs_review_pdfs),
-        ("Failed PDFs", summary.failed_pdfs),
+        ("Successful articles", summary.successful_pdfs),
+        ("Needs review articles", summary.needs_review_pdfs),
+        ("Failed articles", summary.failed_pdfs),
         ("Extracted effects", summary.extracted_effects),
         ("Usable z-curve inputs", summary.usable_zcurve_inputs),
         ("Input tokens", summary.input_tokens),
@@ -264,7 +264,7 @@ def print_summary(summary, console: CliConsole, project_dir: Path | None = None)
     if project_dir is not None:
         review_rows = needs_review_pdf_rows(project_dir)
         if review_rows:
-            console.table("PDFs Needing Review", ["Source", "Reasons"], review_rows)
+            console.table("Articles Needing Review", ["Source", "Reasons"], review_rows)
         rendered = format_run_result(summary, project_dir)
         if "Z-Curve Summary:" in rendered:
             console.print("Z-Curve Summary")
@@ -287,7 +287,7 @@ def offer_interactive_retry(
         return None
 
     console.table(
-        "Failed and Needs-Review PDFs",
+        "Failed and Needs-Review Articles",
         ["Source", "Problem"],
         [(record.get("source_name", ""), retry_reason(record)) for record in failures],
     )

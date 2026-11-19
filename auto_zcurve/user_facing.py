@@ -51,11 +51,18 @@ def classify_error(error: BaseException | str) -> UserFacingError:
             "Check the key in Google AI Studio, then paste it again.",
             detail,
         )
+    if "tokens; this model accepts" in text:
+        return UserFacingError(
+            "Article too long for the model",
+            detail.strip(),
+            "Choose a model with a larger context window, then retry the article.",
+            detail,
+        )
     if "file exceeds max_upload_size_mb" in text or "too large" in text or "maximum size" in text:
         return UserFacingError(
-            "PDF too large",
-            "This PDF is too large to upload.",
-            "Use a smaller PDF or raise the upload limit in the app configuration.",
+            "Article too large",
+            "This article is too large to upload or to send to the model.",
+            "Use a smaller file, raise the upload limit, or choose a model with a larger context window.",
             detail,
         )
     if "missing python packages" in text or "missing r packages" in text or "missing system tools" in text:
@@ -97,20 +104,20 @@ def classify_error(error: BaseException | str) -> UserFacingError:
         return UserFacingError(
             "OpenRouter request failed",
             "OpenRouter or the selected model did not complete the request.",
-            "Check the model compatibility, internet connection, and API key, then retry the failed PDF.",
+            "Check the model compatibility, internet connection, and API key, then retry the failed article.",
             detail,
         )
     if "google-genai" in text or "gemini" in text or "deadline" in text or "timeout" in text or "network" in text:
         return UserFacingError(
             "Gemini request failed",
             "Gemini or the network did not complete the request.",
-            "Check the internet connection and API key, then retry the failed PDF.",
+            "Check the internet connection and API key, then retry the failed article.",
             detail,
         )
     if "no effect rows" in text or "no usable" in text or "usable for z-curve" in text:
         return UserFacingError(
             "No usable statistics found",
-            "The PDFs were processed, but no statistics could be used for z-curve.",
+            "The articles were processed, but no statistics could be used for z-curve.",
             "Review the report and extraction schema to decide whether the target effects need adjustment.",
             detail,
         )
@@ -155,9 +162,9 @@ def format_run_result(summary: RunSummary, project_dir: Path) -> str:
             report = summary.report_path.as_posix()
     lines = [
         f"Report: {report}",
-        f"Successful PDFs: {summary.successful_pdfs}",
-        f"Needs review PDFs: {summary.needs_review_pdfs}",
-        f"Failed PDFs: {summary.failed_pdfs}",
+        f"Successful articles: {summary.successful_pdfs}",
+        f"Needs review articles: {summary.needs_review_pdfs}",
+        f"Failed articles: {summary.failed_pdfs}",
         f"Extracted effects: {summary.extracted_effects}",
         f"Usable z-curve inputs: {summary.usable_zcurve_inputs}",
         f"Input tokens: {summary.input_tokens}",

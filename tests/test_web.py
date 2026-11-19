@@ -432,7 +432,7 @@ class WebAppTests(unittest.TestCase):
         response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Continue processing 1 PDF", response.text)
+        self.assertIn("Continue processing 1 article", response.text)
         self.assertIn("data-run-actions", response.text)
         self.assertNotIn("data-run-actions hidden", response.text)
 
@@ -783,7 +783,7 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
             headers=ORIGIN,
         )
         self.assertEqual(blocked.status_code, 409)
-        self.assertIn("Every PDF will need to be processed again", blocked.json()["detail"])
+        self.assertIn("Every article will need to be processed again", blocked.json()["detail"])
         self.assertTrue((output / "report.html").exists())
 
         confirmed = self.client.post(
@@ -846,7 +846,7 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
             headers=ORIGIN,
         )
         self.assertEqual(blocked.status_code, 409)
-        self.assertIn("Every PDF will need to be processed again", blocked.json()["detail"])
+        self.assertIn("Every article will need to be processed again", blocked.json()["detail"])
         self.assertTrue((output / "report.html").exists())
 
         confirmed = self.client.post(

@@ -4,8 +4,8 @@
 
 Yes, with one specific exception. auto-zcurve runs entirely on your own
 computer — it's not a hosted website, and your projects are never uploaded
-anywhere. The one exception: when you run an analysis, each PDF (or its
-parsed text) is sent to the AI provider you've configured, because that's
+anywhere. The one exception: when you run an analysis, each article (the
+PDF, its parsed text, or an XML file's text) is sent to the AI provider you've configured, because that's
 how statistics get extracted from it. See
 [Getting an API key](api-key.md#what-gets-sent-to-the-provider) for exactly
 what that involves.
@@ -41,6 +41,9 @@ causes:
 - The PDF is password-protected or corrupted.
 - The extraction schema doesn't match what's actually in the article (for
   example, `required: true` on a field that isn't always reported).
+- An XML article is longer than the model's context window (the message
+  gives both sizes). Choose a model with a larger context window; see
+  [XML articles](quickstart.md#2-add-your-articles).
 
 Temporary provider errors, such as rate limits (HTTP 429) and server errors
 (HTTP 5xx), are retried automatically with increasing waits, up to three
@@ -52,9 +55,9 @@ fails for any reason, including an invalid key or a rejected request (for
 example HTTP 400 or 401), auto-zcurve tries once more with a different PDF
 parser (Mistral OCR) before marking the article as failed.
 
-Try **Retry** after fixing the underlying PDF or schema. If several
-unrelated articles fail with the same error, it's more likely a settings or
-schema issue than a problem with any one PDF.
+Try **Retry** after fixing the underlying article, schema or model choice.
+If several unrelated articles fail with the same error, it's more likely a
+settings or schema issue than a problem with any one article.
 
 ## The app asks for an API key
 

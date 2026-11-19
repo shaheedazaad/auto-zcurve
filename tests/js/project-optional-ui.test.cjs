@@ -23,7 +23,7 @@ test('project refresh works without an article table or model suggestion list', 
     window.document.querySelector('#gemini-model-options').remove();
   } });
   t.after(h.close); await flush();
-  assert.equal(h.document.querySelector('[data-pdf-count]').textContent, '1 PDFs');
+  assert.equal(h.document.querySelector('[data-pdf-count]').textContent, '1 file');
   assert.equal(h.document.querySelector('[data-token-count]').textContent, '2');
   h.select('openrouter'); await flush();
   assert.deepEqual(h.browserErrors, []);

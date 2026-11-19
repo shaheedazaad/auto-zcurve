@@ -189,7 +189,7 @@ class CliEntryPointTests(unittest.TestCase):
         console = Mock()
         cli.print_summary(summary, console)
         self.assertIn(('Total tokens', 9), console.table.call_args.args[2])
-        self.assertIn(('Needs review PDFs', 1), console.table.call_args.args[2])
+        self.assertIn(('Needs review articles', 1), console.table.call_args.args[2])
         summary.report_path = None
         with patch.object(cli, 'format_run_result', return_value='Z-Curve Summary: values'):
             cli.print_summary(summary, console, Path('.'))

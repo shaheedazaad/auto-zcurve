@@ -1,4 +1,4 @@
-"""OpenAI-compatible Chat Completions with locally extracted PDF text."""
+"""OpenAI-compatible Chat Completions with article text: local PDF text or raw XML."""
 from __future__ import annotations
 import json
 import time
@@ -184,9 +184,9 @@ def _call(
 
 
 
-def extract_pdf(*, source_path, source_name, api_key, primary_model,
-                response_schema, schema_config, instruction_path,
-                request_timeout_sec=600, reasoning_effort=None, **kwargs):
+def extract_document(*, source_path, source_name, api_key, primary_model,
+                     response_schema, schema_config, instruction_path,
+                     request_timeout_sec=600, reasoning_effort=None, article_text=None, **kwargs):
     from .config import load_app_settings
     from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
     from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
@@ -194,11 +194,18 @@ def extract_pdf(*, source_path, source_name, api_key, primary_model,
     from .schema import normalize_extracted_json, validate_extracted_json
 
     started = time.monotonic()
+    from .sources import XML_TEXT_INPUT_MODE
+
     settings = load_app_settings()
+    if article_text is not None:
+        prompt = build_system_prompt(schema_config, instruction_path, "xml") + "\n\nArticle text:\n" + article_text
+        input_mode = XML_TEXT_INPUT_MODE
+    else:
+        prompt = build_system_prompt(schema_config, instruction_path) + "\n\nArticle text:\n" + pdf_text(source_path, None)
+        input_mode = "local_text"
     text, tokens, finish_reason = _call(
         model=primary_model, api_key=api_key or "",
-        prompt=build_system_prompt(schema_config, instruction_path)
-            + "\n\nArticle text:\n" + pdf_text(source_path, None),
+        prompt=prompt,
         base_url=settings.openai_base_url,
         response_format=settings.openai_response_format,
         response_schema=strict_response_schema(response_schema),
@@ -221,5 +228,5 @@ def extract_pdf(*, source_path, source_name, api_key, primary_model,
         duration_sec=round(time.monotonic() - started, 3),
         input_tokens=tokens.get("input_tokens"), output_tokens=tokens.get("output_tokens"),
         total_tokens=sum(v for v in tokens.values() if isinstance(v, int)) or None,
-        input_mode="local_text",
+        input_mode=input_mode,
     )

@@ -23,6 +23,7 @@ from .llm import (
 )
 from .prompts import build_system_prompt
 from .schema import ExtractionSchema, normalize_extracted_json, validate_extracted_json
+from .sources import XML_TEXT_INPUT_MODE
 
 
 API_BASE = "https://openrouter.ai/api/v1"
@@ -311,7 +312,7 @@ def _add_usage(
             total[name] = int(total.get(name) or 0) + value
 
 
-def extract_pdf(
+def extract_document(
     *,
     source_path: Path,
     source_name: str,
@@ -328,12 +329,19 @@ def extract_pdf(
     endpoint_order: tuple[str, ...] = (),
     preferred_provider: str = "",
     allow_fallbacks: bool = True,
+    article_text: str | None = None,
 ) -> ExtractionResult:
+    """Extract one source: a PDF as a file part, or article text with no parser plugin."""
     started = time.monotonic()
-    prompt = build_system_prompt(schema_config, instruction_path)
     parsed_document = None
     estimated_input_tokens = None
-    if input_mode in {"native_pdf", "cloudflare_pdf"}:
+    if input_mode == XML_TEXT_INPUT_MODE:
+        if article_text is None:
+            raise RuntimeError("OpenRouter article-text input needs the article text.")
+        prompt = build_system_prompt(schema_config, instruction_path, "xml")
+        user_content = [{"type": "text", "text": prompt + "\n\nArticle text:\n" + article_text}]
+    elif input_mode in {"native_pdf", "cloudflare_pdf"}:
+        prompt = build_system_prompt(schema_config, instruction_path)
         encoded_pdf = base64.b64encode(source_path.read_bytes()).decode("ascii")
         user_content = [
             {"type": "text", "text": prompt},
@@ -381,8 +389,9 @@ def extract_pdf(
         payload["provider"]["allow_fallbacks"] = False
     if reasoning_effort is not None:
         payload["reasoning"] = {"effort": normalize_reasoning_effort(reasoning_effort)}
-    engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]
-    payload["plugins"] = [{"id": "file-parser", "pdf": {"engine": engine}}]
+    if input_mode != XML_TEXT_INPUT_MODE:
+        engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]
+        payload["plugins"] = [{"id": "file-parser", "pdf": {"engine": engine}}]
     if input_mode == "cloudflare_pdf":
         payload["max_tokens"] = LOCAL_OUTPUT_TOKEN_RESERVE
     usage: dict[str, int | None] = {
