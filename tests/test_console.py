@@ -55,3 +55,28 @@ class ConsoleTests(unittest.TestCase):
         progress.update.assert_called_with(42, advance=1)
         adapter.advance('Next article')
         progress.update.assert_called_with(42, advance=1, description='Next article')
+
+    def test_secrets_are_redacted_from_everything_printed(self):
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(console, 'Console', None), redirect_stdout(out), redirect_stderr(err):
+            cli = console.CliConsole(['secret-key'])
+            cli.print('a secret-key')
+            cli.title('secret-key', 'secret-key')
+            cli.error('secret-key')
+            cli.table('secret-key', ['secret-key'], [['secret-key']])
+            with cli.progress(1, 'secret-key') as progress:
+                progress.advance('secret-key')
+        self.assertNotIn('secret-key', out.getvalue() + err.getvalue())
+        self.assertIn('Error: [redacted]', out.getvalue())
+
+        out = io.StringIO()
+        cli = console.CliConsole()
+        cli.secrets.append('secret-key')
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.title('secret-key', 'secret-key')
+        cli.error('failed secret-key')
+        cli.table('secret-key', ['secret-key'], [['secret-key']])
+        with cli.progress(1, 'secret-key') as progress:
+            progress.advance('secret-key')
+        self.assertNotIn('secret-key', out.getvalue())
+        self.assertIn('failed [redacted]', out.getvalue())
