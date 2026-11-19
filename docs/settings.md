@@ -20,8 +20,10 @@ The list shows each extractor's provider, model, and whether its key is saved.
 - **Edit** opens the same dialog with the saved settings. The provider can't
   be changed; create a new extractor to use another provider.
 - **Duplicate** copies every setting except the API key, under a new name.
-- **Delete** removes the extractor and its saved key. Projects that used it
-  ask you to choose another extractor before their next run.
+- **Delete** removes the extractor and its saved key. If the key can't be
+  removed (for example, the credential store is locked), nothing is deleted;
+  try again once the store is unlocked. Projects that used it ask you to
+  choose another extractor before their next run.
 
 ### Settings every extractor has
 
@@ -105,8 +107,10 @@ Settings.
 key, or needs none. The next run reprocesses every article if the extractor's
 provider or model changed, or any setting that changes how articles are
 sent: the reasoning effort or route to provider and fallbacks (OpenRouter),
-the service tier (Gemini), or the API base URL, JSON output mode, or context
-length (OpenAI-compatible). Changing the PDF parser does the same.
+the service tier (Gemini), or the API base URL or JSON output mode
+(OpenAI-compatible). Changing the PDF parser does the same. Changing the
+context length doesn't: it only decides whether an article is sent, and
+articles it stopped are recorded as failed, so **Retry** picks them up.
 
 Each run records the extractor it used, and a copy of its settings, in the
 project. Results and run logs name the extractor that produced each article,

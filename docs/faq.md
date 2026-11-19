@@ -108,6 +108,13 @@ lists the provider's current models, using the extractor's saved key or the
 key typed into the form (OpenRouter's list needs no key). OpenAI-compatible
 endpoints have no list; enter the model ID your server serves.
 
+## The app says it couldn't read `extractors.json`
+
+The file that holds your extractors is damaged or can't be opened, so the app
+stops rather than risk saving over it. The message names the file. Fix it, or
+move it somewhere else to start with no extractors; your saved API keys are
+kept separately and aren't affected.
+
 ## Where are my projects actually stored?
 
 - **macOS:** `~/Library/Application Support/Auto Z-Curve/projects`
