@@ -64,7 +64,7 @@ class WebValidationTests(unittest.TestCase):
             local = created['extractor']['id']
             missing = 'f' * 8
             for path, status in [
-                (f'/token/extractors/{missing}', 400),
+                (f'/token/extractors/{missing}', 404),
                 (f'/token/extractors/{missing}/duplicate', 404),
                 (f'/token/extractors/{missing}/delete', 404),
                 (f'/token/extractors/{missing}/key/delete', 404),

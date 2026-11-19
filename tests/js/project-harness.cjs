@@ -4,13 +4,14 @@ const emptyProject = { articles: [], pdf_count: 0, total_tokens: 0, successful_c
 const controls = `
 <form class="js-run-settings"><select id="extractor" name="extractor_id">
 <option value="lab" data-runnable="true" selected>Lab</option>
-<option value="nokey" data-runnable="false">No key</option>
+<option value="nokey" data-runnable="false" data-needs="key">No key</option>
+<option value="nomodel" data-runnable="false" data-needs="model">No model</option>
 <option value="local" data-runnable="true">Local</option></select>
 <p class="project-settings-message"></p>
 <div data-extractor-deleted></div>
 <dl data-extractor-summary="lab"></dl><dl data-extractor-summary="nokey" hidden></dl><dl data-extractor-summary="local" hidden></dl>
 <a data-edit-extractor-link href="/token/settings#extractor-lab">Edit extractor</a></form>
-<div data-run-credential-prompt hidden><a></a></div><div data-run-actions></div>
+<div data-run-model-prompt hidden><a data-setup-extractor-link></a></div><div data-run-credential-prompt hidden><a data-setup-extractor-link></a></div><div data-run-actions></div>
 <button class="js-run" data-has-pdfs="true">Run</button><button class="js-retry" data-has-failures="true">Retry</button>
 <button class="js-regenerate-report">Report</button><button class="js-save-instructions">Save instructions</button>
 <button class="js-cancel" hidden>Cancel</button>
