@@ -126,6 +126,18 @@ class RunnerLifecycleTests(unittest.TestCase):
             self.run_project()
         process.assert_not_called()
 
+    def test_an_unfinished_reprocess_is_remembered_for_the_next_run(self):
+        save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
+        save_run_settings(self.project, RunSettings(primary_model='old'))
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths', side_effect=r.RunCancelled('cancelled')), self.assertRaises(r.RunCancelled):
+            self.run_project()
+        # The change is still pending, so the next run reprocesses the article again.
+        self.assertEqual(r.load_run_settings(self.project).primary_model, 'old')
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
+            self.run_project()
+        process.assert_called_once()
+        self.assertEqual(r.load_run_settings(self.project).primary_model, 'test')
+
     def test_only_settings_a_provider_uses_trigger_reprocessing(self):
         cases = [
             # (provider, previous change, reprocess?)

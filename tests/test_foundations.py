@@ -40,6 +40,7 @@ class ProviderTests(unittest.TestCase):
                 if provider == 'openai_compatible':
                     expected['base_url'] = 'http://h/v1'
                     expected['response_format'] = 'none'
+                    expected['cancellation_event'] = None
                 implementation.assert_called_once_with(**expected)
                 self.assertIs(result, implementation.return_value)
 

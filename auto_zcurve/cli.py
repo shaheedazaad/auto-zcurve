@@ -70,14 +70,20 @@ def named_extractor(name: str | None) -> Extractor | None:
     return extractor
 
 
-def ask_for_extractor(interactive: bool, console: CliConsole) -> Extractor:
-    """For a project without an extractor: ask which to use, or explain how to choose."""
+def ask_for_extractor(interactive: bool, console: CliConsole, *, deleted: bool = False) -> Extractor:
+    """For a project without an extractor: ask which to use, or explain how to choose.
+
+    `deleted` says the project's extractor existed but was deleted.
+    """
+    notice = "The extractor used for this project was deleted. " if deleted else ""
+    if interactive and deleted:
+        console.warn(notice + "Choose another.")
     extractor = prompt_extractor(console) if interactive else None
     if extractor is not None:
         return extractor
     if not load_extractors():
-        raise RuntimeError("No extractors exist yet. Create one in the browser app (run `auto-zcurve`) under Settings.")
-    raise RuntimeError(f"Choose an extractor with --extractor NAME. Available extractors: {_extractor_names()}.")
+        raise RuntimeError(f"{notice}No extractors exist yet. Create one in the browser app (run `auto-zcurve`) under Settings.")
+    raise RuntimeError(f"{notice}Choose an extractor with --extractor NAME. Available extractors: {_extractor_names()}.")
 
 
 def extractor_key(extractor: Extractor) -> str:
@@ -146,7 +152,7 @@ def _run_inputs(
         project_dir,
         named_extractor(args.extractor),
         extractor_key,
-        fallback=lambda _current: ask_for_extractor(interactive, console),
+        fallback=lambda current: ask_for_extractor(interactive, console, deleted=current.deleted),
     )
     api_key = key or ""
     console.secrets.append(api_key)

@@ -492,7 +492,8 @@ def run_project(
         input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
     )
     settings.primary_model = model_option.name
-    save_run_settings(project_dir, settings)
+    if not to_process or not provider_or_model_changed:
+        save_run_settings(project_dir, settings)
     if to_process:
         workers = max(1, min(settings.parallel_requests, len(to_process)))
         worker_label = "worker" if workers == 1 else "workers"
@@ -512,6 +513,10 @@ def run_project(
                 progress=progress,
                 cancellation_event=cancellation_event,
             )
+        if provider_or_model_changed:
+            # Saved only once every article has been reprocessed, so a cancelled
+            # or failed run leaves the change for the next run to finish.
+            save_run_settings(project_dir, settings)
 
     report_path = None
     _raise_if_cancelled(cancellation_event)

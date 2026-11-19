@@ -88,6 +88,20 @@ class CliExtractorTests(unittest.TestCase):
                 self.assertEqual(cli.prompt_extractor(console), expected)
         console.table.assert_called()
 
+    def test_a_deleted_project_extractor_is_named_as_deleted(self):
+        console = Mock()
+        with self.assertRaisesRegex(RuntimeError, "^The extractor used for this project was deleted. No extractors exist yet"):
+            cli.ask_for_extractor(False, console, deleted=True)
+        create_extractor({"name": "A", "provider": "gemini", "model": "m"})
+        with self.assertRaisesRegex(RuntimeError, "^The extractor used for this project was deleted. Choose an extractor with --extractor NAME"):
+            cli.ask_for_extractor(False, console, deleted=True)
+        with self.assertRaisesRegex(RuntimeError, "^Choose an extractor with --extractor NAME"):
+            cli.ask_for_extractor(False, console)
+        console.warn.assert_not_called()
+        with patch.object(cli, "prompt_extractor", return_value=None), self.assertRaises(RuntimeError):
+            cli.ask_for_extractor(True, console, deleted=True)
+        console.warn.assert_called_once_with("The extractor used for this project was deleted. Choose another.")
+
     def test_prompt_without_extractors_returns_nothing(self):
         self.assertIsNone(cli.prompt_extractor(Mock()))
 
