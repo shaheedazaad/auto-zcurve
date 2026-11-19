@@ -235,7 +235,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
     def test_interactive_run_offers_retry_when_only_review_is_needed(self):
         summary = NS(failed_pdfs=0, needs_review_pdfs=1)
         args = cli.build_parser().parse_args(["run", str(self.project), "--skip-preflight"])
-        with patch.object(cli, "run_preflight"), patch.object(cli, "prompt_api_key", return_value="key"), patch.object(cli, "_settings_from_args", return_value=self.settings), patch.object(cli, "run_project", return_value=summary), patch.object(cli, "print_summary"), patch.object(cli, "offer_interactive_retry", return_value=None) as offer:
+        with patch.object(cli, "run_preflight"), patch.object(cli, "_run_inputs", return_value=(self.settings, "key")), patch.object(cli, "run_project", return_value=summary), patch.object(cli, "print_summary"), patch.object(cli, "offer_interactive_retry", return_value=None) as offer:
             self.assertEqual(cli.run_command(args, self.project, interactive=True, console=self.console), 0)
         offer.assert_called_once()
 

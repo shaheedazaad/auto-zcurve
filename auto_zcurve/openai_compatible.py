@@ -186,8 +186,8 @@ def _call(
 
 def extract_document(*, source_path, source_name, api_key, primary_model,
                      response_schema, schema_config, instruction_path,
-                     request_timeout_sec=600, reasoning_effort=None, article_text=None, **kwargs):
-    from .config import load_app_settings
+                     request_timeout_sec=600, reasoning_effort=None, article_text=None,
+                     base_url="", response_format="json_schema", **kwargs):
     from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
     from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
     from .prompts import build_system_prompt
@@ -196,7 +196,6 @@ def extract_document(*, source_path, source_name, api_key, primary_model,
     started = time.monotonic()
     from .sources import XML_TEXT_INPUT_MODE
 
-    settings = load_app_settings()
     if article_text is not None:
         prompt = build_system_prompt(schema_config, instruction_path, "xml") + "\n\nArticle text:\n" + article_text
         input_mode = XML_TEXT_INPUT_MODE
@@ -206,8 +205,8 @@ def extract_document(*, source_path, source_name, api_key, primary_model,
     text, tokens, finish_reason = _call(
         model=primary_model, api_key=api_key or "",
         prompt=prompt,
-        base_url=settings.openai_base_url,
-        response_format=settings.openai_response_format,
+        base_url=base_url,
+        response_format=response_format,
         response_schema=strict_response_schema(response_schema),
         timeout_sec=request_timeout_sec,
     )

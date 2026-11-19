@@ -1,7 +1,7 @@
 # Your first project
 
 This walks through a full run: creating a project, adding articles, checking
-the extraction setup, adding your API key, running the analysis, and finding
+the extraction setup, creating an extractor with your API key, running the analysis, and finding
 your results.
 
 ## 1. Create a project
@@ -81,27 +81,24 @@ files.
 
 ![The Schema tab, with the YAML schema editor and an explanation of what each part means](assets/screenshots/project-schema.png)
 
-## 5. Add your API key
+## 5. Create an extractor
 
-Open **Settings** from the top bar, expand **Gemini** under **Provider
-connections**, and click **Add key**. See [API keys and privacy](api-key.md)
-for key setup. You can also configure OpenRouter or an
+An extractor tells auto-zcurve which model to use and holds its API key. Open
+**Settings** from the top bar and click **Add extractor**. Give it a name,
+keep the **Gemini** provider, enter a model ID such as `gemini-3.6-flash`,
+paste your key into **API key**, and click **Save extractor**. See
+[API keys and privacy](api-key.md) for how to get a key and where it is kept.
+
+You can also create extractors for OpenRouter or an
 [OpenAI-compatible endpoint](settings.md#openai-compatible); a keyless server
-does not require an API key.
-
-![The Settings page with a dialog for entering a Gemini API key](assets/screenshots/settings-api-key-dialog.png)
-
-Tick **Store securely on this computer** so you don't have to paste it again
-next time. Once saved, the Gemini row shows **Ready** for this session.
+does not need an API key.
 
 ## 6. Run the analysis
 
-Back in your project, open the **Run analysis** tab. Pick a Gemini model,
-adjust **Parallel articles** if you have many articles and want them processed
-faster, and click **Run analysis**. Provider defaults and connection options
-are described in [Settings and providers](settings.md).
-
-![The Run analysis tab, showing provider and model settings](assets/screenshots/project-run-analysis.png)
+Back in your project, open the **Run analysis** tab. Choose your extractor
+from the **Extractor** list; the page shows its settings. Click
+**Run analysis**. To process articles faster or change the model, edit the
+extractor in [Settings](settings.md#extractors).
 
 auto-zcurve processes each article in turn (or in parallel, if you raised that
 setting), shows live progress, and lets you know if any article fails —

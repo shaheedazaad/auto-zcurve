@@ -13,36 +13,44 @@ quotas, and available models before running a large project.
 
 ## Add the key to auto-zcurve
 
+Keys belong to [extractors](settings.md#extractors), so you can keep several
+keys for the same provider.
+
 1. Open **Settings** from the top bar.
-2. Expand the provider under **Provider connections**, or select it in the sidebar.
-3. Click **Add key**, paste the key, and click **Save key**.
-4. Tick **Store securely on this computer** to save it between sessions.
+2. Click **Add extractor**, or **Edit** on an existing one.
+3. Fill in the name, provider, and model, paste the key into **API key**, and
+   click **Save extractor**.
 
-![Gemini API key dialog with an empty key field and Store securely on this computer selected](assets/screenshots/settings-api-key-dialog.png)
+The extractor shows **Key saved** once its key is stored. To change a key,
+edit the extractor and paste a new one into **Replace API key**. **Remove
+key** deletes it. For a keyless OpenAI-compatible server, leave the key
+empty.
 
-The provider shows **Ready** when its key is available for the current
-session. Default model settings live in the same provider section but have
-their own save button. See [Settings and providers](settings.md).
+API keys are not read from environment variables or `.env` files.
 
-## What "store securely" actually means
+## Where keys are kept
 
-Saved keys use the operating system's credential store, such as macOS
-Keychain, Windows Credential Manager, or an available Linux secret service.
-The app does not save them in its settings file or include them in project
-downloads. If no usable credential store is available, keys can be used in
-memory for the current app session.
+All extractors' keys are kept together in **one** item in your operating
+system's credential store, such as macOS Keychain, Windows Credential Manager,
+or an available Linux secret service. The app never writes keys to its
+settings files, project folders, logs, or results downloads, and never sends
+them to the browser page.
 
-Starting the app or opening Settings does not read saved keys. **Unlock**
-loads a key explicitly. **Run analysis** and **Retry** also load the
-selected provider's saved key when needed; OpenRouter model validation can
-load its key too. The operating system may ask for authorisation.
+That item is opened at most once per app session, the first time a key is
+needed: when you run or retry a project, save an extractor with a key, or ask
+for its model list. Starting the app, opening Settings, or opening a project
+never reads it. Your computer may ask for permission when it is opened.
 
-**Replace** changes the key. **Remove** deletes the saved key and forgets the
-session copy. For a keyless endpoint, leave its key unset.
+If no usable credential store is available, keys are kept in memory for the
+current app session only, and Settings says so.
+
+If saved keys can't be read, for example because access was denied, the
+action that needed a key stops with a message. The app never replaces saved
+keys it couldn't read, so other extractors' keys are not lost.
 
 !!! note "macOS Keychain prompt"
     The prompt may identify the bundled runtime as “Python” rather than
-    “auto-zcurve.” Approve it when you intend to use the saved key.
+    “auto-zcurve.” Approve it when you intend to use your saved keys.
 
 ## What gets sent to the provider
 
@@ -68,9 +76,9 @@ stored on your computer; the app does not upload the entire project folder.
 
 ## An alternative provider: OpenRouter
 
-Create a key through your OpenRouter account, then add it to the
-**OpenRouter (Experimental)** section. Enter the exact model ID in the
-project. See [OpenRouter settings](settings.md#openrouter) for validation and
+Create a key through your OpenRouter account, then add an extractor with the
+**OpenRouter (Experimental)** provider, the exact model ID, and that key. See
+[OpenRouter settings](settings.md#openrouter-experimental) for validation and
 PDF handling.
 
 ## OpenAI-compatible endpoints

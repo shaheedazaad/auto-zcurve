@@ -138,6 +138,9 @@ class ExtractionResult:
     parser_duration_sec: float | None = None
     estimated_input_tokens: int | None = None
     review_reasons: tuple[str, ...] = ()
+    # The extractor that produced this result.
+    extractor_id: str | None = None
+    extractor_name: str | None = None
 
     @property
     def pdf_sha256(self) -> str | None:

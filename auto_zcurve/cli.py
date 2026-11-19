@@ -5,14 +5,21 @@ import sys
 from pathlib import Path
 
 from .artifacts import load_extractions
-from .config import DEFAULTS, RunSettings, load_app_settings, load_run_settings
+from .config import RunSettings, load_app_settings, save_selected_extractor_id
 from .console import CliConsole
-from .models import fallback_models, list_live_models, model_request_defaults, normalize_model_name, validate_model_option
+from .credentials import KeyVault, VaultUnavailable
+from .extractors import (
+    Extractor,
+    find_extractor_by_name,
+    legacy_claims,
+    load_extractors,
+    project_extractor,
+    record_legacy_adoption,
+    run_settings_for,
+)
 from .preflight import PreflightError, run_preflight
 from .runner import ensure_project_layout, retry_project, run_project
-from .env import resolve_api_key
 from .user_facing import classify_error, format_run_result, needs_review_pdf_rows, retry_reason
-from .providers import normalize_provider, provider_label
 
 
 def _questionary():
@@ -33,53 +40,78 @@ def prompt_project_dir() -> Path:
     return Path(answer).expanduser().resolve()
 
 
-def prompt_api_key(
-    project_dir: Path,
-    explicit_key: str | None,
-    interactive: bool,
-    provider: str = "gemini",
-) -> str:
-    selected = normalize_provider(provider)
-    try:
-        return resolve_api_key(project_dir, explicit_key=explicit_key, provider=selected)
-    except RuntimeError:
-        if not interactive:
-            raise
+def _extractor_names() -> str:
+    names = [item.name for item in load_extractors()]
+    return ", ".join(f"“{name}”" for name in names) if names else "none yet"
 
+
+def prompt_extractor(console: CliConsole) -> Extractor | None:
+    extractors = load_extractors()
+    if not extractors:
+        return None
     q = _questionary()
     if q:
-        answer = q.password(f"{provider_label(selected)} API key:").ask()
+        chosen = q.select(
+            "Extractor:",
+            choices=[{"name": f"{item.name} ({item.provider_label} · {item.model})", "value": item.id} for item in extractors],
+        ).ask()
+        return next((item for item in extractors if item.id == chosen), None)
+    console.table("Extractors", ["#", "Name", "Model"], [(index, item.name, item.model) for index, item in enumerate(extractors, start=1)])
+    answer = input("Extractor number: ").strip()
+    return extractors[int(answer) - 1] if answer.isdigit() and 0 < int(answer) <= len(extractors) else None
+
+
+def choose_extractor(name: str | None, project_dir: Path, interactive: bool, console: CliConsole) -> Extractor:
+    """The extractor to run with: named with --extractor, else the project's, else asked for."""
+    if name:
+        extractor = find_extractor_by_name(name)
+        if extractor is None:
+            raise RuntimeError(f"No extractor is called “{name}”. Available extractors: {_extractor_names()}.")
     else:
-        import getpass
+        extractor = project_extractor(project_dir).extractor
+        if extractor is None and interactive:
+            extractor = prompt_extractor(console)
+        if extractor is None:
+            if not load_extractors():
+                raise RuntimeError(
+                    "No extractors exist yet. Create one in the browser app (run `auto-zcurve`) under Settings."
+                )
+            raise RuntimeError(f"Choose an extractor with --extractor NAME. Available extractors: {_extractor_names()}.")
+    save_selected_extractor_id(project_dir, extractor.id)
+    return extractor
 
-        answer = getpass.getpass(f"{provider_label(selected)} API key: ")
 
-    return resolve_api_key(project_dir, explicit_key=answer, provider=selected)
+def extractor_key(extractor: Extractor) -> str:
+    """The extractor's saved API key; "" for a keyless OpenAI-compatible server."""
+    key = None
+    if extractor.key_saved or extractor.legacy_credential:
+        vault = KeyVault(legacy_claims=legacy_claims, on_legacy_adopted=record_legacy_adoption)
+        try:
+            key = vault.get(extractor.id)
+        except VaultUnavailable as exc:
+            raise RuntimeError(str(exc)) from exc
+    if extractor.requires_key and not key:
+        raise RuntimeError(
+            f"The “{extractor.name}” extractor has no API key. Add one in the browser app under Settings."
+        )
+    return key or ""
 
 
-def prompt_model(api_key: str, console: CliConsole, provider: str = "gemini") -> str:
-    selected_provider = normalize_provider(provider)
-    if selected_provider in {"openrouter", "openai_compatible"}:
-        primary = input(f"{provider_label(selected_provider)} model ID: ").strip()
-        return validate_model_option(selected_provider, primary, api_key).name
-    try:
-        options = list_live_models(api_key, selected_provider)
-        if not options:
-            raise RuntimeError(f"No compatible {provider_label(selected_provider)} models were returned.")
-    except Exception as exc:
-        console.warn(f"Live model discovery was unavailable: {exc}")
-        options = fallback_models(selected_provider)
-
-    choice_names = [option.name for option in options]
-    q = _questionary()
-    if q:
-        primary = q.select("Primary extraction model:", choices=choice_names).ask()
-        return normalize_model_name(primary, selected_provider)
-
-    console.table("Available Models", ["#", "Model"], enumerate(choice_names, start=1))
-    selected = int(input("Primary extraction model number: ").strip())
-    primary = choice_names[selected - 1]
-    return normalize_model_name(primary, selected_provider)
+def list_extractors_command(console: CliConsole) -> int:
+    extractors = load_extractors()
+    if not extractors:
+        console.info("No extractors yet. Create one in the browser app (run `auto-zcurve`) under Settings.")
+        return 0
+    console.table(
+        "Extractors",
+        ["Name", "Provider", "Model", "API key"],
+        [
+            (item.name, item.provider_label, item.model or "not set",
+             "saved" if item.key_saved or item.legacy_credential else ("not set" if item.requires_key else "not set (optional)"))
+            for item in extractors
+        ],
+    )
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -89,10 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run extraction for a project directory.")
     run.add_argument("project_dir", type=Path)
     run.add_argument("--yes", action="store_true", help="Accept setup defaults and do not prompt.")
-    run.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="LLM provider (default: saved setting or gemini).")
-    run.add_argument("--model", help="Primary provider model ID.")
-    run.add_argument("--api-key", help="Selected provider's API key for this run. Not stored.")
-    run.add_argument("--parallel", type=int, help="Number of articles to process at the same time.")
+    run.add_argument("--extractor", metavar="NAME", help="Extractor to run with (default: the project's extractor).")
     run.add_argument("--force", action="store_true", help="Reprocess articles even if they already succeeded.")
     run.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     run.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
@@ -100,13 +129,12 @@ def build_parser() -> argparse.ArgumentParser:
     retry = subparsers.add_parser("retry", help="Retry failed and needs-review files from the latest project outputs.")
     retry.add_argument("project_dir", type=Path)
     retry.add_argument("--yes", action="store_true", help="Retry all failed and needs-review files without prompting.")
-    retry.add_argument("--provider", choices=("gemini", "openrouter", "openai_compatible"), help="Override the saved LLM provider.")
-    retry.add_argument("--model", help="Override the saved provider model.")
-    retry.add_argument("--api-key", help="Selected provider's API key for this retry. Not stored.")
-    retry.add_argument("--parallel", type=int, help="Number of articles to retry at the same time.")
+    retry.add_argument("--extractor", metavar="NAME", help="Extractor to retry with (default: the project's extractor).")
     retry.add_argument("--source", action="append", help="Retry only this source path relative to sources/.")
     retry.add_argument("--skip-preflight", action="store_true", help=argparse.SUPPRESS)
     retry.add_argument("--skip-report", action="store_true", help="Skip Quarto report rendering.")
+
+    subparsers.add_parser("extractors", help="List the extractors created in the browser app.")
 
     web = subparsers.add_parser("web", help="Launch the local browser app.")
     web.add_argument("--no-browser", action="store_true", help="Print the local URL without opening a browser.")
@@ -114,65 +142,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _settings_from_args(
+def _run_inputs(
     args: argparse.Namespace,
     project_dir: Path,
-    console: CliConsole,
     interactive: bool,
-    api_key: str,
-) -> RunSettings:
-    existing = load_run_settings(project_dir)
-    app_defaults = load_app_settings()
-    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
-    primary = args.model or (
-        existing.primary_model if existing and existing.provider == provider else None
-    )
-
-    if not primary and not interactive:
-        raise RuntimeError(
-            f"A {provider_label(provider)} model is required. Pass --model or use the browser app."
-        )
-
-    if not primary:
-        primary = prompt_model(api_key, console, provider)
-
-    if provider == "openrouter":
-        primary = validate_model_option(provider, primary, api_key).name
-
-    model_parallel, model_delay = model_request_defaults(primary, provider)
-
-    return RunSettings(
-        primary_model=normalize_model_name(primary, provider),
-        provider=provider,
-        request_timeout_sec=(
-            existing.request_timeout_sec if existing else app_defaults.request_timeout_sec
-        ),
-        parallel_requests=max(
-            1,
-            int(args.parallel if args.parallel is not None else (existing.parallel_requests if existing else model_parallel)),
-        ),
-        request_delay_sec=existing.request_delay_sec if existing else model_delay,
-        max_upload_size_mb=(
-            existing.max_upload_size_mb if existing else app_defaults.max_upload_size_mb
-        ),
-        pdf_parser=app_defaults.pdf_parser,
-        reasoning_effort=app_defaults.reasoning_effort,
-        service_tier=app_defaults.service_tier,
-    )
+    console: CliConsole,
+) -> tuple[RunSettings, str]:
+    extractor = choose_extractor(args.extractor, project_dir, interactive, console)
+    return run_settings_for(extractor, load_app_settings()), extractor_key(extractor)
 
 
 def guided(console: CliConsole) -> int:
     console.title("Guided article extraction and z-curve reporting")
     project_dir = prompt_project_dir()
     args = argparse.Namespace(
-        model=None,
-        provider=None,
-        api_key=None,
+        extractor=None,
         yes=False,
         force=False,
         skip_preflight=False,
         skip_report=False,
-        parallel=None,
     )
     return run_command(args, project_dir, interactive=True, console=console)
 
@@ -189,16 +177,7 @@ def run_command(args: argparse.Namespace, project_dir: Path, interactive: bool, 
         return 0
     if not args.skip_preflight:
         run_preflight(project_dir, interactive=interactive and not args.yes, console=console)
-    prompt_allowed = interactive and not args.yes
-    existing = load_run_settings(project_dir)
-    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
-    api_key = prompt_api_key(
-        project_dir,
-        explicit_key=args.api_key,
-        interactive=prompt_allowed,
-        provider=provider,
-    )
-    settings = _settings_from_args(args, project_dir, console, interactive=prompt_allowed, api_key=api_key)
+    settings, api_key = _run_inputs(args, project_dir, interactive and not args.yes, console)
     summary = run_project(
         project_dir=project_dir,
         settings=settings,
@@ -224,15 +203,7 @@ def retry_command(args: argparse.Namespace, console: CliConsole) -> int:
     project_dir = args.project_dir.expanduser().resolve()
     if not args.skip_preflight:
         run_preflight(project_dir, interactive=False, console=console)
-    existing = load_run_settings(project_dir)
-    provider = normalize_provider(args.provider or (existing.provider if existing else "gemini"))
-    api_key = prompt_api_key(
-        project_dir,
-        explicit_key=args.api_key,
-        interactive=False,
-        provider=provider,
-    )
-    settings = _settings_from_args(args, project_dir, console, interactive=False, api_key=api_key)
+    settings, api_key = _run_inputs(args, project_dir, False, console)
     summary = retry_project(
         project_dir=project_dir,
         settings=settings,
@@ -343,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
             from .web import launch_web
 
             return launch_web(open_browser=not args.no_browser, port=args.port)
+        if args.command == "extractors":
+            return list_extractors_command(console)
         if args.command == "run":
             return run_command(args, args.project_dir, interactive=False, console=console)
         return retry_command(args, console)

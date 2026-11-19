@@ -47,7 +47,6 @@ include-package-data = true
 auto_zcurve = ["templates/*.html", "static/*.css", "static/*.js", "static/*.txt"]
 
 [tool.setuptools.data-files]
-"share/auto-zcurve" = ["models.yml"]
 "share/auto-zcurve/config" = ["config/extraction_schema.yml", "config/statistic_extraction_instructions.md"]
 "share/auto-zcurve/report" = ["report/report_template.qmd", "report/reproducible_report.qmd"]
 "share/auto-zcurve/R" = ["R/report.R", "R/schema.R", "R/utils.R"]

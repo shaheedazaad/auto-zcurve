@@ -18,7 +18,7 @@ from auto_zcurve import gemini, openai_compatible, openrouter, providers
 from auto_zcurve import runner as r
 from auto_zcurve import web as w
 from auto_zcurve.artifacts import load_extractions, load_run_log, save_extractions
-from auto_zcurve.config import AppSettings, RunSettings
+from auto_zcurve.config import RunSettings
 from auto_zcurve.llm import ExtractionResult
 from auto_zcurve.models import ModelOption, resolve_input_mode
 from auto_zcurve.paths import DEFAULT_INSTRUCTIONS
@@ -202,8 +202,7 @@ class ProviderRequestTests(unittest.TestCase):
 
     def test_openai_compatible_sends_raw_xml_without_pdf_text_extraction(self):
         with patch.object(openai_compatible, "_call", return_value=('{"effects":[{"claim":"x"}]}', {}, "stop")) as call, \
-                patch.object(openai_compatible, "pdf_text") as pdf_text, \
-                patch("auto_zcurve.config.load_app_settings", return_value=AppSettings(openai_base_url="http://localhost:8000/v1")):
+                patch.object(openai_compatible, "pdf_text") as pdf_text:
             result = self.extract("openai_compatible")
         pdf_text.assert_not_called()
         prompt = call.call_args.kwargs["prompt"]
@@ -281,7 +280,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_source_removed_mid_run_is_saved_without_a_hash(self):
         result = ExtractionResult(self.project / "sources/gone.xml", "gone.xml", "error")
-        r._record_source(result, self.project / "sources/gone.xml", "xml")
+        r._record_source(result, self.project / "sources/gone.xml", "xml", RunSettings(primary_model="m"))
         self.assertEqual((result.source_format, result.source_sha256), ("xml", None))
 
     def test_failed_xml_is_recorded_and_retried_as_text(self):

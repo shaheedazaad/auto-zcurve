@@ -18,7 +18,7 @@
   <div class="page-head">
     <div>
       <h1 class="icon-heading">{{ workflow_icon("manage") }}Settings</h1>
-      <p>Defaults for new runs, and the API keys used to reach each provider.</p>
+      <p>Extractors that runs use to reach a model, and application-wide preferences.</p>
       {{ docs_link("settings/", "Settings guide") }}
     </div>
   </div>
@@ -26,168 +26,84 @@
   <div class="project-layout settings-layout">
     <aside class="project-sidebar">
       <nav class="settings-nav" aria-label="Settings navigation">
-        <a href="#provider-connections">{{ workflow_icon("key") }}Provider connections</a>
-        {% for credential in credential_providers %}
-        <a class="settings-provider-link" href="#provider-{{ credential.name }}">{{ credential.label }}</a>
-        {% endfor %}
-        <a href="#run-defaults">{{ workflow_icon("run") }}Run defaults</a>
+        <a href="#extractors">{{ workflow_icon("key") }}Extractors</a>
+        <a href="#files-and-parsing">{{ workflow_icon("run") }}Files and parsing</a>
         <a href="#extraction-instructions">{{ workflow_icon("manual") }}Extraction instructions</a>
       </nav>
     </aside>
     <div class="project-content">
-  <section class="section accent-section" id="provider-connections">
+  <section class="section accent-section" id="extractors">
     <div class="section-head">
       <div>
-        <h2 class="icon-heading">{{ workflow_icon("key") }}Provider connections</h2>
-        <p>Stored in your operating-system credential store. Keys are loaded when you unlock them or start an action that needs them.</p>
-      </div>
-    </div>
-
-    <div class="panel rows">
-      {% for credential in credential_providers %}
-      <details class="provider-settings" id="provider-{{ credential.name }}" data-credential-row="{{ credential.name }}">
-        <summary>
-          <strong class="icon-heading">{{ workflow_icon("key") }}{{ credential.label }}</strong>
-          <span class="badge" data-variant="{{ 'success' if credential.has_api_key else 'warning' if credential.has_saved_api_key else 'outline' }}">{{ 'Ready' if credential.has_api_key else 'Locked' if credential.has_saved_api_key else 'Not set' }}</span>
-          <span class="provider-chevron" aria-hidden="true">›</span>
-        </summary>
-        <div class="provider-settings-body stack">
-          {{ docs_link("settings/#" ~ ("openai-compatible" if credential.name == "openai_compatible" else credential.name), "Provider setup guide") }}
-      <div class="row provider-key-row">
-        <span class="row-main">
-          <strong class="row-title">API key{{ " (optional)" if credential.name == "openai_compatible" else "" }}</strong>
-          <span class="row-meta form-message" role="status">
-            {%- if credential.has_api_key %}Unlocked for this session
-            {%- elif credential.has_saved_api_key %}Saved on this computer, locked
-            {%- else %}No key stored{% endif -%}
-          </span>
-        </span>
-
-        {% if credential.has_api_key %}
-          <span class="badge" data-variant="success">Ready</span>
-        {% elif credential.has_saved_api_key %}
-          <span class="badge" data-variant="warning">Locked</span>
-        {% else %}
-          <span class="badge" data-variant="outline">Not set</span>
-        {% endif %}
-
-        <span class="row-actions">
-          {% if credential.has_saved_api_key and not credential.has_api_key %}
-          <form class="js-load-credentials" action="/{{ token }}/credentials/load">
-            <input type="hidden" name="provider" value="{{ credential.name }}">
-            <button class="btn" data-size="sm" type="submit">Unlock</button>
-          </form>
-          {% endif %}
-          <button class="btn" data-variant="outline" data-size="sm" type="button"
-                  data-open-key-dialog="{{ credential.name }}">
-            {% if credential.has_api_key or credential.has_saved_api_key %}Replace{% else %}Add key{% endif %}
-          </button>
-          {% if credential.has_api_key or credential.has_saved_api_key %}
-          <form class="js-delete-credentials" action="/{{ token }}/credentials/delete" data-provider-label="{{ credential.label }}">
-            <input type="hidden" name="provider" value="{{ credential.name }}">
-            <button class="btn" data-variant="ghost" data-size="sm" type="submit">Remove</button>
-          </form>
-          {% endif %}
-        </span>
-      </div>
-      {% if credential.name == "openai_compatible" %}
-      <form class="js-app-settings stack" action="/{{ token }}/settings/endpoint">
-      <div class="field">
-        <label for="openai-base-url">API base URL</label>
-        <input class="input" type="url" id="openai-base-url" name="openai_base_url" value="{{ app_settings.openai_base_url }}" placeholder="http://localhost:8000/v1">
-        <p>Include the API prefix (such as /v1), without /chat/completions. When switching endpoints, replace or remove the saved key above too.</p>
-      </div>
-      <div class="field">
-        <label for="openai-response-format">JSON output mode</label>
-        <select class="select" id="openai-response-format" name="openai_response_format">
-          {% for value, label in [('json_schema', 'Strict JSON schema'), ('json_object', 'JSON object'), ('none', 'Prompt only')] %}
-          <option value="{{ value }}" {% if app_settings.openai_response_format == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included. XML files are sent as text, without parsing.</p>
+        <h2 class="icon-heading">{{ workflow_icon("key") }}Extractors</h2>
+        <p>An extractor is a saved setup for reaching a model: provider, model, API key and request settings. Projects choose one when they run. You can keep several, including several for the same provider with different keys.</p>
+        {{ docs_link("settings/#extractors", "Extractors guide") }}
       </div>
       <div class="section-head-actions">
-        <p class="form-message u-sm" role="status"></p>
-        <button class="btn" type="submit">Save endpoint</button>
+        <button class="btn" type="button" data-new-extractor>Add extractor</button>
       </div>
+    </div>
 
-</form>
-      {% else %}
-      <form class="js-app-settings stack" action="/{{ token }}/settings/providers/{{ credential.name }}">
-        {% if credential.name == "gemini" %}
-          <div class="field">
-            <label for="default-gemini-model">Default Gemini model</label>
-            <input class="input" id="default-gemini-model" name="default_gemini_model" type="text" autocomplete="off" spellcheck="false" value="{{ app_settings.default_gemini_model }}" required>
-            <p>Used to prefill new projects' model field.</p>
-          </div>
-          <div class="field">
-            <label for="service-tier">Gemini service tier</label>
-            <select class="select" id="service-tier" name="service_tier">
-              {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if app_settings.service_tier == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select>
-          </div>
+    <div class="panel rows" data-extractor-list>
+      {% for extractor in extractors %}
+      <div class="row extractor-row" id="extractor-{{ extractor.id }}" data-extractor-row data-extractor="{{ extractor | tojson | forceescape }}">
+        <span class="row-main">
+          <strong class="row-title">{{ extractor.name }}</strong>
+          <span class="row-meta">{{ extractor.provider_label }} · {{ extractor.model or "No model chosen" }}</span>
+        </span>
+        {% if extractor.has_key %}
+          <span class="badge" data-variant="success">Key saved</span>
+        {% elif extractor.requires_key %}
+          <span class="badge" data-variant="warning">No key</span>
         {% else %}
-          <div class="field">
-            <label for="default-openrouter-model">Default OpenRouter model</label>
-            <input class="input" id="default-openrouter-model" name="default_openrouter_model" type="text" autocomplete="off" spellcheck="false" placeholder="vendor/model" value="{{ app_settings.default_openrouter_model }}">
-            <p>Optional. Used to prefill new projects' model field when OpenRouter is selected.</p>
-          </div>
+          <span class="badge" data-variant="outline">No key (optional)</span>
         {% endif %}
-        <div class="section-head-actions">
-          <p class="form-message u-sm" role="status"></p>
-          <button class="btn" type="submit">Save {{ credential.label }} settings</button>
-        </div>
-      </form>
-      {% endif %}
-        </div>
-      </details>
+        <span class="row-actions">
+          <button class="btn" data-variant="outline" data-size="sm" type="button" data-edit-extractor>Edit</button>
+          <form class="js-extractor-action" action="/{{ token }}/extractors/{{ extractor.id }}/duplicate">
+            <button class="btn" data-variant="ghost" data-size="sm" type="submit">Duplicate</button>
+          </form>
+          <form class="js-delete-extractor" action="/{{ token }}/extractors/{{ extractor.id }}/delete" data-extractor-name="{{ extractor.name }}">
+            <button class="btn" data-variant="ghost" data-size="sm" type="submit">Delete</button>
+          </form>
+        </span>
+      </div>
+      {% else %}
+      <div class="empty">
+        <p class="empty-title">No extractors yet</p>
+        <p class="empty-text">Add an extractor to choose a provider, model and API key for your projects.</p>
+      </div>
       {% endfor %}
     </div>
+    <p class="form-message u-sm" role="status" data-extractor-list-message></p>
 
     {% if not keyring_available %}
     <div class="alert" data-variant="warning" style="margin-top:var(--sp-3)">
       <h2>No secure credential store is available</h2>
-      <section>Keys can only stay in memory for this application session.</section>
+      <section>API keys can only stay in memory for this application session.</section>
     </div>
     {% elif is_macos %}
-    <p class="u-muted u-xs" style="margin-top:var(--sp-3)">macOS may show auto-zcurve’s bundled runtime as “Python” in the Keychain prompt.</p>
+    <p class="u-muted u-xs" style="margin-top:var(--sp-3)">All API keys are kept in one Keychain item, opened at most once per session. macOS may show auto-zcurve’s bundled runtime as “Python” in the Keychain prompt.</p>
     {% endif %}
   </section>
 
-  <form class="js-app-settings section" id="run-defaults" action="/{{ token }}/settings">
+  <form class="js-app-settings section" id="files-and-parsing" action="/{{ token }}/settings">
     <div class="section-head">
       <div>
-        <h2 class="icon-heading">{{ workflow_icon("run") }}Run defaults</h2>
-        <p>Applies to every new run and retry, across all projects. Individual projects can override throughput.</p>
-        {{ docs_link("settings/#run-defaults", "Run defaults guide") }}
+        <h2 class="icon-heading">{{ workflow_icon("run") }}Files and parsing</h2>
+        <p>Applies to every project. Model and request settings belong to each extractor.</p>
+        {{ docs_link("settings/#files-and-parsing", "Files and parsing guide") }}
       </div>
     </div>
 
     <div class="panel">
       <div class="panel-pad stack">
-        <fieldset class="settings-group"><legend>Throughput and uploads</legend><div class="grid-2">
-          <div class="field">
-            <label for="parallel-pdfs">Parallel articles</label>
-            <input class="input" id="parallel-pdfs" name="parallel_requests" type="number" min="1" max="32" value="{{ app_settings.parallel_requests }}" required>
-            <p>How many articles are processed at once. Default 1.</p>
-          </div>
-          <div class="field">
-            <label for="request-delay">Delay between requests</label>
-            <input class="input" id="request-delay" name="request_delay_sec" type="number" min="0" max="3600" value="{{ app_settings.request_delay_sec }}" required>
-            <p>Seconds between provider requests. Default 30.</p>
-          </div>
-          <div class="field">
-            <label for="request-timeout">Request timeout</label>
-            <input class="input" id="request-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="{{ app_settings.request_timeout_sec }}" required>
-            <p>Seconds allowed for a single provider request.</p>
-          </div>
+        <fieldset class="settings-group"><legend>Uploads and PDFs</legend><div class="grid-2">
           <div class="field">
             <label for="max-upload-size">Maximum file size</label>
             <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
             <p>Megabytes. Applied when new files are uploaded.</p>
           </div>
-        </div></fieldset>
-        <fieldset class="settings-group"><legend>Extraction preferences</legend><div class="grid-2">
           <div class="field">
             <label for="pdf-parser">PDF parser</label>
             {# cloudflare-ai is being retired: tests/test_web.py asserts it is not
@@ -202,14 +118,6 @@
             </select>
             <p>How PDF content is prepared before it reaches the model.</p>
           </div>
-          <div class="field">
-            <label for="reasoning-effort">Reasoning effort</label>
-            <select class="select" id="reasoning-effort" name="reasoning_effort">
-              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if app_settings.reasoning_effort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select>
-            <p>Higher effort can improve accuracy, at more cost and latency.</p>
-          </div>
-
         </div></fieldset>
 
       </div>
@@ -235,37 +143,126 @@
   </div>
   </div>
 
-  {% for credential in credential_providers %}
-  <dialog class="dialog" id="key-dialog-{{ credential.name }}" aria-labelledby="key-dialog-title-{{ credential.name }}">
-      {# The form is the dialog's direct child: Basecoat styles `.dialog > * >
-         header|section|footer`, so an extra wrapper would silently disable it. #}
-      <form class="js-credentials" action="/{{ token }}/credentials">
-        <input type="hidden" name="provider" value="{{ credential.name }}">
-        <header>
-          <h2 id="key-dialog-title-{{ credential.name }}">{{ credential.label }} API key</h2>
-          <p>The key is sent only to {{ credential.label }} during extraction.</p>
-          {{ docs_link("api-key/", "API keys and privacy") }}
-        </header>
-        <section>
+  <dialog class="dialog extractor-dialog" id="extractor-dialog" aria-labelledby="extractor-dialog-title">
+    {# The form is the dialog's direct child: Basecoat styles `.dialog > * >
+       header|section|footer`, so an extra wrapper would silently disable it. #}
+    <form class="js-extractor-form" action="/{{ token }}/extractors" data-create-action="/{{ token }}/extractors">
+      <header>
+        <h2 id="extractor-dialog-title" data-extractor-dialog-title>Add extractor</h2>
+        <p>Keys are sent only to the extractor’s provider, during extraction and model checks.</p>
+        {{ docs_link("api-key/", "API keys and privacy") }}
+      </header>
+      <section class="stack">
+        <div class="grid-2">
           <div class="field">
-            <label for="api-key-{{ credential.name }}">API key</label>
-            <input class="input" id="api-key-{{ credential.name }}" name="api_key" type="password"
-                   autocomplete="off" placeholder="Paste {{ credential.label }} API key" required>
+            <label for="extractor-name">Name</label>
+            <input class="input" id="extractor-name" name="name" type="text" maxlength="60" autocomplete="off" required placeholder="Lab Gemini">
           </div>
-          <div class="field" data-orientation="horizontal" style="margin-top:var(--sp-3)">
-            <input class="input" type="checkbox" id="remember-{{ credential.name }}" name="remember" value="yes"
-                   {% if keyring_available %}checked{% endif %} {% if not keyring_available %}disabled{% endif %}>
-            <label for="remember-{{ credential.name }}">Store securely on this computer</label>
+          <div class="field">
+            <label for="extractor-provider">Provider</label>
+            <select class="select" id="extractor-provider" name="provider">
+              {% for name, label in providers %}<option value="{{ name }}">{{ label }}</option>{% endfor %}
+            </select>
+            <p data-provider-locked hidden>The provider can’t be changed. Create a new extractor to use another.</p>
           </div>
-          <p class="form-message u-sm" role="status"></p>
-        </section>
-        <footer>
-          <button class="btn" data-variant="outline" type="button" data-close-key-dialog>Cancel</button>
-          <button class="btn" type="submit">Save key</button>
-        </footer>
-      </form>
+        </div>
+        <div class="field">
+          <label for="extractor-model">Model</label>
+          <input class="input" id="extractor-model" name="model" list="extractor-model-options" type="text" autocomplete="off" spellcheck="false" required>
+          <datalist id="extractor-model-options"></datalist>
+          <p class="u-sm u-muted" data-model-hint></p>
+          <button class="btn" data-variant="outline" data-size="sm" type="button" data-load-models hidden>Show available models</button>
+        </div>
+
+        <div class="alert" data-variant="warning" data-provider-fields="openrouter" hidden>
+          <section><strong>Experimental backup provider.</strong> Model quality, PDF support, structured-output behavior, latency, and reliability can vary by model and provider route.</section>
+        </div>
+        <div class="grid-2" data-provider-fields="openrouter" hidden>
+          <div class="field">
+            <label for="extractor-reasoning">Reasoning effort</label>
+            <select class="select" id="extractor-reasoning" name="reasoning_effort">
+              {% for value, label in reasoning_effort_labels.items() %}<option value="{{ value }}" {% if value == "high" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <p>Used when the model supports reasoning. Higher effort can improve accuracy, at more cost and latency.</p>
+          </div>
+          <div class="field">
+            <label for="extractor-openrouter-provider">Route to provider</label>
+            <input class="input" id="extractor-openrouter-provider" name="openrouter_provider" list="extractor-openrouter-endpoints" type="text" autocomplete="off" spellcheck="false" placeholder="Automatic">
+            <datalist id="extractor-openrouter-endpoints"></datalist>
+            <p class="u-sm u-muted" data-openrouter-provider-status role="status">Leave empty to let OpenRouter choose.</p>
+          </div>
+          <div class="field">
+            <label for="extractor-fallbacks">Fallbacks</label>
+            <select class="select" id="extractor-fallbacks" name="openrouter_allow_fallbacks">
+              <option value="allow">Allow other providers</option>
+              <option value="deny">Don't fall back</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field" data-provider-fields="gemini">
+          <label for="extractor-service-tier">Service tier</label>
+          <select class="select" id="extractor-service-tier" name="service_tier">
+            {% for value, label in service_tier_labels.items() %}<option value="{{ value }}" {% if value == "flex" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+
+        <div class="stack" data-provider-fields="openai_compatible" hidden>
+          <div class="field">
+            <label for="extractor-base-url">API base URL</label>
+            <input class="input" id="extractor-base-url" name="base_url" type="url" placeholder="http://localhost:8000/v1" required>
+            <p>Include the API prefix (such as /v1), without /chat/completions.</p>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="extractor-response-format">JSON output mode</label>
+              <select class="select" id="extractor-response-format" name="response_format">
+                {% for value, label in response_format_labels.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="extractor-context-length">Context length (optional)</label>
+              <input class="input" id="extractor-context-length" name="context_length" type="number" min="1" placeholder="Tokens">
+              <p>Lets XML articles that are too long fail before they are sent.</p>
+            </div>
+          </div>
+          <p class="u-sm u-muted">PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included. XML files are sent as text.</p>
+        </div>
+
+        <fieldset class="settings-group"><legend>Requests</legend><div class="grid-2">
+          <div class="field">
+            <label for="extractor-parallel">Parallel articles</label>
+            <input class="input" id="extractor-parallel" name="parallel_requests" type="number" min="1" max="32" value="1" required>
+          </div>
+          <div class="field">
+            <label for="extractor-delay">Delay between requests</label>
+            <input class="input" id="extractor-delay" name="request_delay_sec" type="number" min="0" max="3600" value="0" required>
+            <p>Seconds between request starts.</p>
+          </div>
+          <div class="field">
+            <label for="extractor-timeout">Request timeout</label>
+            <input class="input" id="extractor-timeout" name="request_timeout_sec" type="number" min="30" max="3600" value="600" required>
+            <p>Seconds allowed for one request.</p>
+          </div>
+        </div></fieldset>
+
+        <div class="field">
+          <label for="extractor-api-key" data-key-label>API key</label>
+          <input class="input" id="extractor-api-key" name="api_key" type="password" autocomplete="off">
+          <p data-key-hint>{% if keyring_available %}Saved in your operating system’s credential store.{% else %}Kept in memory for this app session only.{% endif %}</p>
+          <div class="cluster" data-key-actions hidden>
+            <span class="badge" data-variant="success">Key saved</span>
+            <button class="btn" data-variant="ghost" data-size="sm" type="button" data-remove-key>Remove key</button>
+          </div>
+        </div>
+        <p class="form-message u-sm" role="status"></p>
+      </section>
+      <footer>
+        <button class="btn" data-variant="outline" type="button" data-close-extractor-dialog>Cancel</button>
+        <button class="btn" type="submit">Save extractor</button>
+      </footer>
+    </form>
   </dialog>
-  {% endfor %}
 
   <footer class="app-foot">
     <span>auto-zcurve {{ version }}</span>

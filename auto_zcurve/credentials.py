@@ -3,22 +3,25 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-
-from .providers import normalize_provider, provider_definition, provider_label
+from typing import Callable
 
 
 SERVICE_NAME = "auto-zcurve"
-KEY_NAME = "gemini_api_key"
-SAVED_API_KEY_KEY = "saved_api_key_configured"
-SAVED_API_KEY_KEYS = {
-    "gemini": SAVED_API_KEY_KEY,
-    "openrouter": "openrouter_saved_api_key_configured",
-    "openai_compatible": "openai_compatible_saved_api_key_configured",
+VAULT_USERNAME = "extractor_keys"
+# Credential items written by versions before extractors, one per provider.
+LEGACY_CREDENTIAL_ITEMS = {
+    "gemini": "gemini_api_key",
+    "openrouter": "openrouter_api_key",
+    "openai_compatible": "openai_compatible_api_key",
 }
 
 
 class CredentialStoreUnavailable(RuntimeError):
     """Raised when the operating system has no usable credential backend."""
+
+
+class VaultUnavailable(RuntimeError):
+    """Raised when saved keys exist but cannot be read."""
 
 
 def credentials_dir() -> Path:
@@ -33,13 +36,8 @@ def credentials_dir() -> Path:
     return Path.home() / ".config" / SERVICE_NAME
 
 
-def credentials_path() -> Path:
-    """Path for non-secret preferences.
-
-    Kept as a public helper for compatibility. Provider keys are never written
-    here; they live in the operating-system credential store.
-    """
-
+def legacy_preferences_path() -> Path:
+    """Saved-key flags written by versions before extractors."""
     return credentials_dir() / "preferences.json"
 
 
@@ -49,7 +47,7 @@ def _keyring_module():
     except ImportError as exc:
         raise CredentialStoreUnavailable(
             "No operating-system credential store is available. "
-            "The key can still be used for this app session."
+            "Keys can still be used for this app session."
         ) from exc
 
     try:
@@ -58,12 +56,12 @@ def _keyring_module():
     except Exception as exc:
         raise CredentialStoreUnavailable(
             "The operating-system credential store could not be opened. "
-            "The key can still be used for this app session."
+            "Keys can still be used for this app session."
         ) from exc
     if priority <= 0:
         raise CredentialStoreUnavailable(
             "No usable operating-system credential store was found. "
-            "The key can still be used for this app session."
+            "Keys can still be used for this app session."
         )
     return keyring
 
@@ -76,91 +74,118 @@ def credential_store_available() -> bool:
     return True
 
 
-def load_saved_api_key(provider: str = "gemini") -> str | None:
-    selected = normalize_provider(provider)
-    try:
-        value = _keyring_module().get_password(SERVICE_NAME, provider_definition(selected).credential_key)
-    except CredentialStoreUnavailable:
-        return None
-    except Exception:
-        return None
-    api_key = str(value or "").strip()
-    return api_key or None
+class KeyVault:
+    """Every extractor's API key, kept in one credential-store item.
 
+    The item is read at most once per process, the first time a key is
+    needed, and then served from memory. It is written only when a key is
+    added, replaced or removed. Without a usable credential store, keys are
+    kept in memory for this session only.
+    """
 
-def save_api_key(api_key: str, provider: str = "gemini") -> str:
-    selected = normalize_provider(provider)
-    api_key = api_key.strip()
-    if not api_key:
-        raise ValueError(f"Cannot save an empty {provider_label(selected)} API key.")
-    try:
-        _keyring_module().set_password(
-            SERVICE_NAME,
-            provider_definition(selected).credential_key,
-            api_key,
-        )
-    except CredentialStoreUnavailable:
-        raise
-    except Exception as exc:
-        raise CredentialStoreUnavailable(
-            "The operating-system credential store rejected the key. "
-            "The key can still be used for this app session."
-        ) from exc
-    _set_saved_api_key_configured(True, selected)
-    return "operating-system credential store"
+    UNLOCK_MESSAGE = (
+        "Couldn't unlock saved keys. Allow access when your computer asks, "
+        "or replace the key in Settings."
+    )
 
+    def __init__(
+        self,
+        *,
+        legacy_claims: Callable[[], dict[str, str]] | None = None,
+        on_legacy_adopted: Callable[[dict[str, bool]], None] | None = None,
+    ) -> None:
+        """`legacy_claims` maps extractor ids to old per-provider credential items.
 
-def _load_preferences() -> dict:
-    path = credentials_path()
-    if not path.exists():
-        return {}
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        return payload if isinstance(payload, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+        When the vault is first opened those items are copied into it, and
+        deleted only after the vault has been saved; `on_legacy_adopted` is
+        then told which extractors received a key.
+        """
+        self._keys: dict[str, str] | None = None
+        self._persistent: bool | None = None
+        self._legacy_claims = legacy_claims
+        self._on_legacy_adopted = on_legacy_adopted
 
+    @property
+    def persistent(self) -> bool:
+        """Whether keys are saved in the credential store (checked without reading a key)."""
+        if self._persistent is None:
+            self._persistent = credential_store_available()
+        return self._persistent
 
-def _save_preferences(data: dict) -> None:
-    path = credentials_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-        handle.write("\n")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    def _load(self) -> dict[str, str]:
+        if self._keys is not None:
+            return self._keys
+        if not self.persistent:
+            self._keys = {}
+            return self._keys
+        try:
+            raw = _keyring_module().get_password(SERVICE_NAME, VAULT_USERNAME)
+            payload = json.loads(raw) if raw else {}
+            keys = payload.get("keys") if isinstance(payload, dict) else None
+            if raw and not isinstance(keys, dict):
+                raise ValueError("The saved key vault is malformed.")
+        except Exception as exc:
+            raise VaultUnavailable(self.UNLOCK_MESSAGE) from exc
+        self._keys = {str(name): str(value) for name, value in (keys or {}).items() if str(value).strip()}
+        self._adopt_legacy_keys()
+        return self._keys
 
+    def _adopt_legacy_keys(self) -> None:
+        claims = self._legacy_claims() if self._legacy_claims else {}
+        if not claims:
+            return
+        keyring = _keyring_module()
+        assert self._keys is not None
+        for extractor_id, username in claims.items():
+            if extractor_id in self._keys:
+                continue
+            try:
+                value = str(keyring.get_password(SERVICE_NAME, username) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                self._keys[extractor_id] = value
+        if not self._write():
+            return
+        for username in set(claims.values()):
+            try:
+                keyring.delete_password(SERVICE_NAME, username)
+            except Exception:
+                pass
+        if self._on_legacy_adopted:
+            self._on_legacy_adopted({extractor_id: extractor_id in self._keys for extractor_id in claims})
 
-def saved_api_key_configured(provider: str = "gemini") -> bool:
-    """Report saved-key intent without opening the credential store."""
+    def _write(self) -> bool:
+        if not self.persistent:
+            return False
+        try:
+            _keyring_module().set_password(
+                SERVICE_NAME,
+                VAULT_USERNAME,
+                json.dumps({"version": 1, "keys": self._keys}),
+            )
+        except Exception:
+            return False
+        return True
 
-    selected = normalize_provider(provider)
-    return _load_preferences().get(SAVED_API_KEY_KEYS[selected]) is True
+    def get(self, extractor_id: str) -> str | None:
+        return self._load().get(extractor_id)
 
+    def cached(self, extractor_id: str) -> str | None:
+        """Return a key only if the vault is already in memory; never reads the store."""
+        return (self._keys or {}).get(extractor_id)
 
-def _set_saved_api_key_configured(configured: bool, provider: str = "gemini") -> None:
-    selected = normalize_provider(provider)
-    preference_key = SAVED_API_KEY_KEYS[selected]
-    data = _load_preferences()
-    if configured:
-        data[preference_key] = True
-    else:
-        data.pop(preference_key, None)
-    _save_preferences(data)
+    def set(self, extractor_id: str, api_key: str) -> bool:
+        """Save a key. Returns False when it is kept for this session only."""
+        api_key = api_key.strip()
+        if not api_key:
+            raise ValueError("Cannot save an empty API key.")
+        self._load()[extractor_id] = api_key
+        return self._write()
 
+    def delete(self, extractor_id: str) -> None:
+        if self._load().pop(extractor_id, None) is not None:
+            self._write()
 
-def delete_saved_api_key(provider: str = "gemini") -> bool:
-    selected = normalize_provider(provider)
-    try:
-        _keyring_module().delete_password(
-            SERVICE_NAME,
-            provider_definition(selected).credential_key,
-        )
-    except Exception:
-        _set_saved_api_key_configured(False, selected)
-        return False
-    _set_saved_api_key_configured(False, selected)
-    return True
+    def secrets(self) -> list[str]:
+        return list((self._keys or {}).values())

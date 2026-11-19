@@ -10,10 +10,12 @@ class CliWebTests(unittest.TestCase):
     def test_web_and_run_commands_are_available(self):
         parser = build_parser()
         self.assertEqual(parser.parse_args(["web", "--no-browser"]).command, "web")
-        parsed = parser.parse_args(
-            ["run", "/tmp/project", "--provider", "gemini", "--model", "gemma-4-31b-it"]
-        )
-        self.assertEqual(parsed.provider, "gemini")
+        parsed = parser.parse_args(["run", "/tmp/project", "--extractor", "Lab Gemini"])
+        self.assertEqual(parsed.extractor, "Lab Gemini")
+        self.assertEqual(parser.parse_args(["extractors"]).command, "extractors")
+        for removed in ["--provider", "--model", "--api-key", "--parallel"]:
+            with self.subTest(flag=removed), patch("sys.stderr"), self.assertRaises(SystemExit):
+                parser.parse_args(["run", "/tmp/project", removed, "x"])
 
     def test_terminal_interface_commands_are_rejected(self):
         parser = build_parser()

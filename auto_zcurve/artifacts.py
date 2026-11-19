@@ -63,6 +63,8 @@ def extraction_record(result: ExtractionResult) -> dict[str, Any]:
         "error": result.error,
         "provider_used": result.provider_used,
         "model_used": result.model_used,
+        "extractor_id": result.extractor_id,
+        "extractor_name": result.extractor_name,
         "effects": result.effect_count,
         "data": result.data,
         "raw_json": result.raw_json,

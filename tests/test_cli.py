@@ -1,49 +1,108 @@
 from __future__ import annotations
 
 import argparse
+import os
+import tempfile
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from auto_zcurve import cli
-from auto_zcurve.config import AppSettings, RunSettings
+from auto_zcurve import cli, credentials
+from auto_zcurve.config import RunSettings, load_selected_extractor_id
+from auto_zcurve.credentials import KeyVault
+from auto_zcurve.extractors import create_extractor, get_extractor, set_key_saved
+from tests.test_key_vault import FakeKeyring
 
 
-class CliSettingsTests(unittest.TestCase):
-    def settings(self, argv, existing=None, interactive=False):
-        args = cli.build_parser().parse_args(['run', '.', *argv])
-        with patch.object(cli, 'load_run_settings', return_value=existing), patch.object(cli, 'load_app_settings', return_value=AppSettings()), patch.object(cli, 'model_request_defaults', return_value=(3, 0.2)), patch.object(cli, 'prompt_model', return_value='gemini-test') as prompt, patch.object(cli, 'validate_model_option', return_value=SimpleNamespace(name='validated')):
-            result = cli._settings_from_args(args, Path('.'), Mock(), interactive, 'key')
-        return result, prompt
+class CliExtractorTests(unittest.TestCase):
+    """Choosing an extractor and its key from the command line."""
 
-    def test_noninteractive_requires_model(self):
-        with self.assertRaisesRegex(RuntimeError, 'model is required'):
-            self.settings([])
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.project = Path(self.tmp.name) / "project"
+        self.project.mkdir()
+        self.keyring = FakeKeyring()
+        for item in (
+            patch.dict(os.environ, {"XDG_CONFIG_HOME": self.tmp.name}),
+            patch.object(credentials, "_keyring_module", side_effect=lambda: self.keyring),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
 
-    def test_model_defaults_and_interactive_selection(self):
-        result, prompt = self.settings([], interactive=True)
-        self.assertEqual(result.primary_model, 'gemini-test')
-        self.assertEqual(result.parallel_requests, 3)
-        self.assertEqual(result.request_delay_sec, 0.2)
-        prompt.assert_called_once()
+    def args(self, *argv):
+        return cli.build_parser().parse_args(["run", str(self.project), *argv])
 
-    def test_saved_settings_and_explicit_overrides(self):
-        saved = RunSettings(primary_model='gemini-saved', parallel_requests=7, request_delay_sec=1.2, request_timeout_sec=61, max_upload_size_mb=22)
-        result, prompt = self.settings([], saved)
-        self.assertEqual((result.primary_model, result.parallel_requests, result.request_timeout_sec, result.max_upload_size_mb), ('gemini-saved', 7, 61, 22))
-        prompt.assert_not_called()
-        result, _ = self.settings(['--model', 'gemini-new', '--parallel', '0'], saved)
-        self.assertEqual((result.primary_model, result.parallel_requests), ('gemini-new', 1))
-        self.assertEqual(result.request_delay_sec, 1.2)
+    def test_named_extractor_runs_with_its_settings_and_key(self):
+        lab = create_extractor({"name": "Lab Gemini", "provider": "gemini", "model": "gemini-x", "parallel_requests": "3"})
+        KeyVault().set(lab.id, "lab-key")
+        set_key_saved(lab.id, True)
 
-    def test_switching_provider_does_not_reuse_old_model(self):
-        saved = RunSettings(primary_model='gemini-saved')
-        with self.assertRaisesRegex(RuntimeError, 'OpenRouter.*model is required'):
-            self.settings(['--provider', 'openrouter'], saved)
-        result, _ = self.settings(['--provider', 'openrouter', '--model', 'vendor/model'], saved)
-        self.assertEqual((result.provider, result.primary_model), ('openrouter', 'validated'))
+        settings, key = cli._run_inputs(self.args("--extractor", "lab gemini"), self.project, False, Mock())
+
+        self.assertEqual((settings.primary_model, settings.parallel_requests, settings.extractor_id), ("gemini-x", 3, lab.id))
+        self.assertEqual(key, "lab-key")
+        self.assertEqual(load_selected_extractor_id(self.project), lab.id)
+        settings, _ = cli._run_inputs(self.args(), self.project, False, Mock())
+        self.assertEqual(settings.extractor_id, lab.id)
+
+    def test_unknown_or_missing_extractor_lists_the_choices(self):
+        with self.assertRaisesRegex(RuntimeError, "No extractors exist yet"):
+            cli._run_inputs(self.args(), self.project, False, Mock())
+        create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
+        with self.assertRaisesRegex(RuntimeError, "--extractor NAME. Available extractors: “Lab”"):
+            cli._run_inputs(self.args(), self.project, False, Mock())
+        with self.assertRaisesRegex(RuntimeError, "No extractor is called “Other”. Available extractors: “Lab”"):
+            cli._run_inputs(self.args("--extractor", "Other"), self.project, False, Mock())
+
+    def test_keys_come_only_from_the_vault(self):
+        create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "from-environment"}):
+            (self.project / ".env").write_text("GEMINI_API_KEY=from-dotenv\n")
+            with self.assertRaisesRegex(RuntimeError, "has no API key. Add one in the browser app"):
+                cli._run_inputs(self.args("--extractor", "Lab"), self.project, False, Mock())
+        local = create_extractor({"name": "Local", "provider": "openai_compatible", "model": "m", "base_url": "http://h/v1"})
+        self.assertEqual(cli.extractor_key(local), "")
+        self.assertEqual(self.keyring.reads, 0)
+
+    def test_an_unreadable_vault_is_reported(self):
+        lab = create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
+        set_key_saved(lab.id, True)
+        self.keyring.items[("auto-zcurve", "extractor_keys")] = "{broken"
+        with self.assertRaisesRegex(RuntimeError, "Couldn't unlock saved keys"):
+            cli.extractor_key(get_extractor(lab.id))
+
+    def test_interactive_runs_ask_which_extractor_to_use(self):
+        first = create_extractor({"name": "A", "provider": "gemini", "model": "m"})
+        second = create_extractor({"name": "B", "provider": "gemini", "model": "n"})
+        q = Mock()
+        q.select.return_value.ask.return_value = second.id
+        with patch.object(cli, "_questionary", return_value=q):
+            self.assertEqual(cli.choose_extractor(None, self.project, True, Mock()), second)
+        console = Mock()
+        for answer, expected in [("1", first), ("9", None), ("x", None)]:
+            with self.subTest(answer=answer), patch.object(cli, "_questionary", return_value=None), patch("builtins.input", return_value=answer):
+                self.assertEqual(cli.prompt_extractor(console), expected)
+        console.table.assert_called()
+
+    def test_prompt_without_extractors_returns_nothing(self):
+        self.assertIsNone(cli.prompt_extractor(Mock()))
+
+    def test_listing_extractors(self):
+        console = Mock()
+        self.assertEqual(cli.list_extractors_command(console), 0)
+        console.info.assert_called_once()
+        lab = create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
+        set_key_saved(lab.id, True)
+        create_extractor({"name": "Local", "provider": "openai_compatible", "model": "q", "base_url": "http://h/v1"})
+        create_extractor({"name": "Router", "provider": "openrouter", "model": "v/m"})
+        self.assertEqual(cli.list_extractors_command(console), 0)
+        rows = console.table.call_args.args[2]
+        self.assertEqual([row[3] for row in rows], ["saved", "not set (optional)", "not set"])
+        with patch.object(cli, "CliConsole", return_value=Mock()):
+            self.assertEqual(cli.main(["extractors"]), 0)
 
 
 class CliCommandTests(unittest.TestCase):
@@ -51,26 +110,24 @@ class CliCommandTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.mocks = {}
-        for name in ['ensure_project_layout', 'run_preflight', 'load_run_settings', 'prompt_api_key', '_settings_from_args', 'run_project', 'retry_project', 'print_summary', 'offer_interactive_retry']:
+        for name in ['ensure_project_layout', 'run_preflight', '_run_inputs', 'run_project', 'retry_project', 'print_summary', 'offer_interactive_retry']:
             self.mocks[name] = self.stack.enter_context(patch.object(cli, name))
         self.mocks['ensure_project_layout'].return_value = True
-        self.mocks['load_run_settings'].return_value = None
-        self.mocks['prompt_api_key'].return_value = 'key'
-        self.mocks['_settings_from_args'].return_value = RunSettings(primary_model='gemini-test')
+        self.mocks['_run_inputs'].return_value = (RunSettings(primary_model='gemini-test'), 'key')
         self.console = Mock()
 
     def test_run_declined_layout_stops_without_credentials(self):
         self.mocks['ensure_project_layout'].return_value = False
         args = cli.build_parser().parse_args(['run', '.'])
         self.assertEqual(cli.run_command(args, Path('.'), False, self.console), 0)
-        self.mocks['prompt_api_key'].assert_not_called()
+        self.mocks['_run_inputs'].assert_not_called()
         self.mocks['run_project'].assert_not_called()
 
     def test_run_outcomes_and_option_forwarding(self):
         for summary, code in [(None, 0), (SimpleNamespace(failed_pdfs=0), 0), (SimpleNamespace(failed_pdfs=2), 1)]:
             with self.subTest(summary=summary):
                 self.mocks['run_project'].return_value = summary
-                args = cli.build_parser().parse_args(['run', '.', '--yes', '--force', '--skip-report', '--provider', 'openrouter', '--api-key', 'explicit'])
+                args = cli.build_parser().parse_args(['run', '.', '--yes', '--force', '--skip-report', '--extractor', 'Lab'])
                 self.assertEqual(cli.run_command(args, Path('.'), False, self.console), code)
                 kwargs = self.mocks['run_project'].call_args.kwargs
                 self.assertEqual(kwargs['project_dir'], Path.cwd())
@@ -78,7 +135,8 @@ class CliCommandTests(unittest.TestCase):
                 self.assertTrue(kwargs['skip_report'])
                 self.assertTrue(kwargs['assume_yes'])
                 self.assertFalse(kwargs['interactive'])
-                self.mocks['prompt_api_key'].assert_called_with(Path.cwd(), explicit_key='explicit', interactive=False, provider='openrouter')
+                self.assertEqual(self.mocks['_run_inputs'].call_args.args[0].extractor, 'Lab')
+                self.assertEqual(kwargs['api_key'], 'key')
         self.mocks['offer_interactive_retry'].assert_not_called()
 
     def test_interactive_retry_updates_exit_status(self):
@@ -95,11 +153,10 @@ class CliCommandTests(unittest.TestCase):
                 with self.subTest(skip=skip, summary=summary):
                     self.mocks['run_preflight'].reset_mock()
                     self.mocks['retry_project'].return_value = summary
-                    self.mocks['load_run_settings'].return_value = RunSettings(primary_model='vendor/model', provider='openrouter')
                     args = cli.build_parser().parse_args(['retry', '.', '--source', 'a.pdf', '--source', 'nested/b.pdf', '--yes', '--skip-report', *(['--skip-preflight'] if skip else [])])
                     self.assertEqual(cli.retry_command(args, self.console), code)
                     self.assertEqual(self.mocks['run_preflight'].called, not skip)
-                    self.mocks['prompt_api_key'].assert_called_with(Path.cwd(), explicit_key=None, interactive=False, provider='openrouter')
+                    self.assertFalse(self.mocks['_run_inputs'].call_args.args[2])
                     kwargs = self.mocks['retry_project'].call_args.kwargs
                     self.assertEqual(kwargs['selected_sources'], ['a.pdf', 'nested/b.pdf'])
                     self.assertTrue(kwargs['assume_yes'])
@@ -115,35 +172,6 @@ class CliPromptTests(unittest.TestCase):
         with patch.object(cli, '_questionary', return_value=None), patch('builtins.input', return_value=''):
             self.assertEqual(cli.prompt_project_dir(), Path.cwd())
         self.assertIsNotNone(cli._questionary())
-
-    def test_api_key_resolution_and_prompt_fallbacks(self):
-        with patch.object(cli, 'resolve_api_key', return_value='saved'), patch.object(cli, '_questionary') as questionary:
-            self.assertEqual(cli.prompt_api_key(Path('.'), None, False), 'saved')
-            questionary.assert_not_called()
-        with patch.object(cli, 'resolve_api_key', side_effect=RuntimeError('missing')):
-            with self.assertRaisesRegex(RuntimeError, 'missing'):
-                cli.prompt_api_key(Path('.'), None, False)
-        q = Mock()
-        q.password.return_value.ask.return_value = 'entered'
-        for widget in [q, None]:
-            with patch.object(cli, '_questionary', return_value=widget), patch.object(cli, 'resolve_api_key', side_effect=[RuntimeError('missing'), 'resolved']) as resolve, patch('getpass.getpass', return_value='entered'):
-                self.assertEqual(cli.prompt_api_key(Path('.'), None, True), 'resolved')
-                resolve.assert_called_with(Path('.'), explicit_key='entered', provider='gemini')
-
-    def test_model_prompt_for_custom_providers(self):
-        for provider in ['openrouter', 'openai_compatible']:
-            with patch('builtins.input', return_value=' vendor/model '), patch.object(cli, 'validate_model_option', return_value=SimpleNamespace(name='vendor/model')) as validate:
-                self.assertEqual(cli.prompt_model('key', Mock(), provider), 'vendor/model')
-                validate.assert_called_once_with(provider, 'vendor/model', 'key')
-
-    def test_gemini_live_fallback_and_plain_selection(self):
-        q = Mock()
-        q.select.return_value.ask.return_value = 'gemini-test'
-        for live in [[SimpleNamespace(name='gemini-test')], [], RuntimeError('offline')]:
-            for widget in [q, None]:
-                with self.subTest(live=live, widget=bool(widget)), patch.object(cli, 'list_live_models', **({'side_effect': live} if isinstance(live, Exception) else {'return_value': live})), patch.object(cli, 'fallback_models', return_value=[SimpleNamespace(name='gemini-test')]) as fallback, patch.object(cli, '_questionary', return_value=widget), patch('builtins.input', return_value='1'):
-                    self.assertEqual(cli.prompt_model('key', Mock()), 'gemini-test')
-                    self.assertEqual(fallback.called, not isinstance(live, list) or not live)
 
     def test_retry_selection_and_cancellation(self):
         args = argparse.Namespace(skip_report=True)

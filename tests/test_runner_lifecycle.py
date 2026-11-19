@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import unittest
@@ -124,6 +125,26 @@ class RunnerLifecycleTests(unittest.TestCase):
         with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
             self.run_project()
         process.assert_not_called()
+
+    def test_only_settings_a_provider_uses_trigger_reprocessing(self):
+        cases = [
+            # (provider, previous change, reprocess?)
+            ('gemini', {'reasoning_effort': 'low'}, False),
+            ('gemini', {'service_tier': 'priority'}, True),
+            ('openrouter', {'service_tier': 'priority'}, False),
+            ('openrouter', {'reasoning_effort': 'low'}, True),
+            ('openai_compatible', {'reasoning_effort': 'low', 'service_tier': 'priority'}, False),
+        ]
+        for provider, previous, reprocess in cases:
+            with self.subTest(provider=provider, previous=previous):
+                save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
+                path = self.project / '.auto_zcurve/run_settings.json'
+                path.parent.mkdir(exist_ok=True)
+                path.write_text(json.dumps({'extractor': {'provider': provider, 'model': 'test', **previous}}))
+                settings = RunSettings(primary_model='test', provider=provider, request_delay_sec=0)
+                with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
+                    self.run_project(settings=settings)
+                self.assertEqual(process.called, reprocess)
 
     def test_retry_selected_failures_and_report_regeneration(self):
         for report in [self.project / 'output/report.html', self.project.parent / 'outside.html']:

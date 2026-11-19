@@ -161,6 +161,8 @@ def _log_result(
             "model": primary_model,
             "provider_used": result.provider_used,
             "model_used": result.model_used,
+            "extractor_id": result.extractor_id,
+            "extractor_name": result.extractor_name,
             "retry": retry,
             "error": result.error,
             "started_at": started_at,
@@ -199,8 +201,10 @@ def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) ->
     upsert_extraction(project_dir, result)
 
 
-def _record_source(result: ExtractionResult, source_path: Path, fmt: str) -> None:
-    """Stamp a result with its source format and the source file's SHA-256."""
+def _record_source(result: ExtractionResult, source_path: Path, fmt: str, settings: RunSettings) -> None:
+    """Stamp a result with its extractor, source format and the source file's SHA-256."""
+    result.extractor_id = settings.extractor_id or None
+    result.extractor_name = str((settings.extractor or {}).get("name") or "") or None
     result.source_format = fmt
     try:
         result.source_sha256 = file_sha256(source_path)
@@ -236,7 +240,7 @@ def _process_one(
             input_mode=input_mode,
             error=f"File exceeds max_upload_size_mb ({settings.max_upload_size_mb} MB).",
         )
-        _record_source(result, source_path, fmt)
+        _record_source(result, source_path, fmt, settings)
         _raise_if_cancelled(cancellation_event)
         with _ARTIFACT_LOCK:
             _save_result(project_dir, result, retry=retry)
@@ -274,6 +278,8 @@ def _process_one(
             cancellation_event=cancellation_event,
             openrouter_provider=settings.openrouter_provider,
             openrouter_allow_fallbacks=settings.openrouter_allow_fallbacks,
+            base_url=settings.base_url,
+            response_format=settings.response_format,
         )
         _raise_if_cancelled(cancellation_event)
     except RunCancelled:
@@ -303,7 +309,7 @@ def _process_one(
             raw_response=getattr(exc, "raw_response", None),
             repaired_response=getattr(exc, "repaired_response", None),
         )
-    _record_source(result, source_path, fmt)
+    _record_source(result, source_path, fmt, settings)
     _raise_if_cancelled(cancellation_event)
     with _ARTIFACT_LOCK:
         _save_result(project_dir, result, retry=retry)
@@ -424,14 +430,17 @@ def run_project(
         return None
 
     previous_settings = load_run_settings(project_dir)
+    provider = normalize_provider(settings.provider)
+    # Reasoning effort reaches only OpenRouter and the service tier only Gemini,
+    # so each is compared only for the provider that uses it.
     provider_or_model_changed = bool(
         previous_settings
         and (
-            normalize_provider(previous_settings.provider) != normalize_provider(settings.provider)
+            normalize_provider(previous_settings.provider) != provider
             or previous_settings.primary_model != settings.primary_model
             or previous_settings.pdf_parser != settings.pdf_parser
-            or previous_settings.reasoning_effort != settings.reasoning_effort
-            or previous_settings.service_tier != settings.service_tier
+            or (provider == "openrouter" and previous_settings.reasoning_effort != settings.reasoning_effort)
+            or (provider == "gemini" and previous_settings.service_tier != settings.service_tier)
         )
     )
     existing = latest_by_source(load_extractions(project_dir))
@@ -457,6 +466,7 @@ def run_project(
         settings.primary_model,
         api_key,
         timeout_sec=min(settings.request_timeout_sec, 30),
+        context_length=settings.context_length,
     )
     _raise_if_cancelled(cancellation_event)
     model_option = replace(
@@ -533,6 +543,7 @@ def retry_project(
         settings.primary_model,
         api_key,
         timeout_sec=min(settings.request_timeout_sec, 30),
+        context_length=settings.context_length,
     )
     _raise_if_cancelled(cancellation_event)
     model_option = replace(

@@ -820,3 +820,21 @@
   .docs-help { color: var(--info-subtle-foreground); text-underline-offset: var(--sp-1); }
   .docs-help:hover { text-decoration: underline; }
 }
+
+
+/* Read-only settings of the extractor chosen for a project. */
+@layer app {
+  .extractor-summary {
+    display: grid;
+    gap: var(--sp-1) var(--sp-4);
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .extractor-summary[hidden] { display: none; }
+  .extractor-summary > div { min-width: 0; }
+  .extractor-summary dt { color: var(--muted-foreground); font-size: var(--text-xs); }
+  .extractor-summary dd { margin: 0; overflow-wrap: anywhere; }
+}

@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from auto_zcurve import credentials
 from auto_zcurve import web as w
+from tests.test_key_vault import FakeKeyring
 from auto_zcurve.models import ModelOption
 from auto_zcurve.projects import create_project
 
@@ -54,20 +56,41 @@ class WebValidationTests(unittest.TestCase):
             with self.subTest(suffix=suffix):
                 self.assertEqual(self.client.post(self.base + suffix, data=data).status_code, 409)
 
-    def test_settings_and_catalog_failures(self):
-        self.assertEqual(self.client.post('/token/settings/providers/unknown').status_code, 400)
-        self.assertEqual(self.client.post('/token/settings/providers/gemini', data={'service_tier': 'bad'}).status_code, 400)
-        self.assertEqual(self.client.post('/token/settings/endpoint', data={'openai_base_url': 'bad'}).status_code, 400)
-        self.assertEqual(self.client.get('/token/api/models/unknown').status_code, 503)
-        self.app.state.runtime.session_api_key = 'key'
-        with patch.object(w, 'list_live_models', side_effect=RuntimeError('offline')):
-            self.assertEqual(self.client.get('/token/api/models/gemini').status_code, 503)
-        with patch.object(w, 'list_live_models', return_value=[ModelOption('a', 'A')]), patch.object(w, 'resolve_input_mode', side_effect=ValueError('unsupported')):
-            self.assertEqual(self.client.get('/token/api/models/gemini').json(), [])
-        with patch.object(self.app.state.runtime, '_load_key_from_store', return_value=None):
-            self.assertEqual(self.client.post('/token/api/models/openrouter/validate', data={'model': 'a'}).status_code, 400)
-        with patch.object(self.app.state.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option', side_effect=ValueError('bad model')):
-            self.assertEqual(self.client.post('/token/api/models/openrouter/validate', data={'model': 'a'}).status_code, 400)
+    def test_extractor_route_failures(self):
+        with patch.object(credentials, '_keyring_module', return_value=FakeKeyring()):
+            self.assertEqual(self.client.post('/token/extractors', data={'name': 'X', 'provider': 'bad', 'model': 'm'}).status_code, 400)
+            created = self.client.post('/token/extractors', data={'name': 'Local', 'provider': 'openai_compatible', 'model': 'm', 'base_url': 'http://h/v1'}).json()
+            self.assertIsNone(created['warning'])
+            local = created['extractor']['id']
+            missing = 'f' * 8
+            for path, status in [
+                (f'/token/extractors/{missing}', 400),
+                (f'/token/extractors/{missing}/duplicate', 404),
+                (f'/token/extractors/{missing}/delete', 404),
+                (f'/token/extractors/{missing}/key/delete', 404),
+            ]:
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.post(path, data={'name': 'Y', 'model': 'm'}).status_code, status)
+            self.assertEqual(self.client.post(f'/token/extractors/{missing}/key', data={'api_key': 'k'}).status_code, 404)
+            self.assertEqual(self.client.post(f'/token/extractors/{local}/key', data={'api_key': ' '}).status_code, 400)
+            self.assertEqual(self.client.post(f'/token/extractors/{local}', data={'name': 'Local', 'model': 'n', 'base_url': 'ftp://bad'}).status_code, 400)
+            self.assertEqual(self.client.get(f'/token/api/extractors/{missing}/models').status_code, 404)
+            self.assertEqual(self.client.get(f'/token/api/extractors/{local}/models').json(), [])
+            gemini = self.client.post('/token/extractors', data={'name': 'G', 'provider': 'gemini', 'model': 'm'}).json()['extractor']['id']
+            self.assertEqual(self.client.get(f'/token/api/extractors/{gemini}/models').json(), [])
+            self.client.post(f'/token/extractors/{gemini}/key', data={'api_key': 'k'})
+            with patch.object(w, 'list_live_models', side_effect=RuntimeError('offline')):
+                self.assertEqual(self.client.get(f'/token/api/extractors/{gemini}/models').status_code, 503)
+            with patch.object(w, 'list_live_models', return_value=[ModelOption('a', 'A')]):
+                self.assertEqual(self.client.get(f'/token/api/extractors/{gemini}/models').json(), [{'id': 'a', 'name': 'A'}])
+            self.assertEqual(self.client.post(self.base + '/settings', data={'extractor_id': missing}).status_code, 400)
+            self.assertEqual(self.client.post('/token/projects/' + 'f' * 16 + '/settings', data={'extractor_id': local}).status_code, 404)
+        self.assertEqual(self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'v/m:batch'}).status_code, 400)
+        with patch.object(w, 'list_model_endpoints', side_effect=RuntimeError('offline')):
+            self.assertEqual(self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'v/m'}).status_code, 503)
+        with patch.object(w, 'list_model_endpoints', return_value=[]) as endpoints:
+            self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'v/m', 'extractor_id': 'x'})
+        endpoints.assert_called_once_with('v/m', api_key=None)
 
     def test_upload_count_and_size_limits(self):
         response = self.client.post(self.base + '/uploads', files=[('files', ('a.pdf', b'%PDF'))] * 101)

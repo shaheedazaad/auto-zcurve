@@ -22,11 +22,9 @@ from .artifacts import (
 from .config import (
     DEFAULTS,
     legacy_effect_definition,
-    load_run_settings,
     remove_legacy_effect_definition,
 )
 from .llm import STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, record_review_reasons
-from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
 from .sources import SourceError, check_xml_file, discover_sources, source_format
@@ -405,8 +403,7 @@ def file_size_display(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def project_snapshot(project: ManagedProject, default_model: str | None = None) -> dict:
-    default_model = default_model or DEFAULT_MODEL
+def project_snapshot(project: ManagedProject) -> dict:
     sources = discover_sources(project.path, recursive=False)
     records = latest_by_source(load_extractions(project.path))
 
@@ -456,11 +453,6 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
                 "repaired_response": response_text(record, "repaired_response_path"),
             }
         )
-    settings = load_run_settings(project.path)
-    default_parallel, default_delay = model_request_defaults(
-        settings.primary_model if settings else default_model,
-        settings.provider if settings else "gemini",
-    )
     successful_count = sum(item["status"] == STATUS_OK for item in articles)
     needs_review_count = sum(item["status"] == STATUS_NEEDS_REVIEW for item in articles)
     extracted_count = successful_count + needs_review_count
@@ -508,10 +500,4 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
             if (project.path / "output" / name).is_file()
         ],
         "instructions": read_project_instructions(project),
-        "provider": settings.provider if settings else "gemini",
-        "model": settings.primary_model if settings else default_model,
-        "parallel_requests": settings.parallel_requests if settings else default_parallel,
-        "request_delay_sec": settings.request_delay_sec if settings else default_delay,
-        "openrouter_provider": settings.openrouter_provider if settings else "",
-        "openrouter_allow_fallbacks": settings.openrouter_allow_fallbacks if settings else True,
     }

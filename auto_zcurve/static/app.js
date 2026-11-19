@@ -1,6 +1,5 @@
 (() => {
-  let syncProviderCredentialState = () => {};
-  let refreshProviderModels = () => {};
+  let syncRunReadiness = () => {};
   let isRunning = false;
 
   const themeStorageKey = "auto-zcurve-theme";
@@ -57,86 +56,6 @@
     return payload;
   };
 
-  const markProviderKeyReady = (provider, saved) => {
-    const option = Array.from(document.querySelectorAll("#provider option"))
-      .find((item) => item.value === provider);
-    const providerControl = document.querySelector("#provider");
-    const target = option || (providerControl?.value === provider ? providerControl : null);
-    if (!target) return;
-    target.dataset.keyReady = "true";
-    if (saved) target.dataset.savedKey = "true";
-    syncProviderCredentialState();
-  };
-
-  /* A credential form lives either inline in a provider row or inside that
-     provider's dialog; the status line it reports into is the nearest one. */
-  const credentialMessage = (form) =>
-    form.querySelector(".form-message")
-    || form.closest("dialog")?.querySelector(".form-message")
-    || form.closest("[data-credential-row]")?.querySelector(".form-message")
-    || form.closest(".row")?.querySelector(".form-message");
-
-  /* Key entry happens in a native <dialog> so provider rows stay one line. */
-  document.querySelectorAll("[data-open-key-dialog]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const dialog = document.getElementById(`key-dialog-${button.dataset.openKeyDialog}`);
-      if (!dialog) return;
-      dialog.showModal();
-      dialog.querySelector("[name=api_key]")?.focus();
-    });
-  });
-  document.querySelectorAll("[data-close-key-dialog]").forEach((button) => {
-    button.addEventListener("click", () => button.closest("dialog")?.close());
-  });
-
-  document.querySelectorAll(".js-credentials").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const message = credentialMessage(form);
-      message.textContent = "Saving…";
-      try {
-        const formData = new FormData(form);
-        const result = await postForm(form.action, formData);
-        message.textContent = result.warning || (result.saved ? "Saved securely." : "Key is ready for this session.");
-        setMessageState(message, `form-message ${result.warning ? "warning-text" : "success-text"}`);
-        form.querySelector("[name=api_key]").value = "";
-        if (document.body.dataset.projectId) {
-          window.setTimeout(() => markProviderKeyReady(result.provider || formData.get("provider"), result.saved), 650);
-        } else {
-          window.setTimeout(() => window.location.reload(), 650);
-        }
-      } catch (error) {
-        message.textContent = error.message;
-        setMessageState(message, "form-message error-text");
-      }
-    });
-  });
-
-  document.querySelectorAll(".js-load-credentials").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const message = credentialMessage(form);
-      message.textContent = "Opening credential store…";
-      try {
-        const formData = new FormData(form);
-        const result = await postForm(form.action, formData);
-        message.textContent = "Saved key unlocked for this session.";
-        setMessageState(message, "form-message success-text");
-        if (document.body.dataset.projectId) {
-          window.setTimeout(() => {
-            markProviderKeyReady(result.provider || formData.get("provider"), true);
-            refreshProviderModels({ preserveValue: true });
-          }, 650);
-        } else {
-          window.setTimeout(() => window.location.reload(), 650);
-        }
-      } catch (error) {
-        message.textContent = error.message;
-        setMessageState(message, "form-message error-text");
-      }
-    });
-  });
-
   const body = document.body;
   const projectId = body.dataset.projectId;
   const page = body.dataset.page;
@@ -192,59 +111,230 @@
   if (page === "settings") {
     const settingsLinks = Array.from(document.querySelectorAll(".settings-nav a"));
     const syncSettingsNavigation = () => {
-      const target = document.getElementById(location.hash.slice(1));
-      if (target?.matches("details.provider-settings")) target.open = true;
       settingsLinks.forEach((link) => {
-        if (link.hash === (location.hash || "#provider-connections")) link.setAttribute("aria-current", "location");
+        if (link.hash === (location.hash || "#extractors")) link.setAttribute("aria-current", "location");
         else link.removeAttribute("aria-current");
       });
     };
-    settingsLinks.forEach((link) => link.addEventListener("click", () => {
-      const target = document.getElementById(link.hash.slice(1));
-      if (target?.matches("details.provider-settings")) target.open = true;
-    }));
     window.addEventListener("hashchange", syncSettingsNavigation);
     syncSettingsNavigation();
     document.querySelectorAll(".js-app-settings").forEach((settingsForm) => {
-    settingsForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!settingsForm.reportValidity()) return;
-      const button = settingsForm.querySelector("button[type=submit]");
-      const message = settingsForm.querySelector(".form-message");
-      button.disabled = true;
-      message.textContent = "Saving…";
-      setMessageState(message, "form-message settings-message mb-0");
-      try {
-        const result = await postForm(settingsForm.action, new FormData(settingsForm));
-        message.textContent = "Settings saved.";
-        setMessageState(message, "form-message settings-message mb-0 success-text");
-      } catch (error) {
-        message.textContent = error.message;
-        setMessageState(message, "form-message settings-message mb-0 error-text");
-      } finally {
-        button.disabled = false;
-      }
-    });
-
-    });
-
-    document.querySelectorAll(".js-delete-credentials").forEach((form) => {
-      form.addEventListener("submit", async (event) => {
+      settingsForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const label = form.dataset.providerLabel || "provider";
-        const confirmed = await confirmDestructive(
-          `Remove the saved ${label} key and forget it for this session?`
-        );
-        if (!confirmed) return;
-        const message = credentialMessage(form);
+        if (!settingsForm.reportValidity()) return;
+        const button = settingsForm.querySelector("button[type=submit]");
+        const message = settingsForm.querySelector(".form-message");
+        button.disabled = true;
+        message.textContent = "Saving…";
+        setMessageState(message, "form-message settings-message mb-0");
         try {
-          await postForm(form.action, new FormData(form));
+          await postForm(settingsForm.action, new FormData(settingsForm));
+          message.textContent = "Settings saved.";
+          setMessageState(message, "form-message settings-message mb-0 success-text");
+        } catch (error) {
+          message.textContent = error.message;
+          setMessageState(message, "form-message settings-message mb-0 error-text");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    const listMessage = document.querySelector("[data-extractor-list-message]");
+    const reportList = (text, state) => {
+      if (!listMessage) return;
+      listMessage.textContent = text;
+      setMessageState(listMessage, `form-message ${state}`);
+    };
+    const reloadSoon = (delay = 600) => window.setTimeout(() => window.location.reload(), delay);
+
+    const extractorDialog = document.querySelector("#extractor-dialog");
+    const extractorForm = extractorDialog?.querySelector(".js-extractor-form");
+    if (extractorDialog && extractorForm) {
+      const field = (name) => extractorForm.elements.namedItem(name);
+      const providerField = field("provider");
+      const modelField = field("model");
+      const message = extractorForm.querySelector(".form-message");
+      const modelOptions = extractorForm.querySelector("#extractor-model-options");
+      const modelHint = extractorForm.querySelector("[data-model-hint]");
+      const loadModels = extractorForm.querySelector("[data-load-models]");
+      const endpointList = extractorForm.querySelector("#extractor-openrouter-endpoints");
+      const endpointStatus = extractorForm.querySelector("[data-openrouter-provider-status]");
+      const keyActions = extractorForm.querySelector("[data-key-actions]");
+      const keyLabel = extractorForm.querySelector("[data-key-label]");
+      const modelHints = {
+        gemini: "A Gemini model ID, such as gemini-3.6-flash. Gemini receives the original PDF, or an XML file as text.",
+        openrouter: "An exact OpenRouter model ID (vendor/model). It must support structured outputs.",
+        openai_compatible: "The exact model ID your server serves.",
+      };
+      let editing = null;
+
+      const showProviderFields = () => {
+        const provider = providerField.value;
+        extractorForm.querySelectorAll("[data-provider-fields]").forEach((group) => {
+          const active = group.dataset.providerFields === provider;
+          group.hidden = !active;
+          group.querySelectorAll("input, select").forEach((input) => { input.disabled = !active; });
+        });
+        modelHint.textContent = modelHints[provider];
+        modelField.placeholder = provider === "openrouter" ? "vendor/model" : "Model ID";
+      };
+
+      const openExtractor = (extractor) => {
+        editing = extractor;
+        extractorForm.reset();
+        modelOptions.innerHTML = "";
+        endpointList.innerHTML = "";
+        message.textContent = "";
+        setMessageState(message, "form-message");
+        extractorForm.action = extractor ? `/${token}/extractors/${extractor.id}` : extractorForm.dataset.createAction;
+        extractorDialog.querySelector("[data-extractor-dialog-title]").textContent = extractor ? `Edit ${extractor.name}` : "Add extractor";
+        providerField.disabled = Boolean(extractor);
+        extractorForm.querySelector("[data-provider-locked]").hidden = !extractor;
+        if (extractor) {
+          Object.entries(extractor.settings).forEach(([name, value]) => {
+            const input = field(name);
+            if (!input) return;
+            input.value = name === "openrouter_allow_fallbacks" ? (value ? "allow" : "deny") : (value ?? "");
+          });
+        }
+        const hasKey = Boolean(extractor?.has_key);
+        keyActions.hidden = !hasKey;
+        keyLabel.textContent = hasKey ? "Replace API key (optional)" : "API key";
+        loadModels.hidden = !extractor || extractor.provider === "openai_compatible" || !hasKey;
+        showProviderFields();
+        extractorDialog.showModal();
+        field("name").focus();
+      };
+
+      document.querySelector("[data-new-extractor]")?.addEventListener("click", () => openExtractor(null));
+      document.querySelectorAll("[data-edit-extractor]").forEach((button) => {
+        button.addEventListener("click", () => openExtractor(JSON.parse(button.closest("[data-extractor-row]").dataset.extractor)));
+      });
+      extractorForm.querySelector("[data-close-extractor-dialog]").addEventListener("click", () => extractorDialog.close());
+      providerField.addEventListener("change", showProviderFields);
+
+      /* Loading suggestions uses the extractor's saved key, so it may open the
+         credential store; it only happens when asked for. */
+      loadModels.addEventListener("click", async () => {
+        loadModels.disabled = true;
+        modelHint.textContent = "Loading models…";
+        try {
+          const response = await fetch(`/${token}/api/extractors/${encodeURIComponent(editing.id)}/models`, { cache: "no-store" });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.detail || "Models could not be loaded.");
+          modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+          modelHint.textContent = payload.length
+            ? `${payload.length} model${payload.length === 1 ? "" : "s"} available. Start typing to filter.`
+            : "The provider returned no models for this key.";
+        } catch (error) {
+          modelHint.textContent = error.message;
+        } finally {
+          loadModels.disabled = false;
+        }
+      });
+
+      modelField.addEventListener("change", async () => {
+        const model = modelField.value.trim();
+        if (providerField.value !== "openrouter" || !model) return;
+        endpointStatus.textContent = "Loading providers…";
+        const query = new URLSearchParams({ model, extractor_id: editing?.id || "" });
+        try {
+          const response = await fetch(`/${token}/api/models/openrouter/endpoints?${query}`, { cache: "no-store" });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.detail || "Providers could not be loaded.");
+          endpointList.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.name)}</option>`).join("");
+          endpointStatus.textContent = payload.length
+            ? `${payload.length} provider${payload.length === 1 ? " serves" : "s serve"} this model with structured output. Leave empty to let OpenRouter choose.`
+            : "No provider currently serves this model with structured output.";
+        } catch (error) {
+          endpointStatus.textContent = error.message;
+        }
+      });
+
+      extractorForm.querySelector("[data-remove-key]").addEventListener("click", async () => {
+        const confirmed = await confirmDestructive(`Remove the saved API key for “${editing.name}”?`, { title: "Remove API key?" });
+        if (!confirmed) return;
+        try {
+          await postForm(`/${token}/extractors/${encodeURIComponent(editing.id)}/key/delete`, new FormData());
           message.textContent = "Key removed.";
           setMessageState(message, "form-message success-text");
-          window.setTimeout(() => window.location.reload(), 500);
+          reloadSoon();
         } catch (error) {
           message.textContent = error.message;
           setMessageState(message, "form-message error-text");
+        }
+      });
+
+      extractorForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!extractorForm.reportValidity()) return;
+        const button = extractorForm.querySelector("button[type=submit]");
+        const data = new FormData(extractorForm);
+        const apiKey = String(data.get("api_key") || "").trim();
+        button.disabled = true;
+        message.textContent = "Saving…";
+        setMessageState(message, "form-message");
+        try {
+          if (editing) data.delete("api_key");
+          const result = await postForm(extractorForm.action, data);
+          const warnings = [result.warning];
+          if (editing && apiKey) {
+            const keyData = new FormData();
+            keyData.set("api_key", apiKey);
+            warnings.push((await postForm(`/${token}/extractors/${encodeURIComponent(editing.id)}/key`, keyData)).warning);
+          }
+          const warning = warnings.filter(Boolean).join(" ");
+          field("api_key").value = "";
+          message.textContent = warning || "Extractor saved.";
+          setMessageState(message, `form-message ${warning ? "warning-text" : "success-text"}`);
+          reloadSoon(warning ? 2400 : 600);
+        } catch (error) {
+          message.textContent = error.message;
+          setMessageState(message, "form-message error-text");
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      const linked = location.hash.startsWith("#extractor-") ? document.getElementById(location.hash.slice(1)) : null;
+      if (linked?.dataset.extractor) openExtractor(JSON.parse(linked.dataset.extractor));
+    }
+
+    document.querySelectorAll(".js-extractor-action").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const result = await postForm(form.action, new FormData(form));
+          // Reopen the page on the copy so its edit dialog opens straight away.
+          window.location.hash = `extractor-${result.extractor.id}`;
+          reloadSoon(0);
+        } catch (error) {
+          reportList(error.message, "error-text");
+        }
+      });
+    });
+
+    document.querySelectorAll(".js-delete-extractor").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const name = form.dataset.extractorName || "this extractor";
+        const confirmed = await confirmDestructive(
+          `Delete “${name}” and its saved API key? Projects that use it will need another extractor.`,
+          { title: "Delete this extractor?" }
+        );
+        if (!confirmed) return;
+        try {
+          const result = await postForm(form.action, new FormData(form));
+          const projects = result.projects || [];
+          const notes = [
+            result.warning,
+            projects.length ? `Choose another extractor for: ${projects.join(", ")}.` : "",
+          ].filter(Boolean).join(" ");
+          reportList(`Deleted “${name}”. ${notes}`.trim(), notes ? "warning-text" : "success-text");
+          reloadSoon(notes ? 3000 : 600);
+        } catch (error) {
+          reportList(error.message, "error-text");
         }
       });
     });
@@ -674,7 +764,7 @@
       : "Run analysis <span>→</span>";
     const currentRetryButton = document.querySelector(".js-retry");
     currentRetryButton.dataset.hasFailures = project.failed_count > 0 || project.needs_review_count > 0 ? "true" : "false";
-    syncProviderCredentialState();
+    syncRunReadiness();
   };
 
   document.querySelector(".js-page-previous")?.addEventListener("click", () => {
@@ -852,7 +942,7 @@
     if (!running && slowExtractionWarning) slowExtractionWarning.hidden = true;
     if (articleRefreshTimer) window.clearInterval(articleRefreshTimer);
     articleRefreshTimer = running ? window.setInterval(() => refreshProject(), 2500) : undefined;
-    if (!running) syncProviderCredentialState();
+    if (!running) syncRunReadiness();
   };
 
   const showConnectionLost = (closed) => {
@@ -906,12 +996,16 @@
     });
   };
 
+  const extractorSelect = document.querySelector("#extractor");
+  const credentialPrompt = document.querySelector("[data-run-credential-prompt]");
+  const runActions = document.querySelector("[data-run-actions]");
+  const editExtractorLink = document.querySelector("[data-edit-extractor-link]");
+  const projectSettingsMessage = document.querySelector(".project-settings-message");
+
   const start = async (action) => {
     runMessage.textContent = "";
-    const settingsForm = document.querySelector(".js-run-settings");
-    if (["run", "retry"].includes(action) && !settingsForm.reportValidity()) return;
-    if (["run", "retry"].includes(action) && !(await validateOpenRouterModel())) return;
-    const data = ["run", "retry"].includes(action) ? new FormData(settingsForm) : new FormData();
+    const data = new FormData();
+    if (["run", "retry"].includes(action) && extractorSelect?.value) data.set("extractor_id", extractorSelect.value);
     try {
       await postForm(`${base}/${action}`, data);
       setRunning(true);
@@ -921,245 +1015,44 @@
       setMessageState(runMessage, "form-message run-message error-text");
     }
   };
-  const providerSelect = document.querySelector("#provider");
-  const modelInput = document.querySelector("#model");
-  const modelOptions = document.querySelector("#gemini-model-options");
-  const modelHint = document.querySelector("[data-model-hint]");
-  const modelValidation = document.querySelector("[data-model-validation]");
-  const openRouterWarning = document.querySelector("[data-openrouter-warning]");
-  const saveProjectSettingsButton = document.querySelector(".js-save-project-settings");
-  const projectSettingsMessage = document.querySelector(".project-settings-message");
-  const parallelInput = document.querySelector("#parallel-requests");
-  const delayInput = document.querySelector("#request-delay-sec");
-  let projectSettingsTouched = false;
-  parallelInput?.addEventListener("input", () => { projectSettingsTouched = true; });
-  delayInput?.addEventListener("input", () => { projectSettingsTouched = true; });
-  const providerLabel = document.querySelector("[data-provider-label]");
-  const credentialPrompt = document.querySelector("[data-run-credential-prompt]");
-  const runActions = document.querySelector("[data-run-actions]");
-  const keyHeading = document.querySelector("[data-key-heading]");
-  const keyPromptCopy = document.querySelector("[data-key-prompt-copy]");
-  const keyInput = document.querySelector("[data-key-input]");
-  const macosKeyNote = document.querySelector("[data-macos-key-note]");
-  let currentModelCatalog = [];
-  const openRouterRouting = document.querySelector("[data-openrouter-routing]");
-  const openRouterProvider = document.querySelector("#openrouter-provider");
-  const openRouterProviderStatus = document.querySelector("[data-openrouter-provider-status]");
-  const openRouterFallbacks = document.querySelector("#openrouter-fallbacks");
-  const openRouterFallbacksHint = document.querySelector("[data-openrouter-fallbacks-hint]");
-  let openRouterEndpointRequest = 0;
 
-  const updateFallbacksHint = () => {
-    if (!openRouterProvider || !openRouterFallbacks || !openRouterFallbacksHint) return;
-    const chosen = openRouterProvider.value ? openRouterProvider.selectedOptions[0].textContent : "";
-    const allow = openRouterFallbacks.value === "allow";
-    openRouterFallbacksHint.textContent = chosen
-      ? (allow ? `Tries ${chosen} first, then other providers if it is unavailable.` : `Only ${chosen} is used. Requests fail if it is unavailable.`)
-      : (allow ? "OpenRouter picks a provider and tries others if a request fails." : "Only OpenRouter's first-choice provider is tried.");
-  };
-
-  const renderOpenRouterProviders = (endpoints, selectedValue) => {
-    const known = endpoints.some((item) => item.tag === selectedValue);
-    const options = [{ tag: "", name: "Automatic (OpenRouter chooses)" }, ...endpoints];
-    if (selectedValue && !known) options.push({ tag: selectedValue, name: `${selectedValue} (not listed for this model)` });
-    openRouterProvider.innerHTML = options.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.name)}</option>`).join("");
-    openRouterProvider.value = selectedValue;
-    updateFallbacksHint();
-  };
-
-  const loadOpenRouterProviders = async () => {
-    if (!openRouterProvider || !openRouterProviderStatus) return;
-    const model = modelInput?.value.trim() || "";
-    const selectedValue = openRouterProvider.value;
-    const request = ++openRouterEndpointRequest;
-    if (providerSelect?.value !== "openrouter" || !model) {
-      renderOpenRouterProviders([], selectedValue);
-      openRouterProviderStatus.textContent = "Choose a model to see which providers serve it.";
-      return;
-    }
-    renderOpenRouterProviders([], selectedValue);
-    openRouterProviderStatus.textContent = "Loading providers…";
-    try {
-      const response = await fetch(`/${token}/api/models/openrouter/endpoints?model=${encodeURIComponent(model)}`, { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "Providers could not be loaded.");
-      if (request !== openRouterEndpointRequest) return;
-      renderOpenRouterProviders(payload, openRouterProvider.value);
-      openRouterProviderStatus.textContent = payload.length
-        ? `${payload.length} provider${payload.length === 1 ? " serves" : "s serve"} this model with structured output.`
-        : "No provider currently serves this model with structured output.";
-    } catch (error) {
-      if (request !== openRouterEndpointRequest) return;
-      openRouterProviderStatus.textContent = error.message;
-    }
-  };
-  openRouterProvider?.addEventListener("change", updateFallbacksHint);
-  openRouterFallbacks?.addEventListener("change", updateFallbacksHint);
-
-  const updateModelHint = () => {
-    if (!modelHint || !providerSelect || !modelInput) return;
-    const selectedModel = currentModelCatalog.find((item) => item.id === modelInput.value.trim());
-    if (providerSelect.value === "gemini") {
-      modelHint.textContent = "Gemini receives the original PDF (or an XML file as text) and returns schema-validated structured data.";
-    } else if (providerSelect.value === "openai_compatible") {
-      modelHint.textContent = "Enter the exact model ID served by your endpoint. PDFs are sent as locally extracted text (scanned pages need OCR); XML files are sent as text, without parsing.";
-    } else {
-      modelHint.textContent = "Enter an exact OpenRouter model ID. It must be validated before it can run.";
-    }
-  };
-
-  syncProviderCredentialState = () => {
-    if (!providerSelect) return;
-    const selected = providerSelect.selectedOptions?.[0] || providerSelect;
-    const label = selected.textContent?.trim() || "Gemini";
-    const keyReady = selected.dataset.keyReady === "true";
-    const savedKey = selected.dataset.savedKey === "true";
-    // A saved key doesn't need a manual "Unlock" click: pressing Run/Retry loads it
-    // from the OS credential store on demand, so those actions are available whenever
-    // either a session key or a saved key exists.
-    const isEndpoint = selected.value === "openai_compatible";
-    const canRun = isEndpoint ? providerSelect.dataset.endpointReady === "true" : keyReady || savedKey;
-    if (providerLabel) providerLabel.textContent = label;
-    if (credentialPrompt) credentialPrompt.hidden = canRun;
+  /* Run and Retry are offered once the chosen extractor has a key, or needs none. */
+  syncRunReadiness = () => {
+    const selected = extractorSelect?.selectedOptions?.[0];
+    const chosen = Boolean(selected?.value);
+    const canRun = chosen && selected.dataset.runnable === "true";
+    if (credentialPrompt) credentialPrompt.hidden = !chosen || canRun;
     if (runActions) runActions.hidden = !canRun;
-    if (keyHeading) keyHeading.textContent = isEndpoint ? "Configure your endpoint to run" : `Add a ${label} API key to run`;
-    if (keyPromptCopy) keyPromptCopy.textContent = isEndpoint ? "Set an API base URL in Settings. A key is optional for servers that allow keyless requests." : `No ${label} key is configured for this session.`;
-    const settingsLink = credentialPrompt?.querySelector("a");
-    if (settingsLink) settingsLink.textContent = isEndpoint ? "Configure endpoint in Settings" : "Enter API key in Settings";
-    if (keyInput) keyInput.placeholder = `Paste ${label} API key`;
-    document.querySelectorAll("[data-credential-provider]").forEach((input) => {
-      input.value = selected.value;
-    });
-    if (macosKeyNote) macosKeyNote.hidden = !savedKey;
     runButton.disabled = isRunning || runButton.dataset.hasPdfs !== "true" || !canRun;
     retryButton.disabled = isRunning || retryButton.dataset.hasFailures !== "true" || !canRun;
   };
 
-  const refreshModels = async ({ preserveValue = false } = {}) => {
-    if (!providerSelect || !modelInput || !modelOptions) return;
-    const provider = providerSelect.value;
-    const previousValue = modelInput.value.trim();
-    const isOpenRouter = provider === "openrouter";
-    syncProviderCredentialState();
-    if (openRouterWarning) openRouterWarning.hidden = !isOpenRouter;
-    if (openRouterRouting) openRouterRouting.hidden = !isOpenRouter;
-    if (isOpenRouter) loadOpenRouterProviders();
-    modelInput.removeAttribute("list");
-    if (provider === "gemini") modelInput.setAttribute("list", "gemini-model-options");
-    if (provider !== "gemini") {
-      currentModelCatalog = [];
-      modelOptions.innerHTML = "";
-      modelInput.placeholder = isOpenRouter ? "vendor/model" : "Exact model ID";
-      if (!projectSettingsTouched && parallelInput && delayInput) {
-        parallelInput.value = "1";
-        delayInput.value = "0";
-      }
-      if (modelValidation) modelValidation.textContent = isOpenRouter ? "Validation checks OpenRouter's live model metadata when you save or run." : "Configure your endpoint in Settings. No model catalog is required.";
-      updateModelHint();
-      return;
+  extractorSelect?.addEventListener("change", async () => {
+    const extractorId = extractorSelect.value;
+    document.querySelectorAll("[data-extractor-summary]").forEach((summary) => {
+      summary.hidden = summary.dataset.extractorSummary !== extractorId;
+    });
+    const deletedNotice = document.querySelector("[data-extractor-deleted]");
+    if (deletedNotice) deletedNotice.hidden = true;
+    if (editExtractorLink) {
+      editExtractorLink.hidden = false;
+      editExtractorLink.href = `/${token}/settings#extractor-${encodeURIComponent(extractorId)}`;
     }
-    const selectedProvider = providerSelect.selectedOptions?.[0] || providerSelect;
-    if (selectedProvider.dataset.keyReady !== "true") {
-      currentModelCatalog = [];
-      modelOptions.innerHTML = "";
-      modelInput.placeholder = selectedProvider.dataset.savedKey === "true"
-        ? "Model list loads after your first run"
-        : "Add an API key to load models";
-      updateModelHint();
-      return;
-    }
-    runButton.disabled = true;
-    modelInput.value = "";
-    modelInput.placeholder = "Loading compatible models…";
-    try {
-      const response = await fetch(`/${token}/api/models/${encodeURIComponent(provider)}`, { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "Compatible models could not be loaded.");
-      currentModelCatalog = payload;
-      modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
-      modelInput.placeholder = "Enter a model ID";
-      const previousIsCompatible = payload.some((item) => item.id === previousValue);
-      if (preserveValue && previousValue) {
-        modelInput.value = previousValue;
-        if (previousIsCompatible) {
-          runMessage.textContent = "";
-        } else {
-          runMessage.textContent = `The previously selected model (${previousValue}) was not found in the current model catalog. It will still be used as entered.`;
-          setMessageState(runMessage, "form-message run-message warning-text");
-        }
-      } else {
-        runMessage.textContent = "";
-      }
-      updateModelHint();
-      syncProviderCredentialState();
-    } catch (error) {
-      currentModelCatalog = [];
-      modelOptions.innerHTML = "";
-      modelInput.placeholder = "Model catalog unavailable";
-      runMessage.textContent = error.message;
-      setMessageState(runMessage, "form-message run-message error-text");
-      runButton.disabled = true;
-      updateModelHint();
-    }
-  };
-  refreshProviderModels = refreshModels;
-  providerSelect?.addEventListener("change", () => {
-    const defaultModel = providerSelect.value === "openrouter"
-      ? providerSelect.dataset.defaultOpenrouterModel
-      : (providerSelect.value === "gemini" ? providerSelect.dataset.defaultGeminiModel : "");
-    modelInput.value = defaultModel || "";
-    refreshModels({ preserveValue: true });
-  });
-  modelInput?.addEventListener("input", updateModelHint);
-  modelInput?.addEventListener("change", () => {
-    updateModelHint();
-    if (providerSelect?.value === "openrouter") loadOpenRouterProviders();
-    if (!projectSettingsTouched) {
-      const selected = currentModelCatalog.find((item) => item.id === modelInput.value.trim());
-      if (selected && parallelInput && delayInput) {
-        parallelInput.value = String(selected.parallel_requests ?? parallelInput.value);
-        delayInput.value = String(selected.request_delay_sec ?? delayInput.value);
-      }
-    }
-  });
-  const validateOpenRouterModel = async () => {
-    if (providerSelect?.value !== "openrouter" || !modelInput?.value.trim()) return true;
-    if (modelValidation) modelValidation.textContent = "Validating OpenRouter model…";
+    syncRunReadiness();
     const data = new FormData();
-    data.set("model", modelInput.value.trim());
+    data.set("extractor_id", extractorId);
     try {
-      const response = await fetch(`/${token}/api/models/openrouter/validate`, { method: "POST", body: data });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "OpenRouter model validation failed.");
-      if (modelValidation) modelValidation.textContent = "Validated for native PDF and structured output.";
-      return true;
+      await postForm(`${base}/settings`, data);
+      projectSettingsMessage.textContent = "This project will use this extractor.";
+      setMessageState(projectSettingsMessage, "form-message project-settings-message success-text");
     } catch (error) {
-      if (modelValidation) modelValidation.textContent = error.message;
-      return false;
+      projectSettingsMessage.textContent = error.message;
+      setMessageState(projectSettingsMessage, "form-message project-settings-message error-text");
     }
-  };
-  modelInput?.addEventListener("blur", validateOpenRouterModel);
-  syncProviderCredentialState();
-  refreshModels({ preserveValue: true });
+  });
+  syncRunReadiness();
   runButton?.addEventListener("click", () => start("run"));
   retryButton?.addEventListener("click", () => start("retry"));
-  saveProjectSettingsButton?.addEventListener("click", async () => {
-    const settingsForm = document.querySelector(".js-run-settings");
-    if (!settingsForm?.reportValidity()) return;
-    if (!(await validateOpenRouterModel())) return;
-    try {
-      await postForm(`${base}/settings`, new FormData(settingsForm));
-      if (projectSettingsMessage) {
-        projectSettingsMessage.textContent = "Project settings saved.";
-        setMessageState(projectSettingsMessage, "form-message project-settings-message success-text");
-      }
-    } catch (error) {
-      if (projectSettingsMessage) {
-        projectSettingsMessage.textContent = error.message;
-        setMessageState(projectSettingsMessage, "form-message project-settings-message error-text");
-      }
-    }
-  });
   regenerateButton?.addEventListener("click", () => start("regenerate-report"));
   cancelButton?.addEventListener("click", async () => {
     try {

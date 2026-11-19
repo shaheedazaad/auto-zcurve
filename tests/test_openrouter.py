@@ -59,20 +59,12 @@ class OpenRouterTests(unittest.TestCase):
         import auto_zcurve.models as models
 
         models._OPENROUTER_CACHE = None
-        self.model_config = patch(
-            "auto_zcurve.models.MODEL_CONFIG",
-            Path("/nonexistent-auto-zcurve-models.yml"),
-        )
-        self.model_config.start()
-
-    def tearDown(self):
-        self.model_config.stop()
 
     @patch("auto_zcurve.openrouter.list_models", return_value=MODEL_FIXTURES)
     def test_model_catalog_includes_native_pdf_and_structured_text_models(self, list_models):
-        # OpenRouter models are manual-entry only (no browsable live catalog);
-        # validate_model_option still checks the entered ID against it.
-        self.assertEqual(list_live_models("key", "openrouter"), [])
+        # The catalog is offered as suggestions; validate_model_option checks the entered ID.
+        suggested = [option.name for option in list_live_models("key", "openrouter")]
+        self.assertEqual(suggested, sorted((item["id"] for item in MODEL_FIXTURES), key=str.lower))
         deepseek = validate_model_option(
             "openrouter", "deepseek/deepseek-v3.2", "key"
         )

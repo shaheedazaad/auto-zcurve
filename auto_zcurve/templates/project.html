@@ -47,12 +47,6 @@
     </div>
   </div>
 
-  {% if key_warning %}
-  <div class="alert" data-variant="warning" role="status" style="margin-bottom:var(--sp-6)">
-    <section>{{ key_warning }}</section>
-  </div>
-  {% endif %}
-
   <div class="project-layout">
   <aside class="project-sidebar" aria-label="Project navigation">
   <div class="tabbar project-tabs" role="tablist" aria-label="Project sections" aria-orientation="vertical" data-project-tabs>
@@ -389,82 +383,54 @@
         <div class="stack">
           <div>
             <h3 style="margin:0; font-size:var(--text-lg); font-weight:600">Run settings</h3>
-            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">Provider, model, and throughput for this project.</p>
+            <p class="u-sm u-muted" style="margin:var(--sp-1) 0 0">The extractor this project runs with. Its settings are edited in Settings.</p>
           </div>
+          {% if extractors %}
           <form class="js-run-settings stack">
-            <div class="grid-2">
-              <div class="field">
-                <label for="provider">Provider</label>
-                <select class="select" id="provider" name="provider" data-endpoint-ready="{{ 'true' if app_settings.openai_base_url else 'false' }}" data-default-gemini-model="{{ project.default_gemini_model }}" data-default-openrouter-model="{{ project.default_openrouter_model }}">
-                  {% for name, label in providers %}
-                  <option value="{{ name }}" data-key-ready="{{ 'true' if (provider_key_status or {}).get(name, false) else 'false' }}" data-saved-key="{{ 'true' if (provider_saved_key_status or {}).get(name, false) else 'false' }}" {% if project.provider == name %}selected{% endif %}>{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="field">
-                <label for="parallel-requests">Parallel articles</label>
-                <input class="input" id="parallel-requests" name="parallel_requests" type="number" min="1" max="32" value="{{ project.parallel_requests }}" required>
-              </div>
-            </div>
-
             <div class="field">
-              <label for="model" data-provider-label>{{ provider_label }} model</label>
-              <input class="input" id="model" name="model" list="gemini-model-options" value="{{ project.model }}" autocomplete="off" spellcheck="false" required>
-              <datalist id="gemini-model-options">
-                {% for model in models %}
-                <option value="{{ model.name }}"></option>
+              <label for="extractor">Extractor</label>
+              <select class="select" id="extractor" name="extractor_id" required>
+                {% if not selected_extractor_id %}<option value="" selected disabled>Choose an extractor</option>{% endif %}
+                {% for extractor in extractors %}
+                <option value="{{ extractor.id }}"{% if extractor.id == selected_extractor_id %} selected{% endif %} data-runnable="{{ 'true' if extractor.has_key or not extractor.requires_key else 'false' }}">{{ extractor.name }}</option>
                 {% endfor %}
-              </datalist>
-              <p>{{ docs_link("settings/#provider-connections", "Provider and model setup") }}</p>
-              <p class="u-sm u-muted" data-model-hint>Select a compatible model. PDF handling follows the application-wide parser setting.</p>
-              <p class="u-sm" data-model-validation role="status"></p>
-            </div>
-            <div class="alert" data-variant="warning" data-openrouter-warning {% if project.provider != 'openrouter' %}hidden{% endif %}>
-              <section><strong>Experimental backup provider.</strong> Model quality, PDF support, structured-output behavior, latency, and reliability can vary by model and provider route.</section>
-            </div>
-
-            <div class="grid-2" data-openrouter-routing {% if project.provider != 'openrouter' %}hidden{% endif %}>
-              <div class="field">
-                <label for="openrouter-provider">Route to provider</label>
-                <select class="select" id="openrouter-provider" name="openrouter_provider" data-saved-value="{{ project.openrouter_provider }}">
-                  <option value="">Automatic (OpenRouter chooses)</option>
-                  {% if project.openrouter_provider %}<option value="{{ project.openrouter_provider }}" selected>{{ project.openrouter_provider }}</option>{% endif %}
-                </select>
-                <p class="u-sm u-muted" data-openrouter-provider-status role="status">Providers serving this model with structured output.</p>
-              </div>
-              <div class="field">
-                <label for="openrouter-fallbacks">Fallbacks</label>
-                <select class="select" id="openrouter-fallbacks" name="openrouter_fallbacks">
-                  <option value="allow" {% if project.openrouter_allow_fallbacks %}selected{% endif %}>Allow other providers</option>
-                  <option value="deny" {% if not project.openrouter_allow_fallbacks %}selected{% endif %}>Don't fall back</option>
-                </select>
-                <p class="u-sm u-muted" data-openrouter-fallbacks-hint></p>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="request-delay-sec">Delay between submissions (seconds)</label>
-              <input class="input" id="request-delay-sec" name="request_delay_sec" type="number" min="0" max="3600" value="{{ project.request_delay_sec }}" required>
-              <p>Minimum time between provider request starts.</p>
-            </div>
-
-            <div class="cluster" style="justify-content:flex-end">
+              </select>
               <p class="form-message project-settings-message u-sm" role="status"></p>
-              <button class="btn js-save-project-settings" data-variant="outline" data-size="sm" type="button">Save project settings</button>
             </div>
+            {% if selected_extractor_deleted %}
+            <div class="alert" data-variant="warning" data-extractor-deleted>
+              <section>The extractor used for this project was deleted. Choose another.</section>
+            </div>
+            {% endif %}
+            {% for extractor in extractors %}
+            <dl class="extractor-summary" data-extractor-summary="{{ extractor.id }}" {% if extractor.id != selected_extractor_id %}hidden{% endif %}>
+              {% for label, value in extractor.summary %}
+              <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+              {% endfor %}
+              <div><dt>API key</dt><dd>{{ "Saved" if extractor.has_key else ("Not set" if extractor.requires_key else "Not set (optional)") }}</dd></div>
+            </dl>
+            {% endfor %}
+            <p class="u-sm"><a href="/{{ token }}/settings#extractor-{{ selected_extractor_id }}" data-edit-extractor-link {% if not selected_extractor_id %}hidden{% endif %}>Edit extractor</a></p>
           </form>
+          {% else %}
+          <div class="empty" data-no-extractors>
+            <p class="empty-title">No extractors yet</p>
+            <p class="empty-text">Create an extractor in Settings to run analysis. It sets the provider, model and API key.</p>
+            <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings#extractors">Open Settings</a>
+          </div>
+          {% endif %}
         </div>
 
         <div class="stack">
-          <div class="alert" data-variant="warning" data-run-credential-prompt {% if has_api_key or has_saved_api_key %}hidden{% endif %}>
-            <h2 data-key-heading>Add a {{ provider_label }} API key to run</h2>
+          <div class="alert" data-variant="warning" data-run-credential-prompt {% if not key_missing %}hidden{% endif %}>
+            <h2>Add an API key to run</h2>
             <section>
-              <p data-key-prompt-copy>No {{ provider_label }} key is configured for this session.</p>
-              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings">Enter API key in Settings</a>
+              <p>The selected extractor has no API key.</p>
+              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings#extractors">Add a key in Settings</a>
             </section>
           </div>
 
-          <div data-run-actions {% if not (has_api_key or has_saved_api_key) %}hidden{% endif %}>
+          <div data-run-actions {% if not run_ready %}hidden{% endif %}>
             <div class="run-actions-row">
               <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.extracted_count and project.remaining_count %}Continue processing {{ project.remaining_count }} article{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
               <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count or project.needs_review_count else 'false' }}" {% if not (project.failed_count or project.needs_review_count) %}disabled{% endif %} title="Re-extract articles that failed or need review">Retry</button>
@@ -488,7 +454,7 @@
           <div class="alert" data-variant="warning" data-slow-extraction-warning hidden>
             <h2>This paper is taking longer than a minute.</h2>
             <section>
-              <p>Flex tier can queue requests to reduce cost. For faster processing, change the Gemini usage tier in <a href="/{{ token }}/settings">Settings</a>.</p>
+              <p>Gemini’s flex tier can queue requests to reduce cost. For faster processing, change the extractor’s service tier in <a href="/{{ token }}/settings#extractors">Settings</a>.</p>
             </section>
           </div>
 
@@ -509,7 +475,7 @@
 
     <p class="run-data-note">
       <svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/><circle cx="12" cy="12" r="9"/></svg>
-      Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser and provider configured in Settings; XML files are sent to the provider as text, without parsing.
+      Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser setting and the project’s extractor; XML files are sent to the provider as text, without parsing.
     </p>
   </section>
 

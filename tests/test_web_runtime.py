@@ -6,7 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock, patch
 
+from auto_zcurve import credentials
 from auto_zcurve import web as w
+from auto_zcurve.extractors import Extractor
+from tests.test_key_vault import FakeKeyring
 from auto_zcurve.config import RunSettings
 from auto_zcurve.projects import ManagedProject, ProjectError
 from auto_zcurve.runner import RunSummary, RunCancelled
@@ -20,7 +23,7 @@ class WebRuntimeTests(unittest.TestCase):
 
     def test_console_events_redact_keys_and_snapshot_is_independent(self):
         job = w.Job('project', 'run')
-        console = w.WebConsole(job, 'secret')
+        console = w.WebConsole(job, ['secret'])
         console.print('value', 'secret')
         console.title('secret')
         console.title('title', 'secret')
@@ -37,24 +40,23 @@ class WebRuntimeTests(unittest.TestCase):
         self.assertTrue(job.events)
         self.assertEqual(job.events[-1]['completed'], 2)
 
-    def test_legacy_key_properties_and_store_loading(self):
-        self.runtime.session_api_key = 'key'
-        self.assertEqual(self.runtime.session_api_key, 'key')
-        self.runtime.key_warning = 'warning'
-        self.assertEqual(self.runtime.key_warning, 'warning')
-        self.runtime.key_warning = None
-        self.assertIsNone(self.runtime.key_warning)
-        with patch.object(w, 'load_saved_api_key') as load:
-            self.assertEqual(self.runtime._load_key_from_store('gemini'), 'key')
-            load.assert_not_called()
-        self.runtime.session_api_key = None
-        with patch.object(w, 'saved_api_key_configured', return_value=False), patch.object(w, 'load_saved_api_key') as load:
-            self.assertIsNone(self.runtime._load_key_from_store('gemini'))
-            load.assert_not_called()
-        for key in [None, 'saved']:
-            with patch.object(w, 'saved_api_key_configured', return_value=True), patch.object(w, 'load_saved_api_key', return_value=key):
-                self.assertEqual(self.runtime._load_key_from_store('gemini'), key)
-        self.assertEqual(self.runtime.secrets(), ['saved'])
+    def test_keys_are_read_only_for_extractors_that_have_one(self):
+        keyring = FakeKeyring({('auto-zcurve', 'extractor_keys'): json.dumps({'keys': {'saved': 'saved-key'}})})
+        unsaved = Extractor(id='unsaved', name='A', provider='gemini', model='m')
+        saved = Extractor(id='saved', name='B', provider='gemini', model='m', key_saved=True)
+        migrated = Extractor(id='old', name='C', provider='gemini', model='m', legacy_credential='gemini_api_key')
+        with patch.object(credentials, '_keyring_module', return_value=keyring), patch.object(w, 'legacy_claims', return_value={}):
+            self.runtime = w.WebRuntime('token')
+            self.assertFalse(self.runtime.has_key(unsaved))
+            self.assertIsNone(self.runtime.key_for(unsaved))
+            self.assertEqual(keyring.reads, 0)
+            self.assertTrue(self.runtime.has_key(saved))
+            self.assertTrue(self.runtime.has_key(migrated))
+            self.assertEqual(self.runtime.key_for(saved), 'saved-key')
+            self.assertEqual(self.runtime.key_for(saved), 'saved-key')
+            self.assertIsNone(self.runtime.key_for(migrated))
+        self.assertEqual(keyring.reads, 1)
+        self.assertEqual(self.runtime.secrets(), ['saved-key'])
 
     def test_update_check_new_old_invalid_and_network_failure(self):
         for tag, expected in [('v99.0.0', '99.0.0'), ('v0.0.1', None), ('invalid', None)]:
@@ -79,14 +81,15 @@ class WebRuntimeTests(unittest.TestCase):
             self.assertIsNot(replacement, job)
 
     def test_jobs_dispatch_complete_and_cancel(self):
-        self.runtime.session_api_key = 'secret'
         summary = RunSummary(Path('/project/output/report.html'), 1, 0, 2, 1, 3, 4, 7)
         for action, function in [('run', 'run_project'), ('retry', 'retry_project'), ('report', 'regenerate_report')]:
             for result in [summary, None]:
                 job = w.Job(self.project.project_id, action)
                 with patch.object(w, 'run_preflight'), patch.object(w, function, return_value=result) as operation:
-                    self.runtime._run_job(job, self.project, action, self.settings)
+                    self.runtime._run_job(job, self.project, action, self.settings, 'secret')
                 operation.assert_called_once()
+                if action != 'report':
+                    self.assertEqual(operation.call_args.kwargs['api_key'], 'secret')
                 self.assertEqual(job.status, 'complete')
                 self.assertEqual(job.summary['report_path'] if job.summary else None, str(summary.report_path) if result else None)
             for cancellation in [True, False]:
@@ -97,17 +100,16 @@ class WebRuntimeTests(unittest.TestCase):
                         return None
                     raise RunCancelled('cancelled')
                 with patch.object(w, 'run_preflight'), patch.object(w, function, side_effect=cancel):
-                    self.runtime._run_job(job, self.project, action, self.settings)
+                    self.runtime._run_job(job, self.project, action, self.settings, None)
                 self.assertEqual(job.status, 'cancelled')
 
     def test_jobs_fail_with_friendly_redacted_errors(self):
         job = w.Job(self.project.project_id, 'run')
-        self.runtime._run_job(job, self.project, 'run', self.settings)
-        self.assertEqual(job.status, 'failed')
-        self.assertIn('API key missing', job.error['title'])
-        self.runtime.session_api_key = 'secret'
+        with patch.object(credentials, '_keyring_module', return_value=FakeKeyring()):
+            self.runtime.vault.set('x', 'secret')
         with patch.object(w, 'run_preflight', side_effect=RuntimeError('failure secret')):
-            self.runtime._run_job(job, self.project, 'run', self.settings)
+            self.runtime._run_job(job, self.project, 'run', self.settings, 'secret')
+        self.assertEqual(job.status, 'failed')
         self.assertNotIn('secret', json.dumps(job.snapshot()))
         self.assertIn('[redacted]', job.error['technical_detail'])
 
