@@ -42,3 +42,6 @@ sources/
 
 # JavaScript test dependencies
 node_modules/
+
+# Claude Code agent worktrees
+.claude/worktrees/
