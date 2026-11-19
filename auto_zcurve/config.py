@@ -291,4 +291,7 @@ def load_selected_extractor_id(project_dir: Path) -> str:
 def save_selected_extractor_id(project_dir: Path, extractor_id: str) -> None:
     path = selected_extractor_path(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"extractor_id": extractor_id}) + "\n", encoding="utf-8")
+    # Replace atomically so an interrupted write never leaves an empty file.
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps({"extractor_id": extractor_id}) + "\n", encoding="utf-8")
+    temporary.replace(path)

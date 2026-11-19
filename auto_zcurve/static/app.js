@@ -180,8 +180,12 @@
         modelField.placeholder = provider === "openrouter" ? "vendor/model" : "Model ID";
       };
 
+      // Only the latest provider-list request may update the list, so a slow
+      // answer for an earlier model or extractor can't overwrite it.
+      let endpointRequest = 0;
       const openExtractor = (extractor) => {
         editing = extractor;
+        endpointRequest += 1;
         extractorForm.reset();
         modelOptions.innerHTML = "";
         endpointList.innerHTML = "";
@@ -200,6 +204,12 @@
         }
         const hasKey = Boolean(extractor?.has_key);
         keyActions.hidden = !hasKey;
+        const keyBadge = keyActions.querySelector("[data-key-badge]");
+        if (keyBadge) {
+          const persisted = extractor?.key_saved !== false;
+          keyBadge.textContent = persisted ? "Key saved" : "Key for this session";
+          keyBadge.dataset.variant = persisted ? "success" : "outline";
+        }
         keyLabel.textContent = hasKey ? "Replace API key (optional)" : "API key";
         loadModels.hidden = !extractor || extractor.provider === "openai_compatible" || !hasKey;
         showProviderFields();
@@ -237,18 +247,20 @@
       modelField.addEventListener("change", async () => {
         const model = modelField.value.trim();
         if (providerField.value !== "openrouter" || !model) return;
+        const request = ++endpointRequest;
         endpointStatus.textContent = "Loading providers…";
         const query = new URLSearchParams({ model, extractor_id: editing?.id || "" });
         try {
           const response = await fetch(`/${token}/api/models/openrouter/endpoints?${query}`, { cache: "no-store" });
           const payload = await response.json().catch(() => ({}));
+          if (request !== endpointRequest) return;
           if (!response.ok) throw new Error(payload.detail || "Providers could not be loaded.");
           endpointList.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.name)}</option>`).join("");
           endpointStatus.textContent = payload.length
             ? `${payload.length} provider${payload.length === 1 ? " serves" : "s serve"} this model with structured output. Leave empty to let OpenRouter choose.`
             : "No provider currently serves this model with structured output.";
         } catch (error) {
-          endpointStatus.textContent = error.message;
+          if (request === endpointRequest) endpointStatus.textContent = error.message;
         }
       });
 
@@ -298,7 +310,11 @@
       });
 
       const linked = location.hash.startsWith("#extractor-") ? document.getElementById(location.hash.slice(1)) : null;
-      if (linked?.dataset.extractor) openExtractor(JSON.parse(linked.dataset.extractor));
+      if (linked?.dataset.extractor) {
+        // Clear the hash so reloading after a save doesn't reopen the dialog.
+        history.replaceState(null, "", location.pathname + location.search);
+        openExtractor(JSON.parse(linked.dataset.extractor));
+      }
     }
 
     document.querySelectorAll(".js-extractor-action").forEach((form) => {
@@ -998,6 +1014,7 @@
 
   const extractorSelect = document.querySelector("#extractor");
   const credentialPrompt = document.querySelector("[data-run-credential-prompt]");
+  const modelPrompt = document.querySelector("[data-run-model-prompt]");
   const runActions = document.querySelector("[data-run-actions]");
   const editExtractorLink = document.querySelector("[data-edit-extractor-link]");
   const projectSettingsMessage = document.querySelector(".project-settings-message");
@@ -1016,12 +1033,14 @@
     }
   };
 
-  /* Run and Retry are offered once the chosen extractor has a key, or needs none. */
+  /* Run and Retry are offered once the chosen extractor has a model and a key, or needs no key. */
   syncRunReadiness = () => {
     const selected = extractorSelect?.selectedOptions?.[0];
     const chosen = Boolean(selected?.value);
     const canRun = chosen && selected.dataset.runnable === "true";
-    if (credentialPrompt) credentialPrompt.hidden = !chosen || canRun;
+    const needs = chosen && !canRun ? (selected.dataset.needs || "key") : "";
+    if (credentialPrompt) credentialPrompt.hidden = needs !== "key";
+    if (modelPrompt) modelPrompt.hidden = needs !== "model";
     if (runActions) runActions.hidden = !canRun;
     runButton.disabled = isRunning || runButton.dataset.hasPdfs !== "true" || !canRun;
     retryButton.disabled = isRunning || retryButton.dataset.hasFailures !== "true" || !canRun;
@@ -1038,6 +1057,9 @@
       editExtractorLink.hidden = false;
       editExtractorLink.href = `/${token}/settings#extractor-${encodeURIComponent(extractorId)}`;
     }
+    document.querySelectorAll("[data-setup-extractor-link]").forEach((link) => {
+      link.href = `/${token}/settings#extractor-${encodeURIComponent(extractorId)}`;
+    });
     syncRunReadiness();
     const data = new FormData();
     data.set("extractor_id", extractorId);

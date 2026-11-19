@@ -431,8 +431,10 @@ def run_project(
 
     previous_settings = load_run_settings(project_dir)
     provider = normalize_provider(settings.provider)
-    # Reasoning effort reaches only OpenRouter and the service tier only Gemini,
-    # so each is compared only for the provider that uses it.
+    # Each provider-specific setting is compared only for the provider that uses it.
+    # Endpoint, output mode and OpenRouter routing are recorded only in extractor
+    # snapshots, so they are compared only when the previous run has one.
+    snapshot = bool(previous_settings and previous_settings.extractor is not None)
     provider_or_model_changed = bool(
         previous_settings
         and (
@@ -441,6 +443,22 @@ def run_project(
             or previous_settings.pdf_parser != settings.pdf_parser
             or (provider == "openrouter" and previous_settings.reasoning_effort != settings.reasoning_effort)
             or (provider == "gemini" and previous_settings.service_tier != settings.service_tier)
+            or (
+                snapshot
+                and provider == "openrouter"
+                and (
+                    previous_settings.openrouter_provider != settings.openrouter_provider
+                    or previous_settings.openrouter_allow_fallbacks != settings.openrouter_allow_fallbacks
+                )
+            )
+            or (
+                snapshot
+                and provider == "openai_compatible"
+                and (
+                    previous_settings.base_url != settings.base_url
+                    or previous_settings.response_format != settings.response_format
+                )
+            )
         )
     )
     existing = latest_by_source(load_extractions(project_dir))
@@ -452,7 +470,7 @@ def run_project(
         or existing.get(source_name(project_dir, path), {}).get("status") not in EXTRACTED_STATUSES
     ]
     if provider_or_model_changed:
-        console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all articles will be reprocessed.")
+        console.info("The extractor's provider, model, endpoint, routing, output mode, PDF parser, reasoning level, or service tier changed; all articles will be reprocessed.")
     skipped = len(sources) - len(to_process)
     if skipped:
         console.info(

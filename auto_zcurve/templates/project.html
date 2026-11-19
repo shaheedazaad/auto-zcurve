@@ -392,7 +392,7 @@
               <select class="select" id="extractor" name="extractor_id" required>
                 {% if not selected_extractor_id %}<option value="" selected disabled>Choose an extractor</option>{% endif %}
                 {% for extractor in extractors %}
-                <option value="{{ extractor.id }}"{% if extractor.id == selected_extractor_id %} selected{% endif %} data-runnable="{{ 'true' if extractor.has_key or not extractor.requires_key else 'false' }}">{{ extractor.name }}</option>
+                <option value="{{ extractor.id }}"{% if extractor.id == selected_extractor_id %} selected{% endif %} data-needs="{{ 'model' if not extractor.model else ('key' if not (extractor.has_key or not extractor.requires_key) else '') }}" data-runnable="{{ 'true' if extractor.model and (extractor.has_key or not extractor.requires_key) else 'false' }}">{{ extractor.name }}</option>
                 {% endfor %}
               </select>
               <p class="form-message project-settings-message u-sm" role="status"></p>
@@ -407,7 +407,7 @@
               {% for label, value in extractor.summary %}
               <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
               {% endfor %}
-              <div><dt>API key</dt><dd>{{ "Saved" if extractor.has_key else ("Not set" if extractor.requires_key else "Not set (optional)") }}</dd></div>
+              <div><dt>API key</dt><dd>{% if extractor.has_key %}{{ "Saved" if extractor.key_saved else "This session only" }}{% else %}{{ "Not set" if extractor.requires_key else "Not set (optional)" }}{% endif %}</dd></div>
             </dl>
             {% endfor %}
             <p class="u-sm"><a href="/{{ token }}/settings#extractor-{{ selected_extractor_id }}" data-edit-extractor-link {% if not selected_extractor_id %}hidden{% endif %}>Edit extractor</a></p>
@@ -422,11 +422,19 @@
         </div>
 
         <div class="stack">
+          <div class="alert" data-variant="warning" data-run-model-prompt {% if not model_missing %}hidden{% endif %}>
+            <h2>Choose a model to run</h2>
+            <section>
+              <p>The selected extractor has no model.</p>
+              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings#extractor-{{ selected_extractor_id }}" data-setup-extractor-link>Choose a model in Settings</a>
+            </section>
+          </div>
+
           <div class="alert" data-variant="warning" data-run-credential-prompt {% if not key_missing %}hidden{% endif %}>
             <h2>Add an API key to run</h2>
             <section>
               <p>The selected extractor has no API key.</p>
-              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings#extractors">Add a key in Settings</a>
+              <a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/settings#extractor-{{ selected_extractor_id }}" data-setup-extractor-link>Add a key in Settings</a>
             </section>
           </div>
 
@@ -454,7 +462,7 @@
           <div class="alert" data-variant="warning" data-slow-extraction-warning hidden>
             <h2>This paper is taking longer than a minute.</h2>
             <section>
-              <p>Gemini’s flex tier can queue requests to reduce cost. For faster processing, change the extractor’s service tier in <a href="/{{ token }}/settings#extractors">Settings</a>.</p>
+              <p>If this is a Gemini extractor, its flex tier can queue requests to reduce cost. For faster processing, change its service tier in <a href="/{{ token }}/settings#extractors">Settings</a>.</p>
             </section>
           </div>
 
