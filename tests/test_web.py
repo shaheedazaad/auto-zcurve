@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from auto_zcurve.config import save_selected_extractor_id
 from auto_zcurve.credentials import CredentialStoreUnavailable
-from auto_zcurve.extractors import create_extractor, set_key_saved
+from auto_zcurve.extractors import create_extractor, save_extractors, set_key_saved
 from auto_zcurve.projects import create_project
 from auto_zcurve.runner import RunCancelled, RunSummary
 from auto_zcurve.web import create_app
@@ -350,7 +351,7 @@ class WebAppTests(unittest.TestCase):
             '<div class="alert" data-variant="warning" data-slow-extraction-warning hidden>\n'
             '            <h2>This paper is taking longer than a minute.</h2>\n'
             '            <section>\n'
-            '              <p>Gemini’s flex tier can queue requests to reduce cost.',
+            '              <p>If this is a Gemini extractor, its flex tier can queue requests to reduce cost.',
             response.text,
         )
 
@@ -373,16 +374,38 @@ class WebAppTests(unittest.TestCase):
     def test_project_credential_prompt_links_to_central_settings(self):
         project = create_project("Provider credentials", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-        self.use_extractor(project)
+        extractor = self.use_extractor(project)
 
         response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Add an API key to run", response.text)
-        self.assertIn(f'href="/{TOKEN}/settings#extractors">Add a key in Settings</a>', response.text)
+        self.assertIn(f'href="/{TOKEN}/settings#extractor-{extractor.id}" data-setup-extractor-link>Add a key in Settings</a>', response.text)
         self.assertNotIn("data-run-credential-prompt hidden", response.text)
         self.assertIn("data-run-actions hidden", response.text)
         self.assertIn('data-runnable="false"', response.text)
+
+    def test_extractor_without_a_model_asks_for_one_before_a_key(self):
+        project = create_project("No model", root=self.root)
+        extractor = self.use_extractor(project)
+        save_extractors([replace(extractor, model="")])
+
+        response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
+
+        self.assertIn("Choose a model to run", response.text)
+        self.assertNotIn("data-run-model-prompt hidden", response.text)
+        self.assertIn("data-run-credential-prompt hidden", response.text)
+        self.assertIn('data-needs="model" data-runnable="false"', response.text)
+
+    def test_a_session_only_key_is_not_called_saved(self):
+        project = create_project("Session key", root=self.root)
+        self.use_extractor(project, key="session-key")
+
+        project_page = self.client.get(f"/{TOKEN}/projects/{project.project_id}").text
+        settings_page = self.client.get(f"/{TOKEN}/settings").text
+
+        self.assertIn("<dt>API key</dt><dd>This session only</dd>", project_page)
+        self.assertIn('<span class="badge" data-variant="outline">Key for this session</span>', settings_page)
 
     def test_project_with_saved_key_shows_run_actions_without_unlocking(self):
         project = create_project("Run panel with saved key", root=self.root)

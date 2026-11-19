@@ -142,7 +142,9 @@ class KeyVault:
             try:
                 value = str(keyring.get_password(SERVICE_NAME, username) or "").strip()
             except Exception:
-                value = ""
+                # Leave every old item in place and try again next session, so a
+                # store that is briefly locked never loses a key.
+                return
             if value:
                 self._keys[extractor_id] = value
         if not self._write():
@@ -184,8 +186,11 @@ class KeyVault:
         return self._write()
 
     def delete(self, extractor_id: str) -> None:
-        if self._load().pop(extractor_id, None) is not None:
-            self._write()
+        keys = self._load()
+        removed = keys.pop(extractor_id, None)
+        if removed is not None and self.persistent and not self._write():
+            keys[extractor_id] = removed
+            raise VaultUnavailable(self.UNLOCK_MESSAGE)
 
     def secrets(self) -> list[str]:
         return list((self._keys or {}).values())

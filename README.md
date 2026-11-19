@@ -121,9 +121,10 @@ and add it to an extractor. Every extractor's key is kept in one item in the
 operating system's credential store, through Python Keyring. That item is
 read at most once per app session, the first time a key is needed (a run, a
 retry, saving an extractor with a key, or loading its model list), and is
-written only when a key changes. Starting the app or opening a page never
-reads it. If Linux has no usable secret-service backend, keys are kept in
-memory for the session only; the app never falls back to a plaintext file.
+written when a key is saved, removed, or migrated. Starting the app or opening
+a page never reads it. If no usable credential store is available, keys are
+kept in memory for the session only; the app never falls back to a plaintext
+file.
 On macOS, the authorization dialog may identify auto-zcurve's bundled runtime
 as “Python,” sometimes with a version number.
 
