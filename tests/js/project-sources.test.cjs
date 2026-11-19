@@ -31,7 +31,7 @@ test('sources list uploaded PDFs newest first with size, date, and a paginated o
 
 test('sources show an empty state, tolerate missing metadata, and escape names', async t => {
   const empty = projectMount(sourcesHtml); t.after(empty.close); await flush();
-  assert.match(empty.document.querySelector('[data-source-body]').textContent, /No PDFs yet/);
+  assert.match(empty.document.querySelector('[data-source-body]').textContent, /No articles yet/);
   assert.equal(empty.document.querySelector('[data-source-pagination]').hidden, true);
   const odd = [{ name: 'b<img src=x>.pdf', status: 'ready' }, { name: 'a.pdf', status: 'ready' }];
   const h = projectMount('<table><tbody data-source-body></tbody></table>', { project: { ...project, articles: odd, pdf_count: 2 } });

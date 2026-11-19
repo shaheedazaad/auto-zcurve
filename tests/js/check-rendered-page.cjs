@@ -28,7 +28,7 @@ async function main() {
     assert.deepEqual(errors, []);
     assert.equal(document.body.dataset.token, 'token');
     if (fixture.page === 'project') {
-      assert.equal(document.querySelector('[data-pdf-count]').textContent, '1 PDFs');
+      assert.equal(document.querySelector('[data-pdf-count]').textContent, '1 file');
       assert.equal(document.querySelector('.article-name').textContent, "A 'quoted' paper.pdf");
       assert.equal(document.querySelector('.js-run').disabled, true, 'A missing credential must prevent runs');
       document.querySelector('[data-tab-target=schema]').click();

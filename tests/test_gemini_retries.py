@@ -39,7 +39,7 @@ class GeminiRetryTests(unittest.TestCase):
                 patch.object(gemini, '_generate', generate), \
                 patch.object(gemini, 'validate_extracted_json'), \
                 patch.object(gemini, '_wait_for_retry', wait):
-            result = gemini.extract_pdf(
+            result = gemini.extract_document(
                 source_path=self.source, source_name='article.pdf', api_key='key',
                 primary_model='gemini-test', response_schema={}, schema_config=object(),
                 instruction_path=Path(self.tmp.name) / 'instructions.md',
@@ -116,7 +116,7 @@ class GeminiRetryTests(unittest.TestCase):
                 patch.object(gemini, '_generate', generate), \
                 patch.object(gemini, '_wait_for_retry', side_effect=wait), \
                 self.assertRaises(ExtractionCancelled):
-            gemini.extract_pdf(
+            gemini.extract_document(
                 source_path=self.source, source_name='article.pdf', api_key='key',
                 primary_model='gemini-test', response_schema={}, schema_config=object(),
                 instruction_path=Path(self.tmp.name) / 'instructions.md',
@@ -163,8 +163,8 @@ class RunCancellationPlumbingTests(unittest.TestCase):
 
         implementation = Mock(return_value=object())
         cancellation = threading.Event()
-        with patch.object(providers.importlib, 'import_module', return_value=NS(extract_pdf=implementation)):
-            providers.extract_pdf(
+        with patch.object(providers.importlib, 'import_module', return_value=NS(extract_document=implementation)):
+            providers.extract_document(
                 provider='gemini', source_path=Path('a.pdf'), source_name='a.pdf', api_key='k',
                 primary_model='m', response_schema={}, schema_config=object(),
                 instruction_path=Path('i.md'), request_timeout_sec=30,
@@ -189,7 +189,7 @@ class RunCancellationPlumbingTests(unittest.TestCase):
                 cancellation.set()
                 raise ExtractionCancelled('Extraction cancelled by user.')
 
-            with patch.object(runner, 'extract_pdf', side_effect=cancelled_mid_retry) as extract, \
+            with patch.object(runner, 'extract_document', side_effect=cancelled_mid_retry) as extract, \
                     self.assertRaises(runner.RunCancelled):
                 runner._process_one(
                     project_dir=project, source_path=source,

@@ -254,8 +254,14 @@ def resolve_input_mode(
     provider: str,
     model_option: ModelOption,
     pdf_parser: str,
+    source_format: str = "pdf",
 ) -> str:
+    """Choose how one source reaches the model, from its source format and the provider."""
     selected = normalize_provider(provider)
+    if source_format == "xml":
+        from .sources import XML_TEXT_INPUT_MODE
+
+        return XML_TEXT_INPUT_MODE
     if selected == "openai_compatible":
         return "local_text"
     return "cloudflare_pdf" if selected == "openrouter" else "native_pdf"

@@ -101,16 +101,17 @@ endpoint.
 
 ## Run defaults
 
-**Throughput and uploads** groups parallel PDFs, the delay between requests,
-request timeout, and maximum PDF upload size. **Extraction preferences**
+**Throughput and uploads** groups parallel articles, the delay between
+requests, request timeout, and maximum file size. **Extraction preferences**
 groups the PDF parser and reasoning setting. Click **Save settings** to save
 these controls. Provider settings are saved separately and remain unchanged.
 
-![Run defaults showing parallel PDFs, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
+![Run defaults showing parallel articles, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
 
 Projects can save their own parallel-request and delay values on **Run
 analysis**. Model defaults may also prefill these fields. The PDF parser
-control does not change the OpenAI-compatible provider's local text input.
+control does not change the OpenAI-compatible provider's local text input,
+and it does not apply to XML articles, which are always sent as text.
 
 ## Default extraction instructions
 

@@ -50,7 +50,7 @@ class OpenRouterFinishReasonTests(Fixture):
 
     def extract(self, *responses: dict):
         with patch.object(orr, "_request_json", side_effect=list(responses)):
-            return orr.extract_pdf(**self.kwargs)
+            return orr.extract_document(**self.kwargs)
 
     def test_length_is_needs_review_with_values_and_reason(self):
         result = self.extract(openrouter_response(finish_reason="length"))
@@ -108,7 +108,7 @@ class OpenAICompatibleExtractionTests(Fixture):
         with patch.object(oc, "pdf_text", return_value="[Page 1]\nStudy"), patch.object(
             oc, "_call", return_value=(text, {"input_tokens": 3, "output_tokens": 2}, finish_reason)
         ):
-            return oc.extract_pdf(**self.kwargs)
+            return oc.extract_document(**self.kwargs)
 
     def test_length_is_needs_review(self):
         result = self.extract(VALID, "length")

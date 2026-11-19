@@ -80,7 +80,7 @@ class GeminiReviewTests(unittest.TestCase):
             source = Path(tmp) / "a.pdf"
             source.write_bytes(b"%PDF")
             with patch("google.genai.Client", return_value=client), patch.object(gemini, "build_system_prompt", return_value="prompt"), patch.object(gemini, "validate_extracted_json"):
-                return gemini.extract_pdf(source_path=source, source_name="a.pdf", api_key="key", primary_model="gemini-test", response_schema={}, schema_config=object(), instruction_path=Path(tmp) / "i.md")
+                return gemini.extract_document(source_path=source, source_name="a.pdf", api_key="key", primary_model="gemini-test", response_schema={}, schema_config=object(), instruction_path=Path(tmp) / "i.md")
 
     def test_repaired_json_needs_review_and_keeps_values(self):
         result = self.extract(gemini_response('{"effects": [{"claim": "x"}]', "STOP"))
@@ -136,7 +136,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
         return ExtractionResult(kwargs["source_path"], kwargs["source_name"], "needs_review", data={"effects": [{"claim": "x"}]}, raw_response="{", repaired_response="{}", review_reasons=("JSON was repaired",))
 
     def test_status_and_reasons_are_saved_in_record_and_run_log(self):
-        with patch.object(r, "extract_pdf", side_effect=self.reviewed):
+        with patch.object(r, "extract_document", side_effect=self.reviewed):
             r._process_one(project_dir=self.project, source_path=self.project / "sources/review.pdf", settings=self.settings, api_key="key", retry=False, run_id="run", model_option=self.option)
         record = load_extractions(self.project)[0]
         self.assertEqual((record["status"], record["review_reasons"], record["effects"], record["json_repaired"]), ("needs_review", ["JSON was repaired"], 1, True))
@@ -159,7 +159,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
     def retry_review(self, extract):
         self.saved_states()
         upsert_extraction(self.project, ExtractionResult(self.project / "sources/review.pdf", "review.pdf", "needs_review", data={"effects": [{"claim": "kept"}]}, raw_response="{", review_reasons=("JSON was repaired",)))
-        with patch.object(r, "extract_pdf", side_effect=extract):
+        with patch.object(r, "extract_document", side_effect=extract):
             return r._process_one(project_dir=self.project, source_path=self.project / "sources/review.pdf", settings=self.settings, api_key="key", retry=True, run_id="run", model_option=self.option)
 
     def test_failed_retry_keeps_needs_review_data_and_records_the_failure(self):
@@ -179,7 +179,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
 
     def test_successful_retry_replaces_needs_review_result_and_clears_failed_retry(self):
         self.retry_review(RuntimeError("network timeout"))
-        with patch.object(r, "extract_pdf", side_effect=lambda **kwargs: ExtractionResult(kwargs["source_path"], kwargs["source_name"], "ok", data={"effects": [{"claim": "new"}, {"claim": "two"}]})):
+        with patch.object(r, "extract_document", side_effect=lambda **kwargs: ExtractionResult(kwargs["source_path"], kwargs["source_name"], "ok", data={"effects": [{"claim": "new"}, {"claim": "two"}]})):
             r._process_one(project_dir=self.project, source_path=self.project / "sources/review.pdf", settings=self.settings, api_key="key", retry=True, run_id="run2", model_option=self.option)
         record = {item["source_name"]: item for item in load_extractions(self.project)}["review.pdf"]
         self.assertEqual((record["status"], record["data"], record["effects"]), ("ok", {"effects": [{"claim": "new"}, {"claim": "two"}]}, 2))
@@ -187,7 +187,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
 
     def test_failed_retry_of_an_error_record_still_replaces_it(self):
         self.saved_states()
-        with patch.object(r, "extract_pdf", side_effect=RuntimeError("quota exceeded")):
+        with patch.object(r, "extract_document", side_effect=RuntimeError("quota exceeded")):
             r._process_one(project_dir=self.project, source_path=self.project / "sources/failed.pdf", settings=self.settings, api_key="key", retry=True, run_id="run", model_option=self.option)
         record = {item["source_name"]: item for item in load_extractions(self.project)}["failed.pdf"]
         self.assertEqual((record["status"], record["error"]), ("error", "quota exceeded"))
@@ -213,7 +213,7 @@ class ArtifactAndRunnerTests(unittest.TestCase):
         self.saved_states()
         save_extractions(self.project, load_extractions(self.project) + [{"source_name": "unexplained.pdf", "status": "needs_review"}])
         text = u.format_run_result(r.summarize(self.project, None), self.project)
-        self.assertIn("Needs review PDFs: 2", text)
+        self.assertIn("Needs review articles: 2", text)
         self.assertIn("Needs review:\n  review.pdf: finish reason: MAX_TOKENS\n  unexplained.pdf: no reason was recorded", text)
 
     def test_cli_summary_lists_reasons_and_offers_retry(self):
@@ -221,8 +221,8 @@ class ArtifactAndRunnerTests(unittest.TestCase):
         console = Mock()
         cli.print_summary(r.summarize(self.project, None), console, self.project)
         tables = {call.args[0]: call.args[2] for call in console.table.call_args_list}
-        self.assertIn(("Needs review PDFs", 1), tables["Run Summary"])
-        self.assertEqual(tables["PDFs Needing Review"], [("review.pdf", "finish reason: MAX_TOKENS")])
+        self.assertIn(("Needs review articles", 1), tables["Run Summary"])
+        self.assertEqual(tables["Articles Needing Review"], [("review.pdf", "finish reason: MAX_TOKENS")])
 
         console = Mock()
         args = NS(skip_report=True)
@@ -269,7 +269,7 @@ class WebNeedsReviewTests(unittest.TestCase):
         self.assertIn("2 processed (1 need review)", page)
         self.assertIn("<strong>1</strong> need review", page)
         self.assertIn('data-has-failures="true"', page)
-        self.assertIn("Continue processing 1 PDF ", page)
+        self.assertIn("Continue processing 1 article ", page)
 
     def test_server_rendered_rows_show_parser_warnings_with_review_reasons(self):
         project = create_project("Warnings", root=self.root)

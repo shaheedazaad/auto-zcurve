@@ -81,7 +81,7 @@ class RunnerLifecycleTests(unittest.TestCase):
 
     def test_oversized_file_is_recorded_without_provider_call(self):
         self.settings.max_upload_size_mb = 0
-        with patch.object(r, 'extract_pdf') as extract:
+        with patch.object(r, 'extract_document') as extract:
             result = self.process()
         self.assertEqual(result.status, 'error')
         self.assertIn('max_upload_size_mb', result.error)
@@ -95,12 +95,12 @@ class RunnerLifecycleTests(unittest.TestCase):
         error.raw_response = 'raw'
         error.repaired_response = 'repair'
         error.provider_responses = [{'attempt': 1}]
-        with patch.object(r, 'extract_pdf', side_effect=error):
+        with patch.object(r, 'extract_document', side_effect=error):
             result = self.process()
         self.assertEqual(result.error, 'request [redacted] failed')
         self.assertEqual((result.parser_name, result.parser_page_count, result.parser_warnings, result.parser_duration_sec), ('parser', 2, ('warn',), 1.5))
         self.assertEqual(result.raw_response, 'raw')
-        with patch.object(r, 'extract_pdf', side_effect=r.RunCancelled('cancelled')), self.assertRaises(r.RunCancelled):
+        with patch.object(r, 'extract_document', side_effect=r.RunCancelled('cancelled')), self.assertRaises(r.RunCancelled):
             self.process()
         self.assertEqual(len(load_run_log(self.project)), 1)
 
@@ -115,7 +115,7 @@ class RunnerLifecycleTests(unittest.TestCase):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
         for report in [self.project / 'output/report.html', self.project.parent / 'outside.html']:
             save_run_settings(self.project, RunSettings(primary_model='old'))
-            with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_pdf', side_effect=self.extraction) as extract, patch.object(r, 'render_report', return_value=report):
+            with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction) as extract, patch.object(r, 'render_report', return_value=report):
                 summary = self.run_project(skip_report=False, force=False)
             self.assertEqual(summary.report_path, report)
             self.assertEqual(summary.total_tokens, 5)
@@ -128,7 +128,7 @@ class RunnerLifecycleTests(unittest.TestCase):
     def test_retry_selected_failures_and_report_regeneration(self):
         for report in [self.project / 'output/report.html', self.project.parent / 'outside.html']:
             save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}, {'source_name': 'b.pdf', 'status': 'error'}])
-            with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_pdf', side_effect=self.extraction) as extract, patch.object(r, 'render_report', return_value=report):
+            with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction) as extract, patch.object(r, 'render_report', return_value=report):
                 summary = self.retry(selected_sources=['a.pdf'], skip_report=False)
             self.assertEqual(summary.failed_pdfs, 1)
             self.assertEqual(summary.report_path, report)
@@ -174,7 +174,7 @@ class RunnerLifecycleTests(unittest.TestCase):
 
     def test_retry_can_skip_report_after_processing(self):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
-        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_pdf', side_effect=self.extraction), patch.object(r, 'render_report') as render:
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction), patch.object(r, 'render_report') as render:
             summary = self.retry(skip_report=True)
         self.assertEqual(summary.successful_pdfs, 1)
         self.assertIsNone(summary.report_path)

@@ -19,6 +19,7 @@ from .prompts import build_system_prompt
 from .schema import ExtractionSchema, validate_extracted_json
 from .config import normalize_service_tier
 from .openai_compatible import ExtractionCancelled
+from .sources import XML_TEXT_INPUT_MODE
 
 # Each Gemini request (file upload, then generation) gets this many attempts in
 # total. The SDK's own retries stay off (its default) so this bound holds.
@@ -156,7 +157,7 @@ def _parse_json_response(raw_text: str) -> tuple[dict[str, Any], str | None]:
 
 def _generate(
     client: object,
-    uploaded: object,
+    document: object,
     model: str,
     prompt: str,
     response_schema: dict[str, Any],
@@ -169,7 +170,7 @@ def _generate(
 
     response = client.models.generate_content(
         model=normalize_model_name(model),
-        contents=[prompt, uploaded],
+        contents=[prompt, document],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
@@ -181,7 +182,7 @@ def _generate(
     return parsed, raw_text, repaired_text, _response_usage(response), _response_finish_reasons(response)
 
 
-def extract_pdf(
+def extract_document(
     *,
     source_path: Path,
     source_name: str,
@@ -198,7 +199,9 @@ def extract_pdf(
     service_tier: str = "standard",
     endpoint_order: tuple[str, ...] = (),
     cancellation_event: object | None = None,
+    article_text: str | None = None,
 ) -> ExtractionResult:
+    """Extract one source: a PDF is uploaded; article text goes in the prompt."""
     started = time.monotonic()
     try:
         from google import genai
@@ -206,26 +209,16 @@ def extract_pdf(
         raise RuntimeError("google-genai is not installed.") from exc
 
     client = genai.Client(api_key=api_key)
-    prompt = build_system_prompt(schema_config, instruction_path)
-    # Normalize filename to NFC then strip any remaining non-ASCII so the
-    # Gemini SDK can encode it in the HTTP Content-Disposition header.
-    nfc_name = unicodedata.normalize("NFC", source_path.name)
-    try:
-        nfc_name.encode("ascii")
-        upload_name = nfc_name
-    except UnicodeEncodeError:
-        upload_name = unicodedata.normalize("NFKD", nfc_name).encode("ascii", "ignore").decode("ascii") or "document.pdf"
-
-    def upload() -> object:
-        # Reopen per attempt so a retry sends the whole file again.
-        with source_path.open("rb") as _fh:
-            return client.files.upload(
-                file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"}
-            )
-
-    uploaded = _with_retries(upload, cancellation_event)
+    if article_text is not None:
+        prompt = build_system_prompt(schema_config, instruction_path, "xml")
+        document: object = "Article text:\n" + article_text
+        used_input_mode = XML_TEXT_INPUT_MODE
+    else:
+        prompt = build_system_prompt(schema_config, instruction_path)
+        document = _upload_pdf(client, source_path, cancellation_event)
+        used_input_mode = "native_pdf"
     parsed, raw_text, repaired_text, usage, finish_reasons = _with_retries(
-        lambda: _generate(client, uploaded, primary_model, prompt, response_schema, service_tier),
+        lambda: _generate(client, document, primary_model, prompt, response_schema, service_tier),
         cancellation_event,
     )
     try:
@@ -250,5 +243,25 @@ def extract_pdf(
         input_tokens=_int_or_none(usage.get("input_tokens")),
         output_tokens=_int_or_none(usage.get("output_tokens")),
         total_tokens=_int_or_none(usage.get("total_tokens")),
-        input_mode="native_pdf",
+        input_mode=used_input_mode,
     )
+
+
+def _upload_pdf(client: object, source_path: Path, cancellation_event: object | None) -> object:
+    # Normalize filename to NFC then strip any remaining non-ASCII so the
+    # Gemini SDK can encode it in the HTTP Content-Disposition header.
+    nfc_name = unicodedata.normalize("NFC", source_path.name)
+    try:
+        nfc_name.encode("ascii")
+        upload_name = nfc_name
+    except UnicodeEncodeError:
+        upload_name = unicodedata.normalize("NFKD", nfc_name).encode("ascii", "ignore").decode("ascii") or "document.pdf"
+
+    def upload() -> object:
+        # Reopen per attempt so a retry sends the whole file again.
+        with source_path.open("rb") as _fh:
+            return client.files.upload(
+                file=_fh, config={"display_name": upload_name, "mime_type": "application/pdf"}
+            )
+
+    return _with_retries(upload, cancellation_event)

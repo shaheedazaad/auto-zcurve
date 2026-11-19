@@ -86,6 +86,7 @@ from .projects import (
 from .runner import RunCancelled, regenerate_report, retry_project, run_project
 from .schema import read_extraction_schema
 from .security import redact_secrets
+from .sources import discover_sources, is_source_name, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES, spreadsheet_safe_csv, spreadsheet_safe_name
 from .user_facing import classify_error
 from .providers import PROVIDERS, normalize_provider, provider_label
@@ -456,7 +457,7 @@ def _credential_context(runtime: WebRuntime) -> list[dict[str, object]]:
 
 
 def _project_index_snapshot(project: ManagedProject) -> dict:
-    sources = sorted(project.path.joinpath("sources").glob("*.pdf"))
+    sources = discover_sources(project.path, recursive=False)
     records = latest_by_source(load_extractions(project.path))
     source_records = [records.get(source.name, {}) for source in sources]
     return {
@@ -799,10 +800,10 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         if job and job.status in {"queued", "running"}:
             raise HTTPException(status_code=409, detail="Cancel the active run before deleting a response.")
         source_name = source_name.strip()
-        if not source_name or Path(source_name).name != source_name or not source_name.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="Choose one PDF response to delete.")
+        if not source_name or Path(source_name).name != source_name or not is_source_name(source_name):
+            raise HTTPException(status_code=400, detail="Choose one source's response to delete.")
         if not delete_extraction(project.path, source_name):
-            raise HTTPException(status_code=404, detail="That PDF does not have a saved extraction response.")
+            raise HTTPException(status_code=404, detail="That source does not have a saved extraction response.")
         return {"deleted": True, "source_name": source_name}
 
     @app.get(f"/{token}/api/projects/{{project_id}}")
@@ -826,7 +827,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         except ProjectError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if len(files) > 100:
-            raise HTTPException(status_code=413, detail="Upload at most 100 PDFs at a time.")
+            raise HTTPException(status_code=413, detail="Upload at most 100 files at a time.")
         saved = []
         try:
             for upload in files:
@@ -1188,22 +1189,32 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         return FileResponse(path, media_type="image/png")
 
     @app.get(f"/{token}/projects/{{project_id}}/sources/{{name}}")
-    async def source_pdf(project_id: str, name: str):
+    async def source_file(project_id: str, name: str):
         try:
             project = runtime.project(project_id)
         except ProjectError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         sources = project.path / "sources"
-        if Path(name).name != name or Path(name).suffix.lower() != ".pdf":
-            raise HTTPException(status_code=404, detail="PDF not found.")
+        fmt = source_format(name)
+        if Path(name).name != name or fmt is None:
+            raise HTTPException(status_code=404, detail="Source not found.")
         try:
             path = (sources / name).resolve(strict=True)
             real_sources = sources.resolve(strict=True)
         except (OSError, RuntimeError):
-            raise HTTPException(status_code=404, detail="PDF not found.") from None
+            raise HTTPException(status_code=404, detail="Source not found.") from None
         # Refuse symlinks that point outside the project's sources folder.
         if path.parent != real_sources or not path.is_file():
-            raise HTTPException(status_code=404, detail="PDF not found.")
+            raise HTTPException(status_code=404, detail="Source not found.")
+        if fmt == "xml":
+            # Shown as plain text: rendering XML on this origin could run markup it contains.
+            return FileResponse(
+                path,
+                media_type="text/plain; charset=utf-8",
+                content_disposition_type="inline",
+                filename=name,
+                headers={"X-Content-Type-Options": "nosniff"},
+            )
         return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=name)
 
     @app.get(f"/{token}/projects/{{project_id}}/spreadsheet/{{name}}")

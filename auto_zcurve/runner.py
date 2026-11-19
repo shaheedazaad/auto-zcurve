@@ -25,11 +25,12 @@ from .console import CliConsole
 from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .models import ModelOption, resolve_input_mode, validate_model_option
 from .paths import DEFAULT_SCHEMA
-from .providers import extract_pdf, normalize_provider
+from .providers import extract_document, normalize_provider
 from .projects import project_instruction_path
 from .report import render_report
 from .schema import build_response_schema, read_extraction_schema
 from .security import redact_secrets
+from .sources import discover_sources, file_sha256, source_format
 
 
 _ARTIFACT_LOCK = threading.Lock()
@@ -89,11 +90,6 @@ class RunSummary:
     needs_review_pdfs: int = 0
 
 
-def discover_pdfs(project_dir: Path) -> list[Path]:
-    sources = project_dir / "sources"
-    return sorted(path for path in sources.rglob("*.pdf") if path.is_file())
-
-
 def source_name(project_dir: Path, source_path: Path) -> str:
     return source_path.relative_to(project_dir / "sources").as_posix()
 
@@ -104,7 +100,7 @@ def ensure_project_layout(project_dir: Path, assume_yes: bool, interactive: bool
     if not sources.exists():
         if assume_yes or _confirm("Create the missing sources/ folder?", default=True, interactive=interactive):
             sources.mkdir(parents=True, exist_ok=True)
-            console.warn(f"Created {sources}. Add PDF files there, then rerun auto-zcurve.")
+            console.warn(f"Created {sources}. Add PDF or XML articles there, then rerun auto-zcurve.")
             return False
         raise RuntimeError("A project sources/ folder is required.")
 
@@ -177,7 +173,9 @@ def _log_result(
             "parser_name": result.parser_name,
             "parser_version": result.parser_version,
             "parser_config_version": result.parser_config_version,
-            "source_pdf_sha256": result.source_pdf_sha256,
+            "source_format": result.source_format,
+            "source_sha256": result.source_sha256,
+            "source_pdf_sha256": result.pdf_sha256,
             "parsed_document_sha256": result.parsed_document_sha256,
             "parser_page_count": result.parser_page_count,
             "parser_mean_grade": result.parser_mean_grade,
@@ -191,7 +189,7 @@ def _log_result(
 
 
 def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) -> None:
-    """Save an extraction, keeping a needs-review PDF's data when its retry fails.
+    """Save an extraction, keeping a needs-review source's data when its retry fails.
 
     The failed attempt is noted on the kept record (and in the run log) so the
     user can see the retry did not succeed; any later result replaces it.
@@ -199,6 +197,15 @@ def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) ->
     if retry and result.status == STATUS_ERROR and record_failed_retry(project_dir, result.source_name, result.error):
         return
     upsert_extraction(project_dir, result)
+
+
+def _record_source(result: ExtractionResult, source_path: Path, fmt: str) -> None:
+    """Stamp a result with its source format and the source file's SHA-256."""
+    result.source_format = fmt
+    try:
+        result.source_sha256 = file_sha256(source_path)
+    except OSError:  # the file was removed mid-run; the result is still saved
+        pass
 
 
 def _process_one(
@@ -215,6 +222,10 @@ def _process_one(
 ):
     _raise_if_cancelled(cancellation_event)
     started_at = utc_now()
+    fmt = source_format(source_path) or "pdf"
+    input_mode = model_option.input_mode if fmt == "pdf" else resolve_input_mode(
+        settings.provider, model_option, settings.pdf_parser, fmt
+    )
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     if source_path.stat().st_size > max_bytes:
         result = ExtractionResult(
@@ -222,9 +233,10 @@ def _process_one(
             source_name=source_name(project_dir, source_path),
             status="error",
             provider_used=normalize_provider(settings.provider),
-            input_mode=model_option.input_mode,
+            input_mode=input_mode,
             error=f"File exceeds max_upload_size_mb ({settings.max_upload_size_mb} MB).",
         )
+        _record_source(result, source_path, fmt)
         _raise_if_cancelled(cancellation_event)
         with _ARTIFACT_LOCK:
             _save_result(project_dir, result, retry=retry)
@@ -243,7 +255,7 @@ def _process_one(
     try:
         if request_pacer is not None:
             request_pacer.wait(cancellation_event)
-        result = extract_pdf(
+        result = extract_document(
             provider=settings.provider,
             source_path=source_path,
             source_name=source_name(project_dir, source_path),
@@ -253,7 +265,7 @@ def _process_one(
             schema_config=config,
             instruction_path=project_instruction_path(project_dir),
             request_timeout_sec=settings.request_timeout_sec,
-            input_mode=model_option.input_mode,
+            input_mode=input_mode,
             context_length=model_option.context_length,
             project_dir=project_dir,
             reasoning_effort=(settings.reasoning_effort if model_option.supports_reasoning else None),
@@ -274,7 +286,7 @@ def _process_one(
             source_name=source_name(project_dir, source_path),
             status="error",
             provider_used=normalize_provider(settings.provider),
-            input_mode=model_option.input_mode,
+            input_mode=input_mode,
             error=redact_secrets(exc, [api_key]),
             parser_name=str(diagnostics.get("parser_name") or "") or None,
             parser_version=str(diagnostics.get("parser_version") or "") or None,
@@ -291,6 +303,7 @@ def _process_one(
             raw_response=getattr(exc, "raw_response", None),
             repaired_response=getattr(exc, "repaired_response", None),
         )
+    _record_source(result, source_path, fmt)
     _raise_if_cancelled(cancellation_event)
     with _ARTIFACT_LOCK:
         _save_result(project_dir, result, retry=retry)
@@ -363,7 +376,7 @@ def _process_paths(
         threading.Thread(
             target=worker,
             daemon=True,
-            name=f"auto-zcurve-pdf-{index + 1}",
+            name=f"auto-zcurve-source-{index + 1}",
         )
         for index in range(workers)
     ]
@@ -404,10 +417,10 @@ def run_project(
     if not ensure_project_layout(project_dir, assume_yes, interactive, console):
         return None
 
-    pdfs = discover_pdfs(project_dir)
-    console.info(f"Discovered {len(pdfs)} PDF file(s) in {project_dir / 'sources'}.")
-    if not pdfs:
-        console.warn("Add PDF files to sources/ before running extraction.")
+    sources = discover_sources(project_dir)
+    console.info(f"Discovered {len(sources)} article(s) in {project_dir / 'sources'}.")
+    if not sources:
+        console.warn("Add PDF or XML articles to sources/ before running extraction.")
         return None
 
     previous_settings = load_run_settings(project_dir)
@@ -424,18 +437,18 @@ def run_project(
     existing = latest_by_source(load_extractions(project_dir))
     to_process = [
         path
-        for path in pdfs
+        for path in sources
         if force
         or provider_or_model_changed
         or existing.get(source_name(project_dir, path), {}).get("status") not in EXTRACTED_STATUSES
     ]
     if provider_or_model_changed:
-        console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all PDFs will be reprocessed.")
-    skipped = len(pdfs) - len(to_process)
+        console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all articles will be reprocessed.")
+    skipped = len(sources) - len(to_process)
     if skipped:
         console.info(
-            f"Skipping {skipped} PDF(s) with existing extractions. "
-            "Use retry for PDFs that need review, or --force to rerun them all."
+            f"Skipping {skipped} article(s) with existing extractions. "
+            "Use retry for articles that need review, or --force to rerun them all."
         )
 
     run_id = str(uuid.uuid4())
@@ -457,7 +470,7 @@ def run_project(
         worker_label = "worker" if workers == 1 else "workers"
         with console.progress(
             len(to_process),
-            f"Extracting PDFs with {workers} parallel {worker_label}",
+            f"Extracting articles with {workers} parallel {worker_label}",
         ) as progress:
             _process_paths(
                 paths=to_process,
@@ -505,12 +518,12 @@ def retry_project(
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
     latest = latest_by_source(load_extractions(project_dir))
-    # Retry re-extracts failed PDFs and those whose extraction needs review.
+    # Retry re-extracts failed sources and those whose extraction needs review.
     failures = [name for name, record in latest.items() if record.get("status") != STATUS_OK]
     if selected_sources:
         failures = [name for name in failures if name in set(selected_sources)]
     if not failures:
-        console.success("No failed or needs-review PDFs to retry.")
+        console.success("No failed or needs-review articles to retry.")
         existing_report = project_dir / "output" / "report.html"
         return summarize(project_dir, existing_report if existing_report.exists() else None)
 
@@ -533,7 +546,7 @@ def retry_project(
     worker_label = "worker" if workers == 1 else "workers"
     with console.progress(
         len(paths),
-        f"Retrying failed and needs-review PDFs with {workers} parallel {worker_label}",
+        f"Retrying failed and needs-review articles with {workers} parallel {worker_label}",
     ) as progress:
         _process_paths(
             paths=paths,

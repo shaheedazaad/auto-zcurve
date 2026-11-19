@@ -29,6 +29,7 @@ from .llm import STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, record_review_rea
 from .models import DEFAULT_MODEL, model_request_defaults
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
+from .sources import SourceError, check_xml_file, discover_sources, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES
 
 
@@ -192,10 +193,10 @@ def safe_upload_name(filename: str) -> str:
     basename = Path(normalized.replace("\\", "/")).name
     cleaned = UNSAFE_NAME_RE.sub("_", basename).strip(" .")
     if not cleaned or cleaned in {".", ".."}:
-        raise ProjectError("A PDF filename is required.")
+        raise ProjectError("A PDF or XML filename is required.")
     suffix = Path(cleaned).suffix
-    if suffix.lower() != ".pdf":
-        raise ProjectError(f"{basename or 'File'} is not a PDF.")
+    if source_format(cleaned) is None:
+        raise ProjectError(f"{basename or 'File'} is not a PDF or XML file.")
     if len(cleaned.encode("utf-8")) > MAX_UPLOAD_NAME_BYTES:
         cleaned = _truncate_utf8(Path(cleaned).stem, MAX_UPLOAD_STEM_BYTES) + suffix
     if WINDOWS_RESERVED_NAME_RE.fullmatch(cleaned.split(".", 1)[0].rstrip(" ")):
@@ -239,16 +240,27 @@ def save_upload(
                         f"{safe_name} exceeds the {max_bytes // (1024 * 1024)} MB upload limit."
                     )
                 handle.write(chunk)
-        if written < 4:
-            raise ProjectError(f"{safe_name} is empty or not a valid PDF.")
-        with partial.open("rb") as handle:
-            if handle.read(4) != b"%PDF":
-                raise ProjectError(f"{safe_name} is not a valid PDF.")
+        _check_upload_content(partial, safe_name, written)
         partial.replace(destination)
     except Exception:
         partial.unlink(missing_ok=True)
         raise
     return destination
+
+
+def _check_upload_content(path: Path, name: str, size: int) -> None:
+    """Reject an upload whose content does not match its source format."""
+    if source_format(name) == "xml":
+        try:
+            check_xml_file(path, name)
+        except SourceError as exc:
+            raise ProjectError(str(exc)) from None
+        return
+    if size < 4:
+        raise ProjectError(f"{name} is empty or not a valid PDF.")
+    with path.open("rb") as handle:
+        if handle.read(4) != b"%PDF":
+            raise ProjectError(f"{name} is not a valid PDF.")
 
 
 def project_instruction_path(project_dir: Path) -> Path:
@@ -335,7 +347,7 @@ def update_project_instructions(
     if has_results and not confirm_reset:
         raise AnalysisResetRequired(
             "Changing extraction instructions will delete the existing report, extraction results, "
-            "and processing logs. Every PDF will need to be processed again."
+            "and processing logs. Every article will need to be processed again."
         )
 
     if has_results:
@@ -375,7 +387,7 @@ def update_project_schema(
     if has_results and not confirm_reset:
         raise AnalysisResetRequired(
             "Changing the extraction schema will delete the existing report, extraction results, "
-            "and processing logs. Every PDF will need to be processed again."
+            "and processing logs. Every article will need to be processed again."
         )
 
     if has_results:
@@ -395,7 +407,7 @@ def file_size_display(size: int) -> str:
 
 def project_snapshot(project: ManagedProject, default_model: str | None = None) -> dict:
     default_model = default_model or DEFAULT_MODEL
-    sources = sorted(project.path.joinpath("sources").glob("*.pdf"))
+    sources = discover_sources(project.path, recursive=False)
     records = latest_by_source(load_extractions(project.path))
 
     def response_text(record: dict, key: str) -> str:
@@ -422,6 +434,7 @@ def project_snapshot(project: ManagedProject, default_model: str | None = None) 
         articles.append(
             {
                 "name": source.name,
+                "source_format": source_format(source.name),
                 "size": stat.st_size,
                 "size_display": file_size_display(stat.st_size),
                 "added_at": added.isoformat(timespec="microseconds"),

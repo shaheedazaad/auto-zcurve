@@ -104,7 +104,7 @@
           <option value="{{ value }}" {% if app_settings.openai_response_format == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
-        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included.</p>
+        <p>Choose a mode your endpoint supports. Responses are always validated. PDFs are sent as locally extracted text with page numbers; scanned pages need OCR and figures are not included. XML files are sent as text, without parsing.</p>
       </div>
       <div class="section-head-actions">
         <p class="form-message u-sm" role="status"></p>
@@ -167,7 +167,7 @@
       <div class="panel-pad stack">
         <fieldset class="settings-group"><legend>Throughput and uploads</legend><div class="grid-2">
           <div class="field">
-            <label for="parallel-pdfs">Parallel PDFs</label>
+            <label for="parallel-pdfs">Parallel articles</label>
             <input class="input" id="parallel-pdfs" name="parallel_requests" type="number" min="1" max="32" value="{{ app_settings.parallel_requests }}" required>
             <p>How many articles are processed at once. Default 1.</p>
           </div>
@@ -182,7 +182,7 @@
             <p>Seconds allowed for a single provider request.</p>
           </div>
           <div class="field">
-            <label for="max-upload-size">Maximum PDF size</label>
+            <label for="max-upload-size">Maximum file size</label>
             <input class="input" id="max-upload-size" name="max_upload_size_mb" type="number" min="1" max="512" value="{{ app_settings.max_upload_size_mb }}" required>
             <p>Megabytes. Applied when new files are uploaded.</p>
           </div>

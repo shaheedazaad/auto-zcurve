@@ -124,6 +124,10 @@ class ExtractionResult:
     parser_name: str | None = None
     parser_version: str | None = None
     parser_config_version: str | None = None
+    source_format: str | None = None
+    # SHA-256 of the source file, whatever its source format.
+    source_sha256: str | None = None
+    # Kept for PDFs so saved projects and reports that read it still work.
     source_pdf_sha256: str | None = None
     parsed_document_sha256: str | None = None
     parser_page_count: int | None = None
@@ -134,6 +138,13 @@ class ExtractionResult:
     parser_duration_sec: float | None = None
     estimated_input_tokens: int | None = None
     review_reasons: tuple[str, ...] = ()
+
+    @property
+    def pdf_sha256(self) -> str | None:
+        """The value saved as `source_pdf_sha256`: set for PDF sources only."""
+        if self.source_format in (None, "pdf") and self.source_pdf_sha256:
+            return self.source_pdf_sha256
+        return self.source_sha256 if self.source_format == "pdf" else None
 
     @property
     def effect_count(self) -> int:

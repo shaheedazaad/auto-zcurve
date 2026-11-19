@@ -130,7 +130,7 @@
       <div class="empty">
         <div class="empty-icon" aria-hidden="true">Z</div>
         <p class="empty-title">No report yet</p>
-        <p class="empty-text">Process some articles to generate a report and see its key results here. Head to <strong>Sources</strong> to add PDFs, then <strong>Run analysis</strong> to start.</p>
+        <p class="empty-text">Process some articles to generate a report and see its key results here. Head to <strong>Sources</strong> to add PDF or XML articles, then <strong>Run analysis</strong> to start.</p>
       </div>
     </div>
     {% endif %}
@@ -150,17 +150,17 @@
   <section class="tab-panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" data-tab-panel="sources" hidden>
     <div class="section-head">
       <div>
-        <h2 class="icon-heading">{{ workflow_icon("sources") }}Add PDF articles</h2>
-        {{ docs_link("quickstart/#2-add-your-pdf-articles", "Adding PDFs") }}
+        <h2 class="icon-heading">{{ workflow_icon("sources") }}Add articles</h2>
+        {{ docs_link("quickstart/#2-add-your-articles", "Adding articles") }}
       </div>
-      <span class="badge" data-variant="outline" data-pdf-count>{{ project.pdf_count }} PDFs</span>
+      <span class="badge" data-variant="outline" data-pdf-count>{{ project.pdf_count }} file{% if project.pdf_count != 1 %}s{% endif %}</span>
     </div>
     <form class="dropzone js-upload" action="/{{ token }}/projects/{{ project.id }}/uploads">
-      <input id="pdf-files" name="files" type="file" accept="application/pdf,.pdf" multiple>
+      <input id="pdf-files" name="files" type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple>
       <label for="pdf-files">
         <span class="upload-symbol" aria-hidden="true">+</span>
         <span class="dropzone-copy">
-          <strong>Drop PDFs here or choose files</strong>
+          <strong>Drop PDF or XML files here or choose files</strong>
           <span>Select several articles at once · up to {{ project.max_upload_size_mb }} MB each</span>
         </span>
       </label>
@@ -171,7 +171,7 @@
         <table class="table source-table">
           <thead>
             <tr>
-              <th>PDF</th>
+              <th>File</th>
               <th>Size</th>
               <th>Added</th>
               <th><span class="sr-only">Actions</span></th>
@@ -186,12 +186,12 @@
               <td><a class="btn" data-variant="outline" data-size="sm" href="/{{ token }}/projects/{{ project.id }}/sources/{{ article.name | urlencode }}" target="_blank" rel="noopener">Open</a></td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="4" class="table-empty-cell">No PDFs yet. Drop some above to add them to this project.</td></tr>
+            <tr class="empty-row"><td colspan="4" class="table-empty-cell">No articles yet. Drop PDF or XML files above to add them to this project.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <nav class="panel-foot" data-source-pagination aria-label="PDF pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
+      <nav class="panel-foot" data-source-pagination aria-label="Source pages" {% if project.pdf_count <= 10 %}hidden{% endif %}>
         <span class="u-muted u-sm" data-source-page-status>Page 1 of {{ ((project.pdf_count - 1) // 10) + 1 }}</span>
         <button class="btn js-source-previous" data-variant="outline" data-size="sm" type="button" disabled>Previous</button>
         <button class="btn js-source-next" data-variant="outline" data-size="sm" type="button" {% if project.pdf_count <= 10 %}disabled{% endif %}>Next</button>
@@ -216,7 +216,7 @@
         </div>
         {% if project.has_analysis_results %}
         <div class="alert" data-variant="warning" role="status">
-          <section>Changing these instructions will delete the current report, extraction results, and processing logs. Every PDF will need to be processed again.</section>
+          <section>Changing these instructions will delete the current report, extraction results, and processing logs. Every article will need to be processed again.</section>
         </div>
         {% endif %}
         <div class="cluster" style="justify-content:flex-end">
@@ -241,7 +241,7 @@
       <div class="panel panel-pad stack">
         {% if project.has_analysis_results %}
         <div class="alert" data-variant="warning" role="status">
-          <section>Saving a changed schema will delete the current report, extracted results, and processing logs. Your PDFs will remain, but every article will need to be processed again.</section>
+          <section>Saving a changed schema will delete the current report, extracted results, and processing logs. Your source files will remain, but every article will need to be processed again.</section>
         </div>
         {% endif %}
         {% if job and job.status in ["queued", "running"] %}
@@ -355,7 +355,7 @@
               </td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No extraction results yet. Add PDFs on the Sources tab, then start a run from Run analysis.</td></tr>
+            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No extraction results yet. Add articles on the Sources tab, then start a run from Run analysis.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -382,7 +382,7 @@
   </section>
 
   <section class="tab-panel" id="panel-run-analysis" role="tabpanel" aria-labelledby="tab-run-analysis" data-tab-panel="run-analysis" hidden>
-    <p class="u-sm u-muted" style="margin:0 0 var(--sp-4)">The selected LLM processes each PDF according to the project instructions; R and Quarto then generate the z-curve report.</p>
+    <p class="u-sm u-muted" style="margin:0 0 var(--sp-4)">The selected LLM processes each article according to the project instructions; R and Quarto then generate the z-curve report.</p>
 
     <div class="panel panel-pad">
       <div class="run-columns">
@@ -402,7 +402,7 @@
                 </select>
               </div>
               <div class="field">
-                <label for="parallel-requests">Parallel PDFs</label>
+                <label for="parallel-requests">Parallel articles</label>
                 <input class="input" id="parallel-requests" name="parallel_requests" type="number" min="1" max="32" value="{{ project.parallel_requests }}" required>
               </div>
             </div>
@@ -466,8 +466,8 @@
 
           <div data-run-actions {% if not (has_api_key or has_saved_api_key) %}hidden{% endif %}>
             <div class="run-actions-row">
-              <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.extracted_count and project.remaining_count %}Continue processing {{ project.remaining_count }} PDF{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
-              <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count or project.needs_review_count else 'false' }}" {% if not (project.failed_count or project.needs_review_count) %}disabled{% endif %} title="Re-extract PDFs that failed or need review">Retry</button>
+              <button class="btn js-run" type="button" data-has-pdfs="{{ 'true' if project.pdf_count else 'false' }}" {% if not project.pdf_count %}disabled{% endif %}>{% if project.extracted_count and project.remaining_count %}Continue processing {{ project.remaining_count }} article{% if project.remaining_count != 1 %}s{% endif %}{% else %}Run analysis{% endif %} <span aria-hidden="true">→</span></button>
+              <button class="btn js-retry" data-variant="outline" type="button" data-has-failures="{{ 'true' if project.failed_count or project.needs_review_count else 'false' }}" {% if not (project.failed_count or project.needs_review_count) %}disabled{% endif %} title="Re-extract articles that failed or need review">Retry</button>
             </div>
           </div>
           <button class="btn js-cancel" data-variant="outline" style="width:100%" type="button" hidden>Cancel run</button>
@@ -509,7 +509,7 @@
 
     <p class="run-data-note">
       <svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/><circle cx="12" cy="12" r="9"/></svg>
-      Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser and provider configured in Settings.
+      Project files and outputs remain on this computer. During extraction, PDF content is sent according to the parser and provider configured in Settings; XML files are sent to the provider as text, without parsing.
     </p>
   </section>
 

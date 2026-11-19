@@ -11,7 +11,7 @@ from auto_zcurve.models import (
     validate_model,
     validate_model_option,
 )
-from auto_zcurve.openrouter import MAX_COMPLETION_ATTEMPTS, extract_pdf, list_model_endpoints, strict_response_schema
+from auto_zcurve.openrouter import MAX_COMPLETION_ATTEMPTS, extract_document, list_model_endpoints, strict_response_schema
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
 
 
@@ -124,7 +124,7 @@ class OpenRouterTests(unittest.TestCase):
                 patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
                 patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
             ):
-                result = extract_pdf(
+                result = extract_document(
                     source_path=pdf,
                     source_name=pdf.name,
                     api_key="secret",
@@ -164,7 +164,7 @@ class OpenRouterTests(unittest.TestCase):
                 patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
                 patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
             ):
-                extract_pdf(
+                extract_document(
                     source_path=pdf,
                     source_name=pdf.name,
                     api_key="secret",
@@ -208,7 +208,7 @@ class OpenRouterTests(unittest.TestCase):
                     patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
                     patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
                 ):
-                    extract_pdf(
+                    extract_document(
                         source_path=pdf,
                         source_name=pdf.name,
                         api_key="secret",
@@ -259,7 +259,7 @@ class OpenRouterTests(unittest.TestCase):
                 patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
                 patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
             ):
-                result = extract_pdf(
+                result = extract_document(
                     source_path=pdf,
                     source_name=pdf.name,
                     api_key="secret",
