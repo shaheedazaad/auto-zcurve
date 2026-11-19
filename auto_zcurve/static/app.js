@@ -177,6 +177,8 @@
           group.querySelectorAll("input, select").forEach((input) => { input.disabled = !active; });
         });
         modelHint.textContent = modelHints[provider];
+        modelOptions.innerHTML = "";
+        loadModels.hidden = provider === "openai_compatible";
         modelField.placeholder = provider === "openrouter" ? "vendor/model" : "Model ID";
       };
 
@@ -201,7 +203,6 @@
         const hasKey = Boolean(extractor?.has_key);
         keyActions.hidden = !hasKey;
         keyLabel.textContent = hasKey ? "Replace API key (optional)" : "API key";
-        loadModels.hidden = !extractor || extractor.provider === "openai_compatible" || !hasKey;
         showProviderFields();
         extractorDialog.showModal();
         field("name").focus();
@@ -214,13 +215,23 @@
       extractorForm.querySelector("[data-close-extractor-dialog]").addEventListener("click", () => extractorDialog.close());
       providerField.addEventListener("change", showProviderFields);
 
-      /* Loading suggestions uses the extractor's saved key, so it may open the
-         credential store; it only happens when asked for. */
+      /* Loading suggestions contacts the provider and may open the credential
+         store, so it only happens when asked for. A saved extractor uses its
+         saved key; otherwise the key typed into the form is sent for this one
+         request and never stored (OpenRouter's catalog also loads without one). */
       loadModels.addEventListener("click", async () => {
         loadModels.disabled = true;
         modelHint.textContent = "Loading models…";
         try {
-          const response = await fetch(`/${token}/api/extractors/${encodeURIComponent(editing.id)}/models`, { cache: "no-store" });
+          let response;
+          if (editing?.has_key) {
+            response = await fetch(`/${token}/api/extractors/${encodeURIComponent(editing.id)}/models`, { cache: "no-store" });
+          } else {
+            const data = new FormData();
+            data.set("provider", providerField.value);
+            data.set("api_key", field("api_key").value.trim());
+            response = await fetch(`/${token}/api/models`, { method: "POST", body: data, cache: "no-store" });
+          }
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(payload.detail || "Models could not be loaded.");
           modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");

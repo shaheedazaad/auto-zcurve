@@ -184,6 +184,35 @@ test('model suggestions load on request', async () => {
   }
 });
 
+test('a new extractor loads model suggestions on request with the typed key', async () => {
+  const page = mount(extractorPage, { response: [{ id: 'gemini-x', name: 'Gemini X' }] });
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    const load = page.document.querySelector('[data-load-models]');
+    assert.equal(load.hidden, false);
+    assert.equal(page.calls.length, 0);
+    field(page, 'api_key').value = ' typed-key ';
+    load.click(); await flush();
+    assert.equal(page.calls.length, 1);
+    assert.equal(page.calls[0][0], '/token/api/models');
+    assert.equal(page.calls[0][1].method, 'POST');
+    assert.equal(page.calls[0][1].body.get('provider'), 'gemini');
+    assert.equal(page.calls[0][1].body.get('api_key'), 'typed-key');
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 1);
+    field(page, 'provider').value = 'openai_compatible';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, true);
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 0);
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, false);
+    field(page, 'api_key').value = '';
+    load.click(); await flush();
+    assert.equal(page.calls[1][1].body.get('provider'), 'openrouter');
+    assert.equal(page.calls[1][1].body.get('api_key'), '');
+  } finally { page.close(); }
+});
+
 test('choosing an OpenRouter model lists the providers serving it', async () => {
   for (const [response, ok, expected] of [
     [[{ tag: 'a/b', name: 'A' }, { tag: 'c', name: 'C' }], true, /2 providers serve/],

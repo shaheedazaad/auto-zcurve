@@ -38,8 +38,10 @@ The list shows each extractor's provider, model, and whether its key is saved.
 When you save an extractor with a key, the app asks the provider whether the
 model can be used with that key, and refuses a model it doesn't recognise.
 Without a key, the extractor is saved and the model is checked when it first
-runs. When editing an extractor that has a key, **Show available models**
-loads the provider's model list as suggestions.
+runs. **Show available models** loads the provider's model list as
+suggestions, using the extractor's saved key or, before one is saved, the key
+typed into the form (sent for that one request only, never stored). OpenRouter's
+list loads without a key. Suggestions load only when you click the button.
 
 ### Gemini
 

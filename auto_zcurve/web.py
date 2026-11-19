@@ -85,7 +85,7 @@ from .security import redact_secrets
 from .sources import discover_sources, is_source_name, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES, spreadsheet_safe_csv, spreadsheet_safe_name
 from .user_facing import classify_error
-from .providers import PROVIDERS, provider_label
+from .providers import PROVIDERS, normalize_provider, provider_label
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -680,6 +680,26 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             options = await asyncio.to_thread(list_live_models, key or "", extractor.provider)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return [{"id": option.name, "name": option.display_name} for option in options]
+
+    @app.post(f"/{token}/api/models")
+    async def typed_key_models(provider: str = Form(...), api_key: str = Form("")):
+        """Model suggestions before an extractor is saved, using the key typed into the form.
+
+        The key is sent to the provider for this one request only: it is never
+        stored, logged, or included in the response or an error message.
+        """
+        key = api_key.strip()
+        try:
+            selected = normalize_provider(provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=redact_secrets(exc, [key])) from None
+        if selected == "gemini" and not key:
+            raise HTTPException(status_code=400, detail="Enter an API key to load Gemini models.")
+        try:
+            options = await asyncio.to_thread(list_live_models, key, selected)
+        except Exception as exc:  # Provider SDK errors vary; any of them must reach the user redacted.
+            raise HTTPException(status_code=503, detail=redact_secrets(exc, [key]) or "Models could not be loaded.") from None
         return [{"id": option.name, "name": option.display_name} for option in options]
 
     @app.get(f"/{token}/api/models/openrouter/endpoints")
