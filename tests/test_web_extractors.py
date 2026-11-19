@@ -13,6 +13,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from auto_zcurve import credentials
+from auto_zcurve.extractors import ExtractorError
 from auto_zcurve.config import RunSettings, save_run_settings
 from auto_zcurve.models import ModelOption
 from auto_zcurve.projects import create_project
@@ -222,6 +223,18 @@ class WebExtractorTests(unittest.TestCase):
         with patch.object(credentials, "_keyring_module", side_effect=credentials.CredentialStoreUnavailable("none")):
             response = self.client.post(f"/{TOKEN}/extractors/{extractor_id}/key", data={"api_key": "k"}, headers=ORIGIN)
         self.assertIn("kept for this app session only", response.json()["warning"])
+
+    def test_deleting_a_missing_extractor_never_scans_projects(self):
+        self.project_with_source()
+        with patch("auto_zcurve.web.project_extractor") as scan:
+            response = self.client.post(f"/{TOKEN}/extractors/{'f' * 8}/delete", headers=ORIGIN)
+        self.assertEqual(response.status_code, 404)
+        scan.assert_not_called()
+        # Deleted by another request between the check and the removal.
+        doomed = self.create()["extractor"]["id"]
+        with patch("auto_zcurve.web.delete_extractor", side_effect=ExtractorError("That extractor no longer exists.")):
+            response = self.client.post(f"/{TOKEN}/extractors/{doomed}/delete", headers=ORIGIN)
+        self.assertEqual(response.status_code, 404)
 
     def test_deleting_an_extractor_whose_key_cannot_be_removed_warns(self):
         created = self.create(api_key="k")

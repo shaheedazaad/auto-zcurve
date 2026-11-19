@@ -637,6 +637,9 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
     async def remove_extractor(extractor_id: str):
+        # Check first so a stale request returns 404 without scanning projects.
+        if get_extractor(extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         affected = _projects_using(extractor_id)
         try:
             removed = delete_extractor(extractor_id)
