@@ -103,7 +103,8 @@ keys share one Keychain item, so you are asked at most once per session.
 Edit the project's extractor in **Settings** and enter any model ID the
 provider offers, or create a new extractor and choose it on the project's
 **Run analysis** tab. **Show available models** lists the provider's current
-models for an extractor that has a key.
+models, using the extractor's saved key or the key typed into the form
+(OpenRouter's list needs no key).
 
 ## Where are my projects actually stored?
 

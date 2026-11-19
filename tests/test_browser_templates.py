@@ -37,7 +37,7 @@ class BrowserTemplateTests(unittest.TestCase):
                 app = web.create_app(token='token', projects_root=root / 'projects')
                 with TestClient(app, base_url='http://127.0.0.1') as client:
                     responses = {}
-                    for route in ['/token/api/projects', f'/token/api/projects/{project.project_id}']:
+                    for route in ['/token/api/projects', f'/token/api/projects/{project.project_id}', f'/token/api/extractors/{extractor.id}/projects']:
                         response = client.get(route)
                         self.assertEqual(response.status_code, 200, response.text)
                         responses[route] = response.json()

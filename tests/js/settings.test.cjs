@@ -40,7 +40,7 @@ const local = { ...extractor, id: 'loc', name: 'Local', provider: 'openai_compat
   settings: { name: 'Local', provider: 'openai_compatible', model: 'q', base_url: 'http://h/v1', response_format: 'none', context_length: null } };
 const row = item => `<div class="row" id="extractor-${item.id}" data-extractor-row data-extractor='${JSON.stringify(item)}'><button data-edit-extractor>Edit</button>
 <form class="js-extractor-action" action="/token/extractors/${item.id}/duplicate"></form>
-<form class="js-delete-extractor" action="/token/extractors/${item.id}/delete" data-extractor-name="${item.name}"></form></div>`;
+<form class="js-delete-extractor" action="/token/extractors/${item.id}/delete" data-extractor-id="${item.id}" data-extractor-name="${item.name}"></form></div>`;
 const extractorPage = `<nav class="settings-nav"><a href="#extractors">Extractors</a><a href="#files-and-parsing">Files</a></nav>
 <button data-new-extractor>Add</button>${row(extractor)}${row(local)}<p class="form-message keep" data-extractor-list-message></p>
 <dialog id="extractor-dialog"><form class="js-extractor-form" action="/token/extractors" data-create-action="/token/extractors">
@@ -223,6 +223,35 @@ test('model suggestions load on request', async () => {
   }
 });
 
+test('a new extractor loads model suggestions on request with the typed key', async () => {
+  const page = mount(extractorPage, { response: [{ id: 'gemini-x', name: 'Gemini X' }] });
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    const load = page.document.querySelector('[data-load-models]');
+    assert.equal(load.hidden, false);
+    assert.equal(page.calls.length, 0);
+    field(page, 'api_key').value = ' typed-key ';
+    load.click(); await flush();
+    assert.equal(page.calls.length, 1);
+    assert.equal(page.calls[0][0], '/token/api/models');
+    assert.equal(page.calls[0][1].method, 'POST');
+    assert.equal(page.calls[0][1].body.get('provider'), 'gemini');
+    assert.equal(page.calls[0][1].body.get('api_key'), 'typed-key');
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 1);
+    field(page, 'provider').value = 'openai_compatible';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, true);
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 0);
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, false);
+    field(page, 'api_key').value = '';
+    load.click(); await flush();
+    assert.equal(page.calls[1][1].body.get('provider'), 'openrouter');
+    assert.equal(page.calls[1][1].body.get('api_key'), '');
+  } finally { page.close(); }
+});
+
 test('choosing an OpenRouter model lists the providers serving it', async () => {
   for (const [response, ok, expected] of [
     [[{ tag: 'a/b', name: 'A' }, { tag: 'c', name: 'C' }], true, /2 providers serve/],
@@ -284,31 +313,56 @@ test('duplicating opens the copy for editing and reports failures', async () => 
   }
 });
 
-test('deleting an extractor confirms and names the projects that used it', async () => {
-  for (const [confirm, ok, response, expected, state] of [
-    [false, true, {}, '', null],
-    [true, true, { projects: [] }, 'Deleted “Router”.', 'u-success'],
-    [true, true, { projects: ['Study A', 'Study B'], warning: 'Key kept.' }, 'Deleted “Router”. Key kept. Choose another extractor for: Study A, Study B.', 'u-warning'],
-    [true, true, {}, 'Deleted “Router”.', 'u-success'],
-    [true, false, { detail: 'Gone' }, 'Gone', 'u-error'],
+// Answers the affected-projects listing and the delete request separately.
+const deleteFetch = (listing, deletion) => async url => (String(url).includes('/api/extractors/')
+  ? (listing instanceof Error ? Promise.reject(listing) : listing)
+  : deletion);
+
+test('deleting an extractor lists the projects using it before confirming', async () => {
+  for (const [confirm, listing, using, deletion, expected, state] of [
+    [false, json({ projects: [] }), /No projects use it/, null, '', null],
+    [true, json({ projects: ['Study A', 'Study B'] }), /These projects use it and will need another extractor: Study A, Study B\./, json({ projects: [] }), 'Deleted “Router”.', 'u-success'],
+    [true, json({ projects: ['Study A'] }), /Study A/, json({ projects: ['Study A'], warning: 'Key kept.' }), 'Deleted “Router”. Key kept. Choose another extractor for: Study A.', 'u-warning'],
+    [true, json({}), /No projects use it/, json({}), 'Deleted “Router”.', 'u-success'],
+    [true, json({ projects: [] }), /No projects use it/, json({ detail: 'Gone' }, false), 'Gone', 'u-error'],
   ]) {
-    const page = mount(extractorPage, { confirm, ok, response });
+    const page = mount(extractorPage, { confirm, fetch: deleteFetch(listing, deletion) });
     try {
-      await page.submit('#extractor-abc .js-delete-extractor');
-      assert.equal(page.calls.length, confirm ? 1 : 0);
+      await page.submit('#extractor-abc .js-delete-extractor'); await flush();
+      assert.equal(page.calls[0][0], '/token/api/extractors/abc/projects');
+      assert.equal(page.calls.length, confirm ? 2 : 1);
+      if (confirm) assert.equal(page.calls[1][0], 'http://localhost/token/extractors/abc/delete');
+      assert.match(page.confirmations[0], /Router/);
+      assert.match(page.confirmations[0], using);
       const message = page.document.querySelector('[data-extractor-list-message]');
       assert.equal(message.textContent, expected);
       if (state) assert.ok(message.classList.contains(state));
-      if (confirm) assert.match(page.confirmations[0], /Router/);
+    } finally { page.close(); }
+  }
+});
+
+test('an extractor is not deleted when its projects cannot be listed', async () => {
+  for (const [listing, expected] of [
+    [json({ detail: 'That extractor no longer exists.' }, false), 'That extractor no longer exists.'],
+    [{ ok: false, json: async () => { throw new Error('invalid'); } }, 'The projects using this extractor could not be listed.'],
+    [new Error('Offline'), 'Offline'],
+  ]) {
+    const page = mount(extractorPage, { fetch: deleteFetch(listing, json({})) });
+    try {
+      await page.submit('#extractor-abc .js-delete-extractor'); await flush();
+      assert.equal(page.calls.length, 1);
+      assert.equal(page.confirmations.length, 0);
+      assert.equal(page.document.querySelector('[data-extractor-list-message]').textContent, expected);
     } finally { page.close(); }
   }
 });
 
 test('extractor actions work without a list message or a dialog', async () => {
-  const page = mount(`<form class="js-extractor-action" action="/token/extractors/x/duplicate"></form><form class="js-delete-extractor" action="/token/extractors/x/delete"></form>`, { ok: false, response: { detail: 'Gone' } });
+  const page = mount(`<form class="js-extractor-action" action="/token/extractors/x/duplicate"></form><form class="js-delete-extractor" action="/token/extractors/x/delete" data-extractor-id="x"></form>`,
+    { fetch: deleteFetch(json({ projects: [] }), json({ detail: 'Gone' }, false)) });
   try {
     await page.submit('.js-extractor-action');
-    await page.submit('.js-delete-extractor');
+    await page.submit('.js-delete-extractor'); await flush();
     assert.match(page.confirmations[0], /this extractor/);
     assert.equal(page.browserErrors.length, 0);
   } finally { page.close(); }

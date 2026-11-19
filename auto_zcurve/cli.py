@@ -149,7 +149,9 @@ def _run_inputs(
     console: CliConsole,
 ) -> tuple[RunSettings, str]:
     extractor = choose_extractor(args.extractor, project_dir, interactive, console)
-    return run_settings_for(extractor, load_app_settings()), extractor_key(extractor)
+    api_key = extractor_key(extractor)
+    console.secrets.append(api_key)
+    return run_settings_for(extractor, load_app_settings()), api_key
 
 
 def guided(console: CliConsole) -> int:
