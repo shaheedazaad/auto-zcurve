@@ -21,6 +21,8 @@ keys for the same provider.
 3. Fill in the name, provider, and model, paste the key into **API key**, and
    click **Save extractor**.
 
+![The Add extractor dialog for Gemini, with name, model, service tier, request settings, and an API key field](assets/screenshots/add-extractor-dialog-gemini.png)
+
 The extractor shows **Key saved** once its key is stored. To change a key,
 edit the extractor and paste a new one into **Replace API key**. **Remove
 key** deletes it. For a keyless OpenAI-compatible server, leave the key

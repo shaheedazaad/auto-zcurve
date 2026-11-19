@@ -89,6 +89,8 @@ keep the **Gemini** provider, enter a model ID such as `gemini-3.6-flash`,
 paste your key into **API key**, and click **Save extractor**. See
 [API keys and privacy](api-key.md) for how to get a key and where it is kept.
 
+![The Add extractor dialog for Gemini, with name, model, service tier, request settings, and an API key field](assets/screenshots/add-extractor-dialog-gemini.png)
+
 You can also create extractors for OpenRouter or an
 [OpenAI-compatible endpoint](settings.md#openai-compatible); a keyless server
 does not need an API key.
@@ -100,6 +102,8 @@ from the **Extractor** list; the page shows its settings. Click
 **Run analysis**. To process articles faster, raise the extractor's
 **Parallel articles** setting; to change the model, edit the extractor. Both
 are in [Settings](settings.md#extractors).
+
+![A project's Run analysis tab with a Gemini extractor selected and its settings listed below the Extractor list](assets/screenshots/project-run-analysis.png)
 
 auto-zcurve processes each article in turn (or in parallel, if you raised that
 setting), shows live progress, and lets you know if any article fails —

@@ -16,6 +16,8 @@ the same key with a different model or service tier.
 
 The list shows each extractor's provider, model, and whether its key is saved.
 
+![The Extractors list in Settings, showing Gemini, OpenRouter, and OpenAI-compatible extractors, two with saved keys](assets/screenshots/settings-extractors.png)
+
 - **Add extractor** opens a dialog to create one.
 - **Edit** opens the same dialog with the saved settings. The provider can't
   be changed; create a new extractor to use another provider.
@@ -76,6 +78,8 @@ file-parser service.
 
 Connect a hosted or local server that supports Chat Completions.
 
+![The Add extractor dialog for an OpenAI-compatible server, with API base URL, JSON output mode, and context length fields](assets/screenshots/add-extractor-dialog-openai-compatible.png)
+
 1. Enter its **API base URL**, including its API prefix, for example
    `http://localhost:8000/v1`. Do not append `/chat/completions`,
    credentials, a query string, or a fragment.
@@ -102,6 +106,8 @@ On a project's **Run analysis** tab, choose an extractor from the
 **Extractor** list. The choice is saved for the project straight away, and
 the page shows that extractor's settings. **Edit extractor** opens it in
 Settings.
+
+![A project's Run analysis tab with a Gemini extractor selected and its settings listed below the Extractor list](assets/screenshots/project-run-analysis.png)
 
 **Run analysis** and **Retry** are available once the chosen extractor has a
 key, or needs none. The next run reprocesses every article if the extractor's
