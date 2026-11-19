@@ -42,6 +42,7 @@ from .extractors import (
     RESPONSE_FORMAT_LABELS,
     Extractor,
     ExtractorError,
+    ExtractorsUnreadable,
     check_model,
     create_extractor,
     delete_extractor,
@@ -470,6 +471,12 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     app.state.runtime = runtime
     app.add_middleware(LocalSecurityMiddleware)
 
+    @app.exception_handler(ExtractorsUnreadable)
+    async def extractors_unreadable(request: Request, exc: ExtractorsUnreadable):
+        # Every page and action that needs extractors stops here, so nothing
+        # overwrites the file before it is fixed.
+        return JSONResponse({"detail": str(exc)}, status_code=503)
+
     @app.get("/", include_in_schema=False)
     async def root():
         raise HTTPException(status_code=404)
@@ -562,6 +569,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             return f"The key was not saved. {exc}"
         set_key_saved(extractor.id, persisted)
         if not persisted:
+            if runtime.vault.persistent:
+                return "The credential store refused the key, so it is kept for this app session only."
             return "No secure credential store is available, so the key is kept for this app session only."
         return None
 
@@ -585,6 +594,8 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
         try:
             return await asyncio.to_thread(create)
+        except ExtractorsUnreadable:
+            raise
         except (ExtractorError, RuntimeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -638,20 +649,25 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
     async def remove_extractor(extractor_id: str):
         # Check first so a stale request returns 404 without scanning projects.
-        if get_extractor(extractor_id) is None:
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
+        if extractor is None:
             raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         affected = await asyncio.to_thread(_projects_using, extractor_id)
+        # The key goes first: if it can't be removed, the extractor stays so
+        # its removal can be retried from Settings.
+        if runtime.has_key(extractor):
+            try:
+                await asyncio.to_thread(runtime.vault.delete, extractor.id, extractor.legacy_credential)
+            except VaultUnavailable as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"The extractor was not deleted because its saved key could not be removed. {exc}",
+                ) from exc
         try:
-            removed = await asyncio.to_thread(delete_extractor, extractor_id)
+            await asyncio.to_thread(delete_extractor, extractor_id)
         except ExtractorError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        warning = None
-        if runtime.has_key(removed):
-            try:
-                await asyncio.to_thread(runtime.vault.delete, removed.id, removed.legacy_credential)
-            except VaultUnavailable as exc:
-                warning = f"The extractor was deleted, but its saved key could not be removed. {exc}"
-        return {"deleted": True, "projects": affected, "warning": warning}
+        return {"deleted": True, "projects": affected, "warning": None}
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/key")
     async def replace_extractor_key(extractor_id: str, api_key: str = Form(...)):
@@ -665,14 +681,14 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/key/delete")
     async def remove_extractor_key(extractor_id: str):
-        extractor = get_extractor(extractor_id)
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
         if extractor is None:
             raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         try:
             await asyncio.to_thread(runtime.vault.delete, extractor.id, extractor.legacy_credential)
         except VaultUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        set_key_saved(extractor.id, False)
+        await asyncio.to_thread(set_key_saved, extractor.id, False)
         return {"deleted": True}
 
     @app.post(f"/{token}/projects")

@@ -13,7 +13,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from auto_zcurve import credentials
-from auto_zcurve.extractors import ExtractorError
+from auto_zcurve.extractors import ExtractorError, get_extractor
 from auto_zcurve.config import RunSettings, save_run_settings
 from auto_zcurve.models import ModelOption
 from auto_zcurve.projects import create_project
@@ -262,7 +262,7 @@ class WebExtractorTests(unittest.TestCase):
             response = self.client.post(f"/{TOKEN}/extractors/{doomed}/delete", headers=ORIGIN)
         self.assertEqual(response.status_code, 404)
 
-    def test_deleting_an_extractor_whose_key_cannot_be_removed_warns(self):
+    def test_an_extractor_whose_key_cannot_be_removed_is_kept(self):
         created = self.create(api_key="k")
         plain = self.create(name="Plain")
         self.keyring.items[("auto-zcurve", "extractor_keys")] = "{broken"
@@ -271,7 +271,32 @@ class WebExtractorTests(unittest.TestCase):
         self.assertIsNone(self.client.post(f"/{TOKEN}/extractors/{plain['extractor']['id']}/delete", headers=ORIGIN).json()["warning"])
         self.assertEqual(self.keyring.reads, reads)
         response = self.client.post(f"/{TOKEN}/extractors/{created['extractor']['id']}/delete", headers=ORIGIN)
-        self.assertIn("its saved key could not be removed", response.json()["warning"])
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("was not deleted", response.json()["detail"])
+        # Still listed, so removing it can be retried.
+        self.assertIsNotNone(get_extractor(created["extractor"]["id"]))
+
+    def test_a_store_that_refuses_the_key_says_so(self):
+        class RefusingKeyring(FakeKeyring):
+            def set_password(self, service, username, value):
+                raise RuntimeError("write denied")
+
+        self.keyring = RefusingKeyring()
+        created = self.create(api_key="k")
+        self.assertIn("credential store refused the key", created["warning"])
+
+    def test_an_unreadable_extractors_file_stops_pages_without_overwriting_it(self):
+        existing = self.create()["extractor"]["id"]
+        path = self.config_dir / "extractors.json"
+        path.write_text("{broken", encoding="utf-8")
+        for response in (
+            self.client.get(f"/{TOKEN}/settings"),
+            self.client.post(f"/{TOKEN}/extractors", data={"name": "X", "provider": "gemini", "model": "m"}, headers=ORIGIN),
+            self.client.post(f"/{TOKEN}/extractors/{existing}", data={"name": "X", "model": "m"}, headers=ORIGIN),
+        ):
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("Fix or move the file", response.json()["detail"])
+        self.assertEqual(path.read_text(encoding="utf-8"), "{broken")
 
     def test_changing_the_model_checks_it_with_the_saved_key(self):
         with_key = self.create(api_key="k")["extractor"]["id"]

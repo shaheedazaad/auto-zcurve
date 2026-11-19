@@ -52,6 +52,20 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual((loaded.parallel_requests, loaded.request_delay_sec, loaded.request_timeout_sec), (4, 2, 90))
             self.assertEqual(loaded.extractor, snapshot)
 
+    def test_run_settings_without_a_snapshot_keep_their_concrete_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            settings = RunSettings(
+                primary_model="vendor/model", provider="openrouter", request_timeout_sec=120,
+                parallel_requests=3, request_delay_sec=7, reasoning_effort="low",
+                openrouter_provider="deepinfra", openrouter_allow_fallbacks=False,
+            )
+            save_run_settings(project, settings)
+            loaded = load_run_settings(project)
+            for name in ("request_timeout_sec", "parallel_requests", "request_delay_sec", "reasoning_effort",
+                         "openrouter_provider", "openrouter_allow_fallbacks"):
+                self.assertEqual(getattr(loaded, name), getattr(settings, name), name)
+
     def test_legacy_flat_run_settings_still_load(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)

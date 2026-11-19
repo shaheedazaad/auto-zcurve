@@ -63,6 +63,10 @@ class ExtractorError(ValueError):
     """An extractor definition is invalid or cannot be found."""
 
 
+class ExtractorsUnreadable(RuntimeError):
+    """The extractors file exists but can't be read, so nothing may overwrite it."""
+
+
 @dataclass(frozen=True)
 class Extractor:
     id: str
@@ -236,13 +240,18 @@ def _stored(extractor: Extractor) -> dict[str, object]:
 
 @_serialized
 def save_extractors(extractors: list[Extractor]) -> None:
+    """Write every extractor. Records that can't be loaded are written back unchanged."""
     path = extractors_path()
+    kept = [
+        record for record in (_read_records(path)[1] if path.is_file() else [])
+        if record.get("id") not in {item.id for item in extractors}
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
     # A unique name, so a writer outside this lock can't share the temporary file.
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(
-            json.dumps({"version": 1, "extractors": [_stored(item) for item in extractors]}, indent=2) + "\n",
+            json.dumps({"version": 1, "extractors": [*(_stored(item) for item in extractors), *kept]}, indent=2) + "\n",
             encoding="utf-8",
         )
         try:
@@ -254,26 +263,41 @@ def save_extractors(extractors: list[Extractor]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-@_serialized
-def load_extractors() -> list[Extractor]:
-    """Return every extractor in creation order."""
-    path = extractors_path()
-    if not path.is_file():
-        return _migrate_legacy_settings()
+def _read_records(path: Path) -> tuple[list[Extractor], list[dict]]:
+    """The extractors in the file, and the records that couldn't be loaded.
+
+    Raises ExtractorsUnreadable when the file can't be read or isn't an
+    extractors file, so a later save never replaces what couldn't be read.
+    """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        records = payload.get("extractors") if isinstance(payload, dict) else None
-    except (OSError, json.JSONDecodeError):
-        return []
-    extractors = []
-    for record in records if isinstance(records, list) else []:
+    except (OSError, ValueError) as exc:
+        raise ExtractorsUnreadable(
+            f"Couldn't read {path}: {exc}. Fix or move the file, then try again."
+        ) from exc
+    records = payload.get("extractors") if isinstance(payload, dict) else None
+    if not isinstance(records, list):
+        raise ExtractorsUnreadable(f"{path} has no extractor list. Fix or move the file, then try again.")
+    extractors: list[Extractor] = []
+    unloadable: list[dict] = []
+    for record in records:
         if not isinstance(record, dict) or not record.get("id"):
             continue
         try:
             extractors.append(_build(record, extractor_id=str(record["id"]), require_model=False))
         except ExtractorError:
-            continue
-    return extractors
+            # Kept in the file (see save_extractors), so it isn't lost.
+            unloadable.append(record)
+    return extractors, unloadable
+
+
+@_serialized
+def load_extractors() -> list[Extractor]:
+    """Return every loadable extractor in creation order."""
+    path = extractors_path()
+    if not path.is_file():
+        return _migrate_legacy_settings()
+    return _read_records(path)[0]
 
 
 def _check_unique_name(extractors: list[Extractor], name: str, extractor_id: str) -> None:
@@ -281,19 +305,24 @@ def _check_unique_name(extractors: list[Extractor], name: str, extractor_id: str
         raise ExtractorError(f"An extractor called “{name}” already exists.")
 
 
-@_serialized
 def create_extractor(
     values: Mapping[str, object],
     *,
     check: Callable[[Extractor], None] | None = None,
 ) -> Extractor:
-    """Validate and save a new extractor. `check` can refuse it before it is saved."""
-    extractors = load_extractors()
+    """Validate and save a new extractor. `check` can refuse it before it is saved.
+
+    `check` may call the provider, so it runs without the lock; the name is
+    checked again under the lock before saving.
+    """
     extractor = _build({**values, "key_saved": False, "legacy_credential": ""}, extractor_id=str(uuid.uuid4()))
-    _check_unique_name(extractors, extractor.name, extractor.id)
+    _check_unique_name(load_extractors(), extractor.name, extractor.id)
     if check is not None:
         check(extractor)
-    save_extractors([*extractors, extractor])
+    with _LOCK:
+        extractors = load_extractors()
+        _check_unique_name(extractors, extractor.name, extractor.id)
+        save_extractors([*extractors, extractor])
     return extractor
 
 
@@ -313,7 +342,6 @@ def _index(extractors: list[Extractor], extractor_id: str) -> int:
     raise ExtractorError("That extractor no longer exists.")
 
 
-@_serialized
 def update_extractor(
     extractor_id: str,
     values: Mapping[str, object],
@@ -322,25 +350,35 @@ def update_extractor(
 ) -> Extractor:
     """Replace an extractor's settings. Its provider and key status never change here.
 
-    `check(current, updated)` can refuse the change before it is saved.
+    `check(current, updated)` can refuse the change before it is saved. It may
+    call the provider, so it runs without the lock; the change is then applied
+    under the lock to the extractor as it is by then.
     """
+    def build(current: Extractor) -> Extractor:
+        return _build(
+            {
+                **values,
+                "provider": current.provider,
+                "key_saved": current.key_saved,
+                "legacy_credential": current.legacy_credential,
+            },
+            extractor_id=current.id,
+        )
+
     extractors = load_extractors()
-    index = _index(extractors, extractor_id)
-    current = extractors[index]
-    updated = _build(
-        {
-            **values,
-            "provider": current.provider,
-            "key_saved": current.key_saved,
-            "legacy_credential": current.legacy_credential,
-        },
-        extractor_id=current.id,
-    )
+    current = extractors[_index(extractors, extractor_id)]
+    updated = build(current)
     _check_unique_name(extractors, updated.name, updated.id)
     if check is not None:
         check(current, updated)
-    extractors[index] = updated
-    save_extractors(extractors)
+    with _LOCK:
+        extractors = load_extractors()
+        index = _index(extractors, extractor_id)
+        # Key status may have changed while the check ran; keep the latest.
+        updated = build(extractors[index])
+        _check_unique_name(extractors, updated.name, updated.id)
+        extractors[index] = updated
+        save_extractors(extractors)
     return updated
 
 
@@ -383,12 +421,15 @@ def set_key_saved(extractor_id: str, saved: bool) -> None:
     save_extractors(extractors)
 
 
-def _read_json_object(path: Path) -> dict:
+def _read_json_object(path: Path) -> dict | None:
+    """The file's JSON object: {} when it doesn't exist, None when it can't be read."""
+    if not path.exists():
+        return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _migrate_legacy_settings() -> list[Extractor]:
@@ -407,8 +448,12 @@ def _migrate_legacy_settings() -> list[Extractor]:
     URL to be entered before it can run.
     """
     settings_file = app_settings_path()
-    old = _read_json_object(settings_file)
-    flags = _read_json_object(legacy_preferences_path())
+    # An old file that can't be read is migrated as empty but left in place,
+    # so nothing it holds is lost.
+    old_or_none = _read_json_object(settings_file)
+    flags_or_none = _read_json_object(legacy_preferences_path())
+    old = old_or_none or {}
+    flags = flags_or_none or {}
     common = {
         name: old.get(name)
         for name in ("request_timeout_sec", "parallel_requests", "request_delay_sec")
@@ -461,9 +506,10 @@ def _migrate_legacy_settings() -> list[Extractor]:
             bare = {name: values[name] for name in ("provider", "name", "key_saved", "legacy_credential")}
             migrated.append(_build(bare, extractor_id=str(uuid.uuid4()), require_model=False))
     save_extractors(migrated)
-    if settings_file.is_file():
+    if settings_file.is_file() and old_or_none is not None:
         save_app_settings(load_app_settings())
-    legacy_preferences_path().unlink(missing_ok=True)
+    if flags_or_none is not None:
+        legacy_preferences_path().unlink(missing_ok=True)
     return migrated
 
 

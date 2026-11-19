@@ -162,14 +162,55 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         stored["extractors"] += [{"name": "No id"}, "junk", {"id": "x", "name": "Bad", "provider": "unknown"}]
         path.write_text(json.dumps(stored), encoding="utf-8")
         self.assertEqual([item.name for item in ex.load_extractors()], ["Good"])
+        # A record this version can't load survives the next save untouched.
+        ex.create_extractor({"name": "Another", "provider": "gemini", "model": "m"})
+        self.assertIn({"id": "x", "name": "Bad", "provider": "unknown"}, self.stored()["extractors"])
+        self.assertEqual([item.name for item in ex.load_extractors()], ["Good", "Another"])
+
+    def test_an_unreadable_extractors_file_is_never_overwritten(self):
+        ex.create_extractor({"name": "Good", "provider": "gemini", "model": "m"})
+        path = self.config_dir / "extractors.json"
         for contents in ["{broken", "[]", '{"extractors": "nope"}']:
-            path.write_text(contents, encoding="utf-8")
-            self.assertEqual(ex.load_extractors(), [])
+            with self.subTest(contents=contents):
+                path.write_text(contents, encoding="utf-8")
+                with self.assertRaises(ex.ExtractorsUnreadable):
+                    ex.load_extractors()
+                with self.assertRaises(ex.ExtractorsUnreadable):
+                    ex.create_extractor({"name": "New", "provider": "gemini", "model": "m"})
+                with self.assertRaises(ex.ExtractorsUnreadable):
+                    ex.save_extractors([])
+                self.assertEqual(path.read_text(encoding="utf-8"), contents)
 
     def test_saving_works_where_permissions_cannot_be_set(self):
         with patch.object(Path, "chmod", side_effect=OSError("unsupported")):
             created = ex.create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
         self.assertEqual(ex.load_extractors(), [created])
+
+    def test_the_provider_check_runs_without_blocking_other_changes(self):
+        import threading
+
+        target = ex.create_extractor({"name": "Target", "provider": "gemini", "model": "m"})
+        finished = []
+
+        def check(current, updated=None):
+            # Another request changes extractors while the check is in flight.
+            other = threading.Thread(target=lambda: finished.append(
+                ex.create_extractor({"name": f"Other {len(finished)}", "provider": "gemini", "model": "m"})
+            ))
+            other.start()
+            other.join(timeout=5)
+            self.assertFalse(other.is_alive(), "the check held the extractors lock")
+            ex.set_key_saved(target.id, True)
+
+        ex.create_extractor({"name": "Checked", "provider": "gemini", "model": "m"}, check=check)
+        updated = ex.update_extractor(target.id, {"name": "Target", "model": "m2"}, check=check)
+
+        self.assertEqual(len(finished), 2)
+        # The key status recorded during the check is kept, not overwritten.
+        self.assertTrue(updated.key_saved)
+        self.assertTrue(ex.get_extractor(target.id).key_saved)
+        names = [item.name for item in ex.load_extractors()]
+        self.assertEqual(sorted(names), ["Checked", "Other 0", "Other 1", "Target"])
 
     def test_find_by_name_ignores_case(self):
         created = ex.create_extractor({"name": "Lab Gemini", "provider": "gemini", "model": "m"})
@@ -311,6 +352,18 @@ class ExtractorMigrationTests(ExtractorTestCase):
         (local,) = ex.load_extractors()
         self.assertEqual((local.base_url, local.response_format), ("", "json_schema"))
         self.assertEqual(ex.legacy_claims(), {local.id: "openai_compatible_api_key"})
+
+    def test_old_files_that_cannot_be_read_are_left_in_place(self):
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        settings = self.config_dir / "settings.json"
+        preferences = self.config_dir / "preferences.json"
+        settings.write_text("{broken settings", encoding="utf-8")
+        preferences.write_text("{broken flags", encoding="utf-8")
+
+        self.assertEqual(ex.load_extractors(), [])
+
+        self.assertEqual(settings.read_text(encoding="utf-8"), "{broken settings")
+        self.assertEqual(preferences.read_text(encoding="utf-8"), "{broken flags")
 
     def test_migration_is_safe_to_rerun(self):
         preferences = {"openai_compatible_saved_api_key_configured": True}

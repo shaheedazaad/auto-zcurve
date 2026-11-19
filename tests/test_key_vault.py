@@ -169,8 +169,66 @@ class KeyVaultTests(unittest.TestCase):
         with with_keyring(keyring):
             self.assertIsNone(vault.get("o"))
             vault.delete("o", "openrouter_api_key")
-            vault.delete("o", "openrouter_api_key")  # Already gone: tolerated.
+            vault.delete("o", "gemini_api_key")  # Never existed: tolerated.
         self.assertNotIn(("auto-zcurve", "openrouter_api_key"), keyring.items)
+
+    def test_an_old_item_that_cannot_be_removed_is_reported(self):
+        class StuckKeyring(FakeKeyring):
+            def delete_password(self, service, username):
+                raise RuntimeError("cannot delete")
+
+        class Unverifiable(StuckKeyring):
+            def get_password(self, service, username):
+                if username == "openrouter_api_key":
+                    raise RuntimeError("locked")
+                return super().get_password(service, username)
+
+        for keyring in (StuckKeyring({("auto-zcurve", "openrouter_api_key"): "old"}), Unverifiable()):
+            with self.subTest(keyring=type(keyring).__name__), with_keyring(keyring):
+                with self.assertRaises(VaultUnavailable):
+                    KeyVault().delete("o", "openrouter_api_key")
+
+    def test_a_claim_stays_pending_until_its_old_item_is_removed(self):
+        class StuckKeyring(FakeKeyring):
+            def delete_password(self, service, username):
+                if username == "openrouter_api_key":
+                    raise RuntimeError("cannot delete")
+                return super().delete_password(service, username)
+
+        keyring = StuckKeyring({
+            ("auto-zcurve", "gemini_api_key"): "old-gemini",
+            ("auto-zcurve", "openrouter_api_key"): "old-openrouter",
+        })
+        adopted = []
+        vault = KeyVault(
+            legacy_claims=lambda: {"g": "gemini_api_key", "o": "openrouter_api_key"},
+            on_legacy_adopted=adopted.append,
+        )
+        with with_keyring(keyring):
+            self.assertEqual(vault.get("o"), "old-openrouter")
+        # Only the claim whose item is gone is cleared; the other is retried later.
+        self.assertEqual(adopted, [{"g": True}])
+        self.assertEqual(keyring.vault(), {"g": "old-gemini", "o": "old-openrouter"})
+
+    def test_concurrent_saves_keep_every_key(self):
+        import threading
+        import time
+
+        class SlowKeyring(FakeKeyring):
+            def set_password(self, service, username, value):
+                time.sleep(0.01)  # Widens the window between reading and writing the vault.
+                super().set_password(service, username, value)
+
+        keyring = SlowKeyring()
+        vault = KeyVault()
+        with with_keyring(keyring):
+            vault.get("warm")  # Load once, as the app does before concurrent saves.
+            threads = [threading.Thread(target=vault.set, args=(f"x{index}", f"key-{index}")) for index in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(keyring.vault(), {f"x{index}": f"key-{index}" for index in range(8)})
 
     def test_moving_old_keys_tolerates_items_that_cannot_be_removed(self):
         class StubbornKeyring(FakeKeyring):

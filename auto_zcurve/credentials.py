@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -85,7 +86,7 @@ class KeyVault:
 
     UNLOCK_MESSAGE = (
         "Couldn't unlock saved keys. Allow access when your computer asks, "
-        "or replace the key in Settings."
+        "or try again."
     )
 
     def __init__(
@@ -104,6 +105,8 @@ class KeyVault:
         self._persistent: bool | None = None
         self._legacy_claims = legacy_claims
         self._on_legacy_adopted = on_legacy_adopted
+        # Each load-modify-write holds this, so concurrent saves can't drop keys.
+        self._lock = threading.RLock()
 
     @property
     def persistent(self) -> bool:
@@ -113,31 +116,34 @@ class KeyVault:
         return self._persistent
 
     def _load(self) -> dict[str, str]:
-        if self._keys is not None:
+        with self._lock:
+            if self._keys is not None:
+                return self._keys
+            if not self.persistent:
+                self._keys = {}
+                return self._keys
+            try:
+                raw = _keyring_module().get_password(SERVICE_NAME, VAULT_USERNAME)
+                payload = json.loads(raw) if raw else {}
+                keys = payload.get("keys") if isinstance(payload, dict) else None
+                if raw and not isinstance(keys, dict):
+                    raise ValueError("The saved key vault is malformed.")
+            except Exception as exc:
+                raise VaultUnavailable(self.UNLOCK_MESSAGE) from exc
+            loaded = {str(name): str(value) for name, value in (keys or {}).items() if str(value).strip()}
+            # Adopt into the local dict and publish it only when complete, so
+            # `cached` never sees a vault that is still missing old keys.
+            self._adopt_legacy_keys(loaded)
+            self._keys = loaded
             return self._keys
-        if not self.persistent:
-            self._keys = {}
-            return self._keys
-        try:
-            raw = _keyring_module().get_password(SERVICE_NAME, VAULT_USERNAME)
-            payload = json.loads(raw) if raw else {}
-            keys = payload.get("keys") if isinstance(payload, dict) else None
-            if raw and not isinstance(keys, dict):
-                raise ValueError("The saved key vault is malformed.")
-        except Exception as exc:
-            raise VaultUnavailable(self.UNLOCK_MESSAGE) from exc
-        self._keys = {str(name): str(value) for name, value in (keys or {}).items() if str(value).strip()}
-        self._adopt_legacy_keys()
-        return self._keys
 
-    def _adopt_legacy_keys(self) -> None:
+    def _adopt_legacy_keys(self, keys: dict[str, str]) -> None:
         claims = self._legacy_claims() if self._legacy_claims else {}
         if not claims:
             return
         keyring = _keyring_module()
-        assert self._keys is not None
         for extractor_id, username in claims.items():
-            if extractor_id in self._keys:
+            if extractor_id in keys:
                 continue
             try:
                 value = str(keyring.get_password(SERVICE_NAME, username) or "").strip()
@@ -146,25 +152,27 @@ class KeyVault:
                 # store that is briefly locked never loses a key.
                 return
             if value:
-                self._keys[extractor_id] = value
-        if not self._write():
+                keys[extractor_id] = value
+        if not self._write(keys):
             return
-        for username in set(claims.values()):
-            try:
-                keyring.delete_password(SERVICE_NAME, username)
-            except Exception:
-                pass
+        removed = {username: _delete_item(keyring, username) for username in set(claims.values())}
         if self._on_legacy_adopted:
-            self._on_legacy_adopted({extractor_id: extractor_id in self._keys for extractor_id in claims})
+            # A claim whose old item is still there stays pending, so its
+            # removal is retried next session.
+            self._on_legacy_adopted({
+                extractor_id: extractor_id in keys
+                for extractor_id, username in claims.items()
+                if removed[username]
+            })
 
-    def _write(self) -> bool:
+    def _write(self, keys: dict[str, str]) -> bool:
         if not self.persistent:
             return False
         try:
             _keyring_module().set_password(
                 SERVICE_NAME,
                 VAULT_USERNAME,
-                json.dumps({"version": 1, "keys": self._keys}),
+                json.dumps({"version": 1, "keys": keys}),
             )
         except Exception:
             return False
@@ -182,23 +190,40 @@ class KeyVault:
         api_key = api_key.strip()
         if not api_key:
             raise ValueError("Cannot save an empty API key.")
-        self._load()[extractor_id] = api_key
-        return self._write()
+        with self._lock:
+            keys = self._load()
+            keys[extractor_id] = api_key
+            return self._write(keys)
 
     def delete(self, extractor_id: str, legacy_credential: str = "") -> None:
-        """Remove a key, and the extractor's old credential item if it hasn't moved yet."""
-        keys = self._load()
-        removed = keys.pop(extractor_id, None)
-        if removed is not None and self.persistent and not self._write():
-            keys[extractor_id] = removed
-            raise VaultUnavailable(self.UNLOCK_MESSAGE)
-        # An old item that couldn't be moved yet would otherwise bring the key
-        # back next session.
-        if legacy_credential and self.persistent:
-            try:
-                _keyring_module().delete_password(SERVICE_NAME, legacy_credential)
-            except Exception:
-                pass
+        """Remove a key, and the extractor's old credential item if it hasn't moved yet.
+
+        Raises VaultUnavailable when either removal can't be completed.
+        """
+        with self._lock:
+            keys = self._load()
+            removed = keys.pop(extractor_id, None)
+            if removed is not None and self.persistent and not self._write(keys):
+                keys[extractor_id] = removed
+                raise VaultUnavailable(self.UNLOCK_MESSAGE)
+            # An old item that couldn't be moved yet would otherwise bring the key
+            # back next session.
+            if legacy_credential and self.persistent and not _delete_item(_keyring_module(), legacy_credential):
+                raise VaultUnavailable(self.UNLOCK_MESSAGE)
 
     def secrets(self) -> list[str]:
         return list((self._keys or {}).values())
+
+
+def _delete_item(keyring, username: str) -> bool:
+    """Delete a credential item. True once it is gone, including when it never existed."""
+    try:
+        keyring.delete_password(SERVICE_NAME, username)
+        return True
+    except Exception:
+        pass
+    # Deleting a missing item fails too; that still counts as removed.
+    try:
+        return not keyring.get_password(SERVICE_NAME, username)
+    except Exception:
+        return False

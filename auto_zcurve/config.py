@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -263,6 +264,17 @@ def save_run_settings(project_dir: Path, settings: RunSettings) -> None:
     path = settings_path(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = dict(settings.extractor or {})
+    if settings.extractor is None:
+        # Settings built without an extractor snapshot still record what the
+        # run used, so reading them back never substitutes defaults.
+        snapshot.update({
+            name: getattr(settings, name)
+            for name in (
+                "request_timeout_sec", "parallel_requests", "request_delay_sec", "reasoning_effort",
+                "service_tier", "openrouter_provider", "openrouter_allow_fallbacks", "base_url",
+                "response_format", "context_length",
+            )
+        })
     snapshot.update(provider=normalize_provider(settings.provider), model=settings.primary_model)
     payload = {
         "extractor_id": settings.extractor_id,
@@ -291,7 +303,11 @@ def load_selected_extractor_id(project_dir: Path) -> str:
 def save_selected_extractor_id(project_dir: Path, extractor_id: str) -> None:
     path = selected_extractor_path(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Replace atomically so an interrupted write never leaves an empty file.
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps({"extractor_id": extractor_id}) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    # Replace atomically so an interrupted write never leaves an empty file. A
+    # unique name, so concurrent requests can't share the temporary file.
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps({"extractor_id": extractor_id}) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
