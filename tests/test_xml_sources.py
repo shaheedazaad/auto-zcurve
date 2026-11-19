@@ -25,6 +25,7 @@ from auto_zcurve.paths import DEFAULT_INSTRUCTIONS
 from auto_zcurve.projects import ProjectError, create_project, project_snapshot, safe_upload_name, save_upload
 from auto_zcurve.prompts import XML_EVIDENCE_NOTE, build_system_prompt, render_text_template
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
+from auto_zcurve.user_facing import classify_error
 from auto_zcurve.sources import (
     XML_TEXT_INPUT_MODE,
     SourceError,
@@ -65,6 +66,7 @@ class SourceFormatTests(unittest.TestCase):
                 ["a.pdf", "b.XML", "c.xml", "nested/d.xml"],
             )
             self.assertEqual([p.name for p in discover_sources(project, recursive=False)], ["a.pdf", "b.XML", "c.xml"])
+            self.assertEqual(discover_sources(project / "missing"), [])
 
     def test_xml_validation_rejects_empty_binary_and_non_xml(self):
         for data, message in [
@@ -114,6 +116,9 @@ class SourceFormatTests(unittest.TestCase):
         with self.assertRaises(SourceError) as caught:
             check_context_length(280_400, 128_000)
         self.assertEqual(str(caught.exception), "Article is ~280k tokens; this model accepts 128k.")
+        shown = classify_error(caught.exception)
+        self.assertEqual(shown.title, "Article too long for the model")
+        self.assertIn("~280k tokens; this model accepts 128k", shown.compact())
         for limit in [None, 0, 280_400]:
             check_context_length(280_400, limit)
         self.assertEqual(estimate_tokens("x" * 300), 100)
@@ -212,6 +217,15 @@ class ProviderRequestTests(unittest.TestCase):
             self.extract("openrouter", context_length=100)
         load.assert_not_called()
 
+    def test_openrouter_text_mode_requires_article_text(self):
+        with patch.object(openrouter, "_request_json") as request, self.assertRaisesRegex(RuntimeError, "needs the article text"):
+            openrouter.extract_document(
+                source_path=self.xml, source_name=self.xml.name, api_key="secret", primary_model="model",
+                response_schema=build_response_schema(self.config), schema_config=self.config,
+                instruction_path=self.instructions, input_mode=XML_TEXT_INPUT_MODE,
+            )
+        request.assert_not_called()
+
     def test_xml_is_never_sent_with_a_pdf_input_mode(self):
         with patch.object(providers.importlib, "import_module") as load, self.assertRaisesRegex(ValueError, "article text"):
             self.extract("openrouter", input_mode="cloudflare_pdf")
@@ -264,6 +278,11 @@ class RunnerTests(unittest.TestCase):
         log = {row["source_name"]: row for row in load_run_log(self.project)}
         self.assertEqual(log["b.xml"]["source_format"], "xml")
         self.assertIn("source_sha256", (self.project / "output/run_log.csv").read_text().splitlines()[0])
+
+    def test_source_removed_mid_run_is_saved_without_a_hash(self):
+        result = ExtractionResult(self.project / "sources/gone.xml", "gone.xml", "error")
+        r._record_source(result, self.project / "sources/gone.xml", "xml")
+        self.assertEqual((result.source_format, result.source_sha256), ("xml", None))
 
     def test_failed_xml_is_recorded_and_retried_as_text(self):
         with patch.object(r, "validate_model_option", return_value=self.option), \

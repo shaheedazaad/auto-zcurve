@@ -202,11 +202,10 @@ def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) ->
 def _record_source(result: ExtractionResult, source_path: Path, fmt: str) -> None:
     """Stamp a result with its source format and the source file's SHA-256."""
     result.source_format = fmt
-    if result.source_sha256 is None:
-        try:
-            result.source_sha256 = file_sha256(source_path)
-        except OSError:
-            pass
+    try:
+        result.source_sha256 = file_sha256(source_path)
+    except OSError:  # the file was removed mid-run; the result is still saved
+        pass
 
 
 def _process_one(
