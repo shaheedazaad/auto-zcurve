@@ -21,7 +21,7 @@ from .llm import (
     retryable_status,
     review_status,
 )
-from .prompts import build_system_prompt
+from .prompts import build_system_prompt, schema_prompt
 from .schema import ExtractionSchema, normalize_extracted_json, validate_extracted_json
 from .sources import XML_TEXT_INPUT_MODE
 
@@ -400,13 +400,14 @@ def extract_document(
     started = time.monotonic()
     parsed_document = None
     estimated_input_tokens = None
+    strict_schema = strict_response_schema(response_schema)
     if input_mode == XML_TEXT_INPUT_MODE:
         if article_text is None:
             raise RuntimeError("OpenRouter article-text input needs the article text.")
-        prompt = build_system_prompt(schema_config, instruction_path, "xml")
+        prompt = build_system_prompt(schema_config, instruction_path, "xml") + schema_prompt(strict_schema)
         user_content = [{"type": "text", "text": prompt + "\n\nArticle text:\n" + article_text}]
     elif input_mode in {"native_pdf", "cloudflare_pdf"}:
-        prompt = build_system_prompt(schema_config, instruction_path)
+        prompt = build_system_prompt(schema_config, instruction_path) + schema_prompt(strict_schema)
         encoded_pdf = base64.b64encode(source_path.read_bytes()).decode("ascii")
         user_content = [
             {"type": "text", "text": prompt},
@@ -434,7 +435,7 @@ def extract_document(
             "json_schema": {
                 "name": schema_config.name,
                 "strict": True,
-                "schema": strict_response_schema(response_schema),
+                "schema": strict_schema,
             },
         },
         "provider": {"require_parameters": True},

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -145,6 +146,12 @@ class OpenRouterTests(unittest.TestCase):
         self.assertEqual(payload["plugins"], [{"id": "file-parser", "pdf": {"engine": "native"}}])
         self.assertEqual(payload["response_format"]["type"], "json_schema")
         self.assertTrue(payload["response_format"]["json_schema"]["strict"])
+        # Some providers enforce the schema without showing it, so the prompt carries it too.
+        self.assertEqual(
+            payload["messages"][0]["content"][0]["text"],
+            "Extract\n\nReturn only JSON matching this schema:\n"
+            + json.dumps(payload["response_format"]["json_schema"]["schema"]),
+        )
         self.assertEqual(payload["reasoning"], {"effort": "high"})
         self.assertTrue(payload["messages"][0]["content"][1]["file"]["file_data"].startswith("data:application/pdf;base64,"))
         self.assertNotIn("response-healing", str(payload))

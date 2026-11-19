@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 from .schema import ExtractionSchema, build_role_lookup
 
@@ -17,6 +19,15 @@ XML_EVIDENCE_NOTE = """
 ## Source format: XML
 
 The article below is the publisher's XML file, not a PDF, so it has no page numbers. Wherever these instructions or the schema ask for a page number, cite where the text sits in the article instead: the section heading path, for example (Results › Study 2), or for tables the table label, row and column, for example (Table 3, row "Extraversion", column "r"). Quote the article's words, not its XML markup."""
+
+
+def schema_prompt(response_schema: dict[str, Any]) -> str:
+    """The response schema as prompt text.
+
+    Some providers enforce a structured-output schema without showing it to the
+    model, which then has to guess the fields; this puts it in the prompt.
+    """
+    return "\n\nReturn only JSON matching this schema:\n" + json.dumps(response_schema)
 
 
 def build_system_prompt(

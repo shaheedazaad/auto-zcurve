@@ -103,13 +103,14 @@ def _call(
     cancel_event: threading.Event | None = None,
 ) -> tuple[str, dict[str, int | None], str | None]:
     from .openrouter import choice_finish_reason
+    from .prompts import schema_prompt
 
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
             {
                 "role": "user",
-                "content": prompt + "\n\nReturn only JSON matching this schema:\n" + json.dumps(response_schema),
+                "content": prompt + schema_prompt(response_schema),
             }
         ],
         "response_format": {

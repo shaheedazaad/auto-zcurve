@@ -194,6 +194,7 @@ class ProviderRequestTests(unittest.TestCase):
         content = payload["messages"][0]["content"]
         self.assertEqual([part["type"] for part in content], ["text"])
         self.assertTrue(content[0]["text"].endswith("\n\nArticle text:\n" + ELSEVIER_XML))
+        self.assertIn("Return only JSON matching this schema:\n" + json.dumps(payload["response_format"]["json_schema"]["schema"]), content[0]["text"])
         self.assertIn(XML_EVIDENCE_NOTE.strip(), content[0]["text"])
         self.assertNotIn("plugins", payload)
         self.assertNotIn("max_tokens", payload)
