@@ -162,7 +162,7 @@ class ProviderRequestTests(unittest.TestCase):
         self.instructions = self.dir / "instructions.md"
         self.instructions.write_text("Extract the statistics.", encoding="utf-8")
         self.xml = self.dir / "article.xml"
-        self.xml.write_text(ELSEVIER_XML, encoding="utf-8")
+        self.xml.write_bytes(ELSEVIER_XML.encode("utf-8"))
 
     def extract(self, provider: str, **kwargs):
         return providers.extract_document(**dict(dict(
@@ -246,7 +246,7 @@ class RunnerTests(unittest.TestCase):
         (self.project / "sources").mkdir()
         (self.project / "extraction_schema.yml").write_text(SCHEMA)
         (self.project / "sources/a.pdf").write_bytes(b"%PDF-a")
-        (self.project / "sources/b.xml").write_text(JATS_XML, encoding="utf-8")
+        (self.project / "sources/b.xml").write_bytes(JATS_XML.encode("utf-8"))
         self.settings = RunSettings(provider="openrouter", primary_model="vendor/model", request_delay_sec=0)
         self.option = ModelOption("vendor/model", "Model", provider="openrouter", input_mode="cloudflare_pdf")
         self.calls: list[dict] = []
@@ -318,7 +318,7 @@ class ProjectAndWebTests(unittest.TestCase):
 
     def test_xml_uploads_are_validated(self):
         saved = save_upload(self.project, "jats.xml", io.BytesIO(JATS_XML.encode()))
-        self.assertEqual(saved.read_text(encoding="utf-8"), JATS_XML)
+        self.assertEqual(saved.read_bytes(), JATS_XML.encode())
         for data, message in [(b"", "is empty"), (b"\x89PNG\r\n\x1a\n\x00\x00", "not UTF-8"), (b"Plain text", "does not look like XML")]:
             with self.subTest(data=data), self.assertRaisesRegex(ProjectError, message):
                 save_upload(self.project, "bad.xml", io.BytesIO(data))
