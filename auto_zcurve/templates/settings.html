@@ -63,7 +63,7 @@
           <form class="js-extractor-action" action="/{{ token }}/extractors/{{ extractor.id }}/duplicate">
             <button class="btn" data-variant="ghost" data-size="sm" type="submit">Duplicate</button>
           </form>
-          <form class="js-delete-extractor" action="/{{ token }}/extractors/{{ extractor.id }}/delete" data-extractor-name="{{ extractor.name }}">
+          <form class="js-delete-extractor" action="/{{ token }}/extractors/{{ extractor.id }}/delete" data-extractor-id="{{ extractor.id }}" data-extractor-name="{{ extractor.name }}">
             <button class="btn" data-variant="ghost" data-size="sm" type="submit">Delete</button>
           </form>
         </span>

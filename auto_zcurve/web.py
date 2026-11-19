@@ -33,7 +33,6 @@ from .config import (
     RunSettings,
     load_app_settings,
     load_run_settings,
-    load_selected_extractor_id,
     normalize_pdf_parser,
     save_app_settings,
     save_selected_extractor_id,
@@ -615,8 +614,23 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return _extractor_response(copy.id)
 
+    def _projects_using(extractor_id: str) -> list[str]:
+        """Names of projects whose next run would use this extractor, saved or from their last run."""
+        return [
+            item.name for item in list_projects(root=projects_root)
+            if (chosen := project_extractor(item.path).extractor) is not None and chosen.id == extractor_id
+        ]
+
+    @app.get(f"/{token}/api/extractors/{{extractor_id}}/projects")
+    async def extractor_projects(extractor_id: str):
+        """Projects that would be left without this extractor if it were deleted. Never opens the key vault."""
+        if get_extractor(extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        return {"projects": _projects_using(extractor_id)}
+
     @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
     async def remove_extractor(extractor_id: str):
+        affected = _projects_using(extractor_id)
         try:
             removed = delete_extractor(extractor_id)
         except ExtractorError as exc:
@@ -627,10 +641,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 await asyncio.to_thread(runtime.vault.delete, removed.id)
             except VaultUnavailable as exc:
                 warning = f"The extractor was deleted, but its saved key could not be removed. {exc}"
-        affected = [
-            item.name for item in list_projects(root=projects_root)
-            if load_selected_extractor_id(item.path) == removed.id
-        ]
         return {"deleted": True, "projects": affected, "warning": warning}
 
     @app.post(f"/{token}/extractors/{{extractor_id}}/key")

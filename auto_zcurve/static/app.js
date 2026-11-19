@@ -319,8 +319,21 @@
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const name = form.dataset.extractorName || "this extractor";
+        let using;
+        try {
+          const response = await fetch(`/${token}/api/extractors/${encodeURIComponent(form.dataset.extractorId)}/projects`, { cache: "no-store" });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.detail || "The projects using this extractor could not be listed.");
+          using = payload.projects || [];
+        } catch (error) {
+          reportList(error.message, "error-text");
+          return;
+        }
+        const affects = using.length
+          ? `These projects use it and will need another extractor: ${using.join(", ")}.`
+          : "No projects use it.";
         const confirmed = await confirmDestructive(
-          `Delete “${name}” and its saved API key? Projects that use it will need another extractor.`,
+          `Delete “${name}” and its saved API key? ${affects}`,
           { title: "Delete this extractor?" }
         );
         if (!confirmed) return;
