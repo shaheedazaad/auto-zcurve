@@ -7,7 +7,9 @@ contain an API key. Keys live in the credential-store vault
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
@@ -89,6 +91,11 @@ class Extractor:
     def requires_key(self) -> bool:
         return self.provider != "openai_compatible"
 
+    @property
+    def has_saved_key(self) -> bool:
+        """Whether the key vault holds a key for this extractor (or will, once its old key moves)."""
+        return self.key_saved or bool(self.legacy_credential)
+
     def applicable_fields(self) -> tuple[str, ...]:
         return COMMON_FIELDS + PROVIDER_FIELDS[self.provider]
 
@@ -115,6 +122,20 @@ class Extractor:
         rows.append(("Delay between requests", f"{self.request_delay_sec} s"))
         rows.append(("Request timeout", f"{self.request_timeout_sec} s"))
         return rows
+
+
+# Every read-modify-write of the extractors file holds this lock, so requests
+# handled on worker threads can't overwrite each other's changes. It is
+# reentrant because mutations call load_extractors, which may migrate.
+_LOCK = threading.RLock()
+
+
+def _serialized(function):
+    @functools.wraps(function)
+    def locked(*args, **kwargs):
+        with _LOCK:
+            return function(*args, **kwargs)
+    return locked
 
 
 def extractors_path() -> Path:
@@ -213,10 +234,12 @@ def _stored(extractor: Extractor) -> dict[str, object]:
     return record
 
 
+@_serialized
 def save_extractors(extractors: list[Extractor]) -> None:
     path = extractors_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".json.tmp")
+    # A unique name, so a writer outside this lock can't share the temporary file.
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(
             json.dumps({"version": 1, "extractors": [_stored(item) for item in extractors]}, indent=2) + "\n",
@@ -231,6 +254,7 @@ def save_extractors(extractors: list[Extractor]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+@_serialized
 def load_extractors() -> list[Extractor]:
     """Return every extractor in creation order."""
     path = extractors_path()
@@ -257,6 +281,7 @@ def _check_unique_name(extractors: list[Extractor], name: str, extractor_id: str
         raise ExtractorError(f"An extractor called “{name}” already exists.")
 
 
+@_serialized
 def create_extractor(
     values: Mapping[str, object],
     *,
@@ -288,6 +313,7 @@ def _index(extractors: list[Extractor], extractor_id: str) -> int:
     raise ExtractorError("That extractor no longer exists.")
 
 
+@_serialized
 def update_extractor(
     extractor_id: str,
     values: Mapping[str, object],
@@ -318,6 +344,7 @@ def update_extractor(
     return updated
 
 
+@_serialized
 def duplicate_extractor(extractor_id: str) -> Extractor:
     """Copy every setting except the key, under a new unused name."""
     extractors = load_extractors()
@@ -336,6 +363,7 @@ def duplicate_extractor(extractor_id: str) -> Extractor:
     return copy
 
 
+@_serialized
 def delete_extractor(extractor_id: str) -> Extractor:
     extractors = load_extractors()
     removed = extractors.pop(_index(extractors, extractor_id))
@@ -343,6 +371,7 @@ def delete_extractor(extractor_id: str) -> Extractor:
     return removed
 
 
+@_serialized
 def set_key_saved(extractor_id: str, saved: bool) -> None:
     """Record whether the vault holds this extractor's key; a removal also drops any old key claim."""
     extractors = load_extractors()
@@ -443,6 +472,7 @@ def legacy_claims() -> dict[str, str]:
     return {item.id: item.legacy_credential for item in load_extractors() if item.legacy_credential}
 
 
+@_serialized
 def record_legacy_adoption(result: Mapping[str, bool]) -> None:
     """Record which migrated extractors received their old key."""
     extractors = load_extractors()
@@ -532,3 +562,36 @@ def project_extractor(project_dir: Path) -> ProjectExtractor:
     if match is not None:
         save_selected_extractor_id(project_dir, match.id)
     return ProjectExtractor(match)
+
+
+def _refuse_unchosen(current: ProjectExtractor) -> Extractor:
+    raise RuntimeError(
+        "The extractor used for this project was deleted. Choose another."
+        if current.deleted else "Choose an extractor for this project before running."
+    )
+
+
+def prepare_run(
+    project_dir: Path,
+    chosen: Extractor | None,
+    read_key: Callable[[Extractor], str | None],
+    *,
+    fallback: Callable[[ProjectExtractor], Extractor] = _refuse_unchosen,
+) -> tuple[RunSettings, str | None]:
+    """The settings and key for a run or retry.
+
+    Uses `chosen` if given, else the project's extractor, else whatever
+    `fallback` returns (by default it refuses); the result is saved as the
+    project's extractor. `read_key` reads the extractor's key and may block.
+    A run that needs a key and has none is refused with RuntimeError.
+    """
+    extractor = chosen
+    if extractor is None:
+        current = project_extractor(project_dir)
+        extractor = current.extractor or fallback(current)
+    save_selected_extractor_id(project_dir, extractor.id)
+    settings = run_settings_for(extractor, load_app_settings())
+    key = read_key(extractor)
+    if extractor.requires_key and not key:
+        raise RuntimeError(f"Add an API key for the “{extractor.name}” extractor in Settings before running.")
+    return settings, key

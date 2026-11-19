@@ -119,6 +119,23 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         self.assertEqual(names[-1], "L" * (ex.NAME_MAX_LENGTH - 9) + " copy 101")
         self.assertEqual(len(ex.load_extractors()), 102)
 
+    def test_concurrent_changes_are_all_kept(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        first = ex.create_extractor({"name": "Base", "provider": "gemini", "model": "m"})
+        jobs = [lambda i=i: ex.create_extractor({"name": f"E{i}", "provider": "gemini", "model": "m"}) for i in range(12)]
+        jobs += [lambda: ex.duplicate_extractor(first.id) for _ in range(4)]
+        jobs += [lambda: ex.set_key_saved(first.id, True)]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for future in [pool.submit(job) for job in jobs]:
+                future.result()
+
+        names = {item.name for item in ex.load_extractors()}
+        self.assertEqual(len(names), 1 + 12 + 4)
+        self.assertTrue({f"E{i}" for i in range(12)} <= names)
+        self.assertTrue(ex.get_extractor(first.id).key_saved)
+        self.assertEqual(list(self.config_dir.glob("*.tmp")), [])
+
     def test_delete_removes_the_definition(self):
         first = ex.create_extractor({"name": "A", "provider": "gemini", "model": "m"})
         second = ex.create_extractor({"name": "B", "provider": "gemini", "model": "m"})

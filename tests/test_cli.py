@@ -62,7 +62,7 @@ class CliExtractorTests(unittest.TestCase):
         create_extractor({"name": "Lab", "provider": "gemini", "model": "m"})
         with patch.dict(os.environ, {"GEMINI_API_KEY": "from-environment"}):
             (self.project / ".env").write_text("GEMINI_API_KEY=from-dotenv\n")
-            with self.assertRaisesRegex(RuntimeError, "has no API key. Add one in the browser app"):
+            with self.assertRaisesRegex(RuntimeError, "Add an API key for the “Lab” extractor"):
                 cli._run_inputs(self.args("--extractor", "Lab"), self.project, False, Mock())
         local = create_extractor({"name": "Local", "provider": "openai_compatible", "model": "m", "base_url": "http://h/v1"})
         self.assertEqual(cli.extractor_key(local), "")
@@ -81,7 +81,7 @@ class CliExtractorTests(unittest.TestCase):
         q = Mock()
         q.select.return_value.ask.return_value = second.id
         with patch.object(cli, "_questionary", return_value=q):
-            self.assertEqual(cli.choose_extractor(None, self.project, True, Mock()), second)
+            self.assertEqual(cli.ask_for_extractor(True, Mock()), second)
         console = Mock()
         for answer, expected in [("1", first), ("9", None), ("x", None)]:
             with self.subTest(answer=answer), patch.object(cli, "_questionary", return_value=None), patch("builtins.input", return_value=answer):
