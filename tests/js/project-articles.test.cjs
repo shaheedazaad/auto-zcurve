@@ -160,7 +160,7 @@ test('header article, processed, and needs-review counts follow live project dat
   const text = selector => h.document.querySelector(selector).textContent;
   assert.equal(text('[data-article-count]'), '1 article');
   assert.equal(text('[data-processed-count]'), '0 processed');
-  h.select('openai_compatible'); await flush(); await h.click('.js-run');
+  await h.click('.js-run');
   await h.sources[0].emit('progress', { completed: 2, total: 3, message: 'Two done' });
   live = snapshot(3, 1, 1, 0); await h.intervals[0](); await flush();
   assert.equal(text('[data-article-count]'), '3 articles');

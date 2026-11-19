@@ -20,7 +20,7 @@ from .artifacts import (
     upsert_extraction,
     utc_now,
 )
-from .config import RunSettings, load_run_settings, save_run_settings
+from .config import RunSettings, load_app_settings, load_run_settings, save_run_settings
 from .console import CliConsole
 from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .models import ModelOption, resolve_input_mode, validate_model_option
@@ -161,6 +161,8 @@ def _log_result(
             "model": primary_model,
             "provider_used": result.provider_used,
             "model_used": result.model_used,
+            "extractor_id": result.extractor_id,
+            "extractor_name": result.extractor_name,
             "retry": retry,
             "error": result.error,
             "started_at": started_at,
@@ -199,8 +201,10 @@ def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) ->
     upsert_extraction(project_dir, result)
 
 
-def _record_source(result: ExtractionResult, source_path: Path, fmt: str) -> None:
-    """Stamp a result with its source format and the source file's SHA-256."""
+def _record_source(result: ExtractionResult, source_path: Path, fmt: str, settings: RunSettings) -> None:
+    """Stamp a result with its extractor, source format and the source file's SHA-256."""
+    result.extractor_id = settings.extractor_id or None
+    result.extractor_name = str((settings.extractor or {}).get("name") or "") or None
     result.source_format = fmt
     try:
         result.source_sha256 = file_sha256(source_path)
@@ -236,7 +240,7 @@ def _process_one(
             input_mode=input_mode,
             error=f"File exceeds max_upload_size_mb ({settings.max_upload_size_mb} MB).",
         )
-        _record_source(result, source_path, fmt)
+        _record_source(result, source_path, fmt, settings)
         _raise_if_cancelled(cancellation_event)
         with _ARTIFACT_LOCK:
             _save_result(project_dir, result, retry=retry)
@@ -274,6 +278,8 @@ def _process_one(
             cancellation_event=cancellation_event,
             openrouter_provider=settings.openrouter_provider,
             openrouter_allow_fallbacks=settings.openrouter_allow_fallbacks,
+            base_url=settings.base_url,
+            response_format=settings.response_format,
         )
         _raise_if_cancelled(cancellation_event)
     except RunCancelled:
@@ -303,7 +309,7 @@ def _process_one(
             raw_response=getattr(exc, "raw_response", None),
             repaired_response=getattr(exc, "repaired_response", None),
         )
-    _record_source(result, source_path, fmt)
+    _record_source(result, source_path, fmt, settings)
     _raise_if_cancelled(cancellation_event)
     with _ARTIFACT_LOCK:
         _save_result(project_dir, result, retry=retry)
@@ -401,6 +407,41 @@ def _process_paths(
         raise
 
 
+def extraction_settings_changed(previous_settings: RunSettings | None, settings: RunSettings) -> bool:
+    """Whether results from the previous run's settings would differ from these settings' results."""
+    provider = normalize_provider(settings.provider)
+    # Each provider-specific setting is compared only for the provider that uses it.
+    # Endpoint, output mode and OpenRouter routing are recorded only in extractor
+    # snapshots, so they are compared only when the previous run has one.
+    snapshot = bool(previous_settings and previous_settings.extractor is not None)
+    return bool(
+        previous_settings
+        and (
+            normalize_provider(previous_settings.provider) != provider
+            or previous_settings.primary_model != settings.primary_model
+            or previous_settings.pdf_parser != settings.pdf_parser
+            or (provider == "openrouter" and previous_settings.reasoning_effort != settings.reasoning_effort)
+            or (provider == "gemini" and previous_settings.service_tier != settings.service_tier)
+            or (
+                snapshot
+                and provider == "openrouter"
+                and (
+                    previous_settings.openrouter_provider != settings.openrouter_provider
+                    or previous_settings.openrouter_allow_fallbacks != settings.openrouter_allow_fallbacks
+                )
+            )
+            or (
+                snapshot
+                and provider == "openai_compatible"
+                and (
+                    previous_settings.base_url != settings.base_url
+                    or previous_settings.response_format != settings.response_format
+                )
+            )
+        )
+    )
+
+
 def run_project(
     *,
     project_dir: Path,
@@ -423,17 +464,7 @@ def run_project(
         console.warn("Add PDF or XML articles to sources/ before running extraction.")
         return None
 
-    previous_settings = load_run_settings(project_dir)
-    provider_or_model_changed = bool(
-        previous_settings
-        and (
-            normalize_provider(previous_settings.provider) != normalize_provider(settings.provider)
-            or previous_settings.primary_model != settings.primary_model
-            or previous_settings.pdf_parser != settings.pdf_parser
-            or previous_settings.reasoning_effort != settings.reasoning_effort
-            or previous_settings.service_tier != settings.service_tier
-        )
-    )
+    provider_or_model_changed = extraction_settings_changed(load_run_settings(project_dir), settings)
     existing = latest_by_source(load_extractions(project_dir))
     to_process = [
         path
@@ -443,7 +474,7 @@ def run_project(
         or existing.get(source_name(project_dir, path), {}).get("status") not in EXTRACTED_STATUSES
     ]
     if provider_or_model_changed:
-        console.info("The provider, model, PDF parser, reasoning level, or service tier changed; all articles will be reprocessed.")
+        console.info("The extractor's provider, model, endpoint, routing, output mode, PDF parser, reasoning level, or service tier changed; all articles will be reprocessed.")
     skipped = len(sources) - len(to_process)
     if skipped:
         console.info(
@@ -457,6 +488,7 @@ def run_project(
         settings.primary_model,
         api_key,
         timeout_sec=min(settings.request_timeout_sec, 30),
+        context_length=settings.context_length,
     )
     _raise_if_cancelled(cancellation_event)
     model_option = replace(
@@ -464,7 +496,8 @@ def run_project(
         input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
     )
     settings.primary_model = model_option.name
-    save_run_settings(project_dir, settings)
+    if not to_process or not provider_or_model_changed:
+        save_run_settings(project_dir, settings)
     if to_process:
         workers = max(1, min(settings.parallel_requests, len(to_process)))
         worker_label = "worker" if workers == 1 else "workers"
@@ -484,6 +517,10 @@ def run_project(
                 progress=progress,
                 cancellation_event=cancellation_event,
             )
+        if provider_or_model_changed:
+            # Saved only once every article has been reprocessed, so a cancelled
+            # or failed run leaves the change for the next run to finish.
+            save_run_settings(project_dir, settings)
 
     report_path = None
     _raise_if_cancelled(cancellation_event)
@@ -513,7 +550,17 @@ def retry_project(
     console: CliConsole,
     api_key: str,
     cancellation_event: threading.Event | None = None,
+    rerun_all_after_change: bool | None = None,
 ) -> RunSummary | None:
+    """Re-extract failed and needs-review sources.
+
+    When the extractor's settings differ from the project's last run, by
+    default they are not recorded as the project's settings, so the next run
+    re-runs every article with them. With `rerun_all_after_change` False (the
+    app setting "Keep other articles' results"), they are recorded and the
+    next run keeps the other articles' existing results. None reads the app
+    setting.
+    """
     _raise_if_cancelled(cancellation_event)
     if not ensure_project_layout(project_dir, assume_yes, interactive=False, console=console):
         return None
@@ -533,6 +580,7 @@ def retry_project(
         settings.primary_model,
         api_key,
         timeout_sec=min(settings.request_timeout_sec, 30),
+        context_length=settings.context_length,
     )
     _raise_if_cancelled(cancellation_event)
     model_option = replace(
@@ -540,7 +588,22 @@ def retry_project(
         input_mode=resolve_input_mode(settings.provider, model_option, settings.pdf_parser),
     )
     settings.primary_model = model_option.name
-    save_run_settings(project_dir, settings)
+    if rerun_all_after_change is None:
+        rerun_all_after_change = load_app_settings().retry_extractor_change == "rerun_all"
+    if extraction_settings_changed(load_run_settings(project_dir), settings):
+        if rerun_all_after_change:
+            console.info(
+                "This retry uses different extractor settings from the project's last run. "
+                "The next run will re-run every article with them."
+            )
+        else:
+            console.info(
+                "This retry uses different extractor settings from the project's last run. "
+                "Other articles keep their existing results."
+            )
+            save_run_settings(project_dir, settings)
+    else:
+        save_run_settings(project_dir, settings)
     run_id = str(uuid.uuid4())
     workers = max(1, min(settings.parallel_requests, len(paths)))
     worker_label = "worker" if workers == 1 else "workers"

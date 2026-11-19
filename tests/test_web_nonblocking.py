@@ -10,7 +10,9 @@ from unittest.mock import patch
 
 import httpx
 
-from auto_zcurve import web
+from auto_zcurve import credentials, web
+from auto_zcurve.extractors import create_extractor
+from tests.test_key_vault import FakeKeyring
 from auto_zcurve.models import ModelOption
 from auto_zcurve.projects import create_project
 
@@ -30,6 +32,9 @@ class SlowWorkDoesNotBlockOtherRequestsTests(unittest.TestCase):
         environment = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.root / "config")})
         environment.start()
         self.addCleanup(environment.stop)
+        keyring = patch.object(credentials, "_keyring_module", return_value=FakeKeyring())
+        keyring.start()
+        self.addCleanup(keyring.stop)
         self.app = web.create_app(token=TOKEN, projects_root=self.root)
         self.runtime = self.app.state.runtime
         self.project = create_project("Slow work", root=self.root)
@@ -43,7 +48,7 @@ class SlowWorkDoesNotBlockOtherRequestsTests(unittest.TestCase):
 
         return slow
 
-    def assert_other_request_served_meanwhile(self, target: str, result, send_slow_request):
+    def assert_other_request_served_meanwhile(self, target: str, result, send_slow_request, owner=web):
         order: list[str] = []
         started = threading.Event()
         release = threading.Event()
@@ -58,66 +63,52 @@ class SlowWorkDoesNotBlockOtherRequestsTests(unittest.TestCase):
                 release.set()
                 return other, await slow_request
 
-        with patch.object(web, target, side_effect=self._slow(result, order, started, release)):
+        with patch.object(owner, target, side_effect=self._slow(result, order, started, release)):
             other, slow_response = asyncio.run(scenario())
 
         self.assertEqual(other.status_code, 200)
         self.assertEqual(order, ["other request served", "slow work finished"])
         return slow_response
 
-    def test_another_request_is_served_while_an_openrouter_model_check_is_in_progress(self):
-        with patch.object(self.runtime, "_load_key_from_store", return_value="key"):
-            response = self.assert_other_request_served_meanwhile(
-                "validate_model_option",
-                OPTION,
-                lambda client: client.post(
-                    f"/{TOKEN}/api/models/openrouter/validate", data={"model": "vendor/model"}, headers=ORIGIN
-                ),
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], "vendor/model")
+    def test_another_request_is_served_while_a_new_extractors_model_is_checked(self):
+        response = self.assert_other_request_served_meanwhile(
+            "check_model",
+            None,
+            lambda client: client.post(
+                f"/{TOKEN}/extractors",
+                data={"name": "Router", "provider": "openrouter", "model": "vendor/model", "api_key": "key"},
+                headers=ORIGIN,
+            ),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
 
-    def test_starting_a_run_or_retry_with_openrouter_does_not_block_other_requests(self):
+    def test_starting_a_run_or_retry_while_keys_are_unlocked_does_not_block_other_requests(self):
+        router = create_extractor({"name": "Router", "provider": "openrouter", "model": "vendor/model"})
         for action in ("run", "retry"):
-            with (
-                self.subTest(action=action),
-                patch.object(self.runtime, "_load_key_from_store", return_value="key"),
-                patch.object(self.runtime, "start_job") as start_job,
-            ):
+            with self.subTest(action=action), patch.object(self.runtime, "start_job") as start_job:
                 start_job.return_value.status = "queued"
                 response = self.assert_other_request_served_meanwhile(
-                    "validate_model_option",
-                    OPTION,
+                    "key_for",
+                    "key",
                     lambda client: client.post(
                         f"/{TOKEN}/projects/{self.project.project_id}/{action}",
-                        data={"provider": "openrouter", "model": "vendor/model"},
+                        data={"extractor_id": router.id},
                         headers=ORIGIN,
                     ),
+                    owner=self.runtime,
                 )
-                self.assertEqual(response.status_code, 202)
+                self.assertEqual(response.status_code, 202, response.text)
 
-    def test_saving_openrouter_project_settings_does_not_block_other_requests(self):
-        with patch.object(self.runtime, "_load_key_from_store", return_value="key"):
+    def test_loading_model_suggestions_does_not_block_other_requests(self):
+        router = create_extractor({"name": "Router", "provider": "openrouter", "model": "vendor/model"})
+        with patch.object(self.runtime, "key_for", return_value="key"):
             response = self.assert_other_request_served_meanwhile(
-                "validate_model_option",
-                OPTION,
-                lambda client: client.post(
-                    f"/{TOKEN}/projects/{self.project.project_id}/settings",
-                    data={"provider": "openrouter", "model": "vendor/model"},
-                    headers=ORIGIN,
-                ),
+                "list_live_models",
+                [OPTION],
+                lambda client: client.get(f"/{TOKEN}/api/extractors/{router.id}/models"),
             )
         self.assertEqual(response.status_code, 200)
-
-    def test_loading_the_model_catalogue_does_not_block_other_requests(self):
-        self.runtime.session_api_keys["openrouter"] = "key"
-        response = self.assert_other_request_served_meanwhile(
-            "list_live_models",
-            [OPTION],
-            lambda client: client.get(f"/{TOKEN}/api/models/openrouter"),
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()[0]["id"], "vendor/model")
+        self.assertEqual(response.json(), [{"id": "vendor/model", "name": "Vendor Model"}])
 
     def test_downloading_the_results_zip_does_not_block_other_requests(self):
         response = self.assert_other_request_served_meanwhile(

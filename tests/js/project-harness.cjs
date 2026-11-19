@@ -2,20 +2,20 @@ const { mount } = require('./harness.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const emptyProject = { articles: [], pdf_count: 0, total_tokens: 0, successful_count: 0, failed_count: 0 };
 const controls = `
-<form class="js-run-settings"><select id="provider" name="provider" data-endpoint-ready="true"
- data-default-gemini-model="gemini-test" data-default-openrouter-model="vendor/test">
-<option value="gemini" data-key-ready="false">Gemini</option>
-<option value="openrouter" data-saved-key="true">OpenRouter</option>
-<option value="openai_compatible">Endpoint</option></select>
-<input id="model" name="model" value="gemini-test"><datalist id="gemini-model-options"></datalist>
-<input id="parallel-requests" name="parallel_requests" value="4"><input id="request-delay-sec" name="request_delay_sec" value="2"></form>
-<span data-model-hint></span><span data-model-validation></span><span data-openrouter-warning hidden></span>
-<span data-provider-label></span><div data-run-credential-prompt><a></a></div><div data-run-actions></div>
-<h2 data-key-heading></h2><span data-key-prompt-copy></span><input data-key-input><input data-credential-provider><span data-macos-key-note></span>
+<form class="js-run-settings"><select id="extractor" name="extractor_id">
+<option value="lab" data-runnable="true" selected>Lab</option>
+<option value="nokey" data-runnable="false" data-needs="key">No key</option>
+<option value="nomodel" data-runnable="false" data-needs="model">No model</option>
+<option value="local" data-runnable="true">Local</option></select>
+<p class="project-settings-message"></p>
+<div data-extractor-deleted></div>
+<dl data-extractor-summary="lab"></dl><dl data-extractor-summary="nokey" hidden></dl><dl data-extractor-summary="local" hidden></dl>
+<a data-edit-extractor-link href="/token/settings#extractor-lab">Edit extractor</a></form>
+<div data-run-model-prompt hidden><a data-setup-extractor-link></a></div><div data-run-credential-prompt hidden><a data-setup-extractor-link></a></div><div data-run-actions></div>
 <button class="js-run" data-has-pdfs="true">Run</button><button class="js-retry" data-has-failures="true">Retry</button>
 <button class="js-regenerate-report">Report</button><button class="js-save-instructions">Save instructions</button>
-<button class="js-cancel" hidden>Cancel</button><button class="js-save-project-settings">Save settings</button>
-<button class="js-open-folder">Open folder</button><p class="project-settings-message"></p><p class="run-message"></p>
+<button class="js-cancel" hidden>Cancel</button>
+<button class="js-open-folder">Open folder</button><p class="run-message"></p>
 <div class="progress-area" hidden><div data-progress-summary><div data-progress-bar><span></span></div><span data-progress-count></span><span data-progress-message></span></div></div>
 <div data-connection-lost hidden><h2 data-connection-lost-title></h2><p data-connection-lost-message></p></div>
 <div data-slow-extraction-warning hidden></div><span data-pdf-count></span><span data-token-count></span>
@@ -54,7 +54,7 @@ function projectMount(html = '', options = {}) {
     },
   });
   return { ...harness, sources, intervals, clearedIntervals, alerts, scrolls,
-    select: value => { const select = harness.document.querySelector('#provider'); select.value = value; select.dispatchEvent(new harness.window.Event('change')); },
+    select: value => { const select = harness.document.querySelector('#extractor'); select.value = value; select.dispatchEvent(new harness.window.Event('change')); },
     click: async selector => { harness.document.querySelector(selector).click(); await flush(); },
     input: (selector, value, event = 'input') => { const input = harness.document.querySelector(selector); input.value = value; input.dispatchEvent(new harness.window.Event(event)); },
   };

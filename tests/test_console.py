@@ -55,3 +55,80 @@ class ConsoleTests(unittest.TestCase):
         progress.update.assert_called_with(42, advance=1)
         adapter.advance('Next article')
         progress.update.assert_called_with(42, advance=1, description='Next article')
+
+    def test_secrets_are_redacted_from_everything_printed(self):
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(console, 'Console', None), redirect_stdout(out), redirect_stderr(err):
+            cli = console.CliConsole(['secret-key'])
+            cli.print('a secret-key')
+            cli.title('secret-key', 'secret-key')
+            cli.error('secret-key')
+            cli.table('secret-key', ['secret-key'], [['secret-key']])
+            with cli.progress(1, 'secret-key') as progress:
+                progress.advance('secret-key')
+        self.assertNotIn('secret-key', out.getvalue() + err.getvalue())
+        self.assertIn('Error: [redacted]', out.getvalue())
+
+        out = io.StringIO()
+        cli = console.CliConsole()
+        cli.secrets.append('secret-key')
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.title('secret-key', 'secret-key')
+        cli.error('failed secret-key')
+        cli.table('secret-key', ['secret-key'], [['secret-key']])
+        with cli.progress(1, 'secret-key') as progress:
+            progress.advance('secret-key')
+        self.assertNotIn('secret-key', out.getvalue())
+        self.assertIn('failed [redacted]', out.getvalue())
+
+    def test_markup_cannot_split_a_secret_past_redaction(self):
+        # Invalid markup ('[/oops]', 'ab[/]cd') is printed literally instead of failing.
+        for message in ('ab[red]cd[/red]', 'x abcd [bold]', '[/oops] abcd', 'ab[/]cd abcd'):
+            with self.subTest(message=message):
+                out = io.StringIO()
+                cli = console.CliConsole(['abcd'])
+                cli.rich = Console(file=out, width=80, color_system=None)
+                cli.print(message)
+                cli.error(message)
+                cli.title(message)
+                cli.table(message, [message], [[message]])
+                self.assertNotIn('abcd', out.getvalue())
+                self.assertIn('[redacted]', out.getvalue())
+        # Markup in a message without a key still styles it.
+        out = io.StringIO()
+        cli = console.CliConsole(['abcd'])
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.print('[red]plain[/red]')
+        self.assertEqual(out.getvalue(), 'plain\n')
+
+    def test_secrets_inside_objects_and_renderables_are_redacted(self):
+        from rich.panel import Panel
+        from rich.table import Table
+
+        class Carrier:
+            def __str__(self):
+                return 'key=secret-key'
+
+        out = io.StringIO()
+        with patch.object(console, 'Console', None), redirect_stdout(out):
+            console.CliConsole(['secret-key']).print(Carrier(), 7)
+        self.assertEqual(out.getvalue(), 'key=[redacted] 7\n')
+
+        table = Table(title='secret-key')
+        table.add_column('Key')
+        table.add_row('secret-key')
+        for part in (Carrier(), Panel('secret-key'), table):
+            with self.subTest(part=type(part).__name__):
+                out = io.StringIO()
+                cli = console.CliConsole(['secret-key'])
+                cli.rich = Console(file=out, width=80, color_system=None)
+                cli.print(part)
+                self.assertNotIn('secret-key', out.getvalue())
+                self.assertIn('[redacted]', out.getvalue())
+
+        # Without secrets a renderable is printed as is, keeping its styles.
+        out = io.StringIO()
+        cli = console.CliConsole()
+        cli.rich = Console(file=out, width=80, color_system=None)
+        cli.print(Panel('plain'))
+        self.assertIn('plain', out.getvalue())

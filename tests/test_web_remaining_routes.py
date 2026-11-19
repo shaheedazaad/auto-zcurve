@@ -9,8 +9,11 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from auto_zcurve import credentials
 from auto_zcurve import web as w
-from auto_zcurve.config import AppSettings, RunSettings, save_run_settings
+from auto_zcurve.config import RunSettings, save_run_settings
+from auto_zcurve.extractors import create_extractor, delete_extractor, set_key_saved
+from tests.test_key_vault import FakeKeyring
 from auto_zcurve.projects import create_project
 
 
@@ -29,13 +32,6 @@ class RemainingRouteTests(unittest.TestCase):
         self.client = TestClient(self.app, base_url='http://127.0.0.1')
         self.addCleanup(self.client.close)
 
-    def test_invalid_credentials_and_missing_saved_key(self):
-        for suffix in ['', '/load', '/delete']:
-            self.assertEqual(self.client.post('/token/credentials' + suffix, data={'provider': 'bad', 'api_key': 'key'}).status_code, 400)
-        self.assertEqual(self.client.post('/token/credentials', data={'api_key': ' '}).status_code, 400)
-        with patch.object(w, 'load_saved_api_key', return_value=None):
-            self.assertEqual(self.client.post('/token/credentials/load').status_code, 404)
-
     def test_missing_resource_routes_and_cancel_without_job(self):
         missing = '/token/projects/' + 'f' * 16
         for suffix in ['/events', '/report', '/zcurve-plot', '/results.zip']:
@@ -46,57 +42,64 @@ class RemainingRouteTests(unittest.TestCase):
         self.assertEqual(self.client.post(self.base + '/cancel').status_code, 409)
         self.assertEqual(self.client.post(missing + '/regenerate-report').status_code, 409)
 
-    def test_endpoint_run_and_retry_require_configuration_and_unlock(self):
-        for action in ['run', 'retry']:
-            for configured, base_url, message in [(True, 'http://localhost/v1', 'could not be unlocked'), (False, '', 'base URL')]:
-                with patch.object(self.runtime, '_load_key_from_store', return_value=None), patch.object(w, 'saved_api_key_configured', return_value=configured), patch.object(w, 'load_app_settings', return_value=AppSettings(openai_base_url=base_url)):
-                    response = self.client.post(self.base + '/' + action, data={'provider': 'openai_compatible', 'model': 'local'})
-                self.assertEqual(response.status_code, 409)
-                self.assertIn(message, response.text)
-        with patch.object(self.runtime, '_load_key_from_store', return_value=None):
-            self.assertEqual(self.client.post(self.base + '/retry').status_code, 409)
+    def extractor(self, **values):
+        return create_extractor({'name': 'Router', 'provider': 'openrouter', 'model': 'vendor/model', **values})
 
-    def test_openrouter_run_retry_validation_and_saved_defaults(self):
-        save_run_settings(self.project.path, RunSettings(primary_model='vendor/old', provider='openrouter', parallel_requests=4, request_delay_sec=5))
-        with patch.object(self.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option') as validate, patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
+    def test_run_and_retry_use_the_extractor_routing_and_endpoint_listing_uses_its_session_key(self):
+        router = self.extractor(openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks='deny', reasoning_effort='low')
+        unavailable = credentials.CredentialStoreUnavailable('no keyring')
+        with patch.object(credentials, '_keyring_module', side_effect=unavailable):
+            self.assertFalse(self.runtime.vault.set(router.id, 'session-key'))
+        with patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
             for action in ['run', 'retry']:
-                response = self.client.post(self.base + '/' + action, data={'provider': 'openrouter', 'model': 'vendor/new'})
+                response = self.client.post(self.base + '/' + action, data={'extractor_id': router.id})
                 self.assertEqual(response.status_code, 202, response.text)
-                settings = start.call_args.args[2]
-                self.assertEqual((settings.parallel_requests, settings.request_delay_sec), (4, 5))
-                validate.assert_called_with('openrouter', 'vendor/new', 'key')
-            response = self.client.post(self.base + '/retry', data={'provider': 'gemini', 'model': 'gemini-test'})
-            self.assertEqual(response.status_code, 202)
-            self.assertEqual(start.call_args.args[2].provider, 'gemini')
+                settings, key = start.call_args.args[2], start.call_args.args[3]
+                self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks, settings.reasoning_effort), ('deepinfra/fp8', False, 'low'))
+                self.assertEqual(key, 'session-key')
+        listing = [{'tag': 'deepinfra/fp8', 'name': 'DeepInfra (fp8)'}]
+        with patch.object(w, 'list_model_endpoints', return_value=listing) as endpoints:
+            response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model', 'extractor_id': router.id})
+        self.assertEqual((response.status_code, response.json()), (200, listing))
+        endpoints.assert_called_once_with('vendor/model', api_key='session-key')
+
+    def test_keyless_endpoint_runs_and_unknown_or_deleted_extractors_are_refused(self):
+        local = create_extractor({'name': 'Local', 'provider': 'openai_compatible', 'model': 'q', 'base_url': 'http://h/v1'})
+        with patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
+            self.assertEqual(self.client.post(self.base + '/run', data={'extractor_id': local.id}).status_code, 202)
+        self.assertIsNone(start.call_args.args[3])
+        self.assertEqual(start.call_args.args[2].base_url, 'http://h/v1')
+        response = self.client.post(self.base + '/run', data={'extractor_id': 'missing'})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('no longer exists', response.text)
+        delete_extractor(local.id)
+        response = self.client.post(self.base + '/retry')
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('was deleted', response.text)
+
+    def test_unreadable_saved_keys_stop_the_run(self):
+        router = self.extractor()
+        set_key_saved(router.id, True)
+        keyring = FakeKeyring({('auto-zcurve', 'extractor_keys'): '{broken'})
+        with patch.object(credentials, '_keyring_module', return_value=keyring):
+            response = self.client.post(self.base + '/run', data={'extractor_id': router.id})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Couldn't unlock saved keys", response.text)
+
+    def test_an_extractor_without_a_model_cannot_run(self):
+        local = create_extractor({'name': 'Local', 'provider': 'openai_compatible', 'model': 'q', 'base_url': 'http://h/v1'})
+        from auto_zcurve.extractors import load_extractors, save_extractors
+        from dataclasses import replace
+        save_extractors([replace(item, model='') for item in load_extractors()])
+        response = self.client.post(self.base + '/run', data={'extractor_id': local.id})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('Choose a model', response.text)
+
+    def test_report_regeneration_reuses_the_last_run_settings(self):
+        save_run_settings(self.project.path, RunSettings(primary_model='vendor/old', provider='openrouter'))
         with patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
             self.assertEqual(self.client.post(self.base + '/regenerate-report').status_code, 202)
-            self.assertEqual(start.call_args.args[2].primary_model, 'vendor/old')
-
-    def test_run_and_retry_pass_openrouter_routing_and_endpoint_listing(self):
-        save_run_settings(self.project.path, RunSettings(primary_model='vendor/old', provider='openrouter', openrouter_provider='saved/tag', openrouter_allow_fallbacks=False))
-        with patch.object(self.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option'), patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
-            for action in ['run', 'retry']:
-                response = self.client.post(self.base + '/' + action, data={'provider': 'openrouter', 'model': 'vendor/new', 'openrouter_provider': 'deepinfra/fp8', 'openrouter_fallbacks': 'allow'})
-                self.assertEqual(response.status_code, 202, response.text)
-                settings = start.call_args.args[2]
-                self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('deepinfra/fp8', True))
-                self.client.post(self.base + '/' + action, data={'provider': 'openrouter', 'model': 'vendor/new'})
-                settings = start.call_args.args[2]
-                self.assertEqual((settings.openrouter_provider, settings.openrouter_allow_fallbacks), ('saved/tag', False))
-            self.assertEqual(self.client.post(self.base + '/run', data={'provider': 'openrouter', 'model': 'vendor/new', 'openrouter_fallbacks': 'nope'}).status_code, 409)
-        listing = [{'tag': 'deepinfra/fp8', 'name': 'DeepInfra (fp8)'}]
-        with patch.object(self.runtime, '_load_key_from_store') as store, patch.object(w, 'list_model_endpoints', return_value=listing) as endpoints:
-            response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
-            self.assertEqual((response.status_code, response.json()), (200, listing))
-            endpoints.assert_called_once_with('vendor/model', api_key=None)
-            self.runtime.session_api_keys['openrouter'] = 'session-key'
-            self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
-            endpoints.assert_called_with('vendor/model', api_key='session-key')
-        store.assert_not_called()
-        with patch.object(w, 'list_model_endpoints', side_effect=RuntimeError('OpenRouter is down')):
-            response = self.client.get('/token/api/models/openrouter/endpoints', params={'model': 'vendor/model'})
-        self.assertEqual((response.status_code, response.json()['detail']), (503, 'OpenRouter is down'))
-        self.assertEqual(self.client.get('/token/api/models/openrouter/endpoints', params={'model': ' '}).status_code, 400)
+        self.assertEqual(start.call_args.args[2].primary_model, 'vendor/old')
 
     def test_instruction_validation_schema_validation_and_job_reset(self):
         self.assertEqual(self.client.post(self.base + '/instructions', data={'instructions': ' '}).status_code, 400)
@@ -131,17 +134,6 @@ class RemainingRouteTests(unittest.TestCase):
             self.assertEqual(archive.namelist(), [])
         with patch.object(w.platform, 'system', return_value='Windows'), patch.object(w.os, 'startfile', side_effect=OSError('not available'), create=True):
             self.assertEqual(self.client.post(self.base + '/open-folder').status_code, 503)
-
-    def test_fallback_catalog_and_successful_model_validation(self):
-        option = NS(name='vendor/model', parallel_requests=3, request_delay_sec=2)
-        with patch.object(w, 'fallback_models', return_value=[]) as fallback, patch.object(w, 'list_live_models') as live:
-            response = self.client.get('/token/api/models/gemini')
-            self.assertEqual(response.json(), [])
-            fallback.assert_called_once_with('gemini')
-            live.assert_not_called()
-        with patch.object(self.runtime, '_load_key_from_store', return_value='key'), patch.object(w, 'validate_model_option', return_value=option):
-            response = self.client.post('/token/api/models/openrouter/validate', data={'model': 'vendor/model'})
-            self.assertEqual(response.json(), {'valid': True, 'id': 'vendor/model', 'parallel_requests': 3, 'request_delay_sec': 2})
 
     def test_edits_without_results_do_not_reset_and_invalid_host_ports_are_rejected(self):
         for suffix, payload in [('/instructions', {'instructions': 'new instructions'}), ('/schema', {'schema_text': 'effects: {claim: {type: string}}'})]:

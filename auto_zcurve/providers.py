@@ -14,8 +14,6 @@ from .sources import XML_TEXT_INPUT_MODE, check_context_length, estimate_tokens,
 class ProviderDefinition:
     name: str
     label: str
-    environment_key: str
-    credential_key: str
     adapter_module: str
 
 
@@ -23,21 +21,16 @@ PROVIDER_REGISTRY = {
     "gemini": ProviderDefinition(
         name="gemini",
         label="Gemini",
-        environment_key="GEMINI_API_KEY",
-        credential_key="gemini_api_key",
         adapter_module="auto_zcurve.gemini",
     ),
     "openrouter": ProviderDefinition(
         name="openrouter",
         label="OpenRouter (Experimental)",
-        environment_key="OPENROUTER_API_KEY",
-        credential_key="openrouter_api_key",
         adapter_module="auto_zcurve.openrouter",
     ),
 }
 PROVIDER_REGISTRY["openai_compatible"] = ProviderDefinition(
     name="openai_compatible", label="OpenAI-compatible",
-    environment_key="OPENAI_COMPATIBLE_API_KEY", credential_key="openai_compatible_api_key",
     adapter_module="auto_zcurve.openai_compatible",
 )
 PROVIDERS = tuple(PROVIDER_REGISTRY)
@@ -79,6 +72,8 @@ def extract_document(
     cancellation_event: object | None = None,
     openrouter_provider: str = "",
     openrouter_allow_fallbacks: bool = True,
+    base_url: str = "",
+    response_format: str = "json_schema",
 ) -> ExtractionResult:
     """Extract one source of any source format with the selected provider.
 
@@ -121,6 +116,10 @@ def extract_document(
     if selected == "openrouter":
         kwargs["preferred_provider"] = openrouter_provider
         kwargs["allow_fallbacks"] = openrouter_allow_fallbacks
+    if selected == "openai_compatible":
+        kwargs["base_url"] = base_url
+        kwargs["response_format"] = response_format
+        kwargs["cancellation_event"] = cancellation_event
     result = implementation(**kwargs)
     if estimated_input_tokens is not None and result.estimated_input_tokens is None:
         result.estimated_input_tokens = estimated_input_tokens

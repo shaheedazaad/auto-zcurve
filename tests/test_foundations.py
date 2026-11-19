@@ -1,58 +1,15 @@
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from auto_zcurve import env, providers
+from auto_zcurve import providers
 from auto_zcurve.llm import ExtractionResult
 from auto_zcurve.prompts import build_system_prompt, render_text_template
 from auto_zcurve.security import redact_secrets
-
-
-class EnvironmentTests(unittest.TestCase):
-    def test_dotenv_parsing_and_overwrite(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"EXISTING": "keep"}, clear=True):
-            path = Path(tmp) / '.env'
-            env.load_dotenv(path)
-            self.assertEqual(dict(os.environ), {"EXISTING": "keep"})
-            path.write_text('# comment\n\nexport TOKEN = "a=b"\nINVALID\n=ignore\nEXISTING=replace\nEMPTY=\nSINGLE=\'value\'\n')
-            env.load_dotenv(path)
-            self.assertEqual(dict(os.environ), {"EXISTING": "keep", "TOKEN": "a=b", "EMPTY": "", "SINGLE": "value"})
-            env.load_dotenv(path, overwrite=True)
-            self.assertEqual(os.environ['EXISTING'], 'replace')
-
-    def test_key_precedence_for_every_provider(self):
-        for provider, definition in providers.PROVIDER_REGISTRY.items():
-            with self.subTest(provider=provider), patch.dict(os.environ, {}, clear=True), patch.object(env, 'load_dotenv') as dotenv, patch.object(env, 'load_saved_api_key', return_value='saved') as saved:
-                self.assertEqual(env.resolve_api_key(explicit_key=' explicit ', provider=provider), 'explicit')
-                dotenv.assert_not_called()
-                saved.assert_not_called()
-                os.environ[definition.environment_key] = ' environment '
-                self.assertEqual(env.resolve_api_key(Path('/project'), provider=provider), 'environment')
-                self.assertEqual(dotenv.call_args_list[-2].args, (Path('/project/.env'),))
-                saved.assert_not_called()
-                os.environ.clear()
-                self.assertEqual(env.resolve_api_key(provider=provider), 'saved')
-                saved.assert_called_once_with(provider)
-                saved.return_value = None
-                if provider == 'openai_compatible':
-                    self.assertEqual(env.resolve_api_key(provider=provider), '')
-                else:
-                    with self.assertRaisesRegex(RuntimeError, definition.environment_key):
-                        env.resolve_api_key(provider=provider)
-
-    def test_project_dotenv_wins_over_working_directory(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True), patch.object(env.Path, 'cwd', return_value=Path(tmp)), patch.object(env, 'load_saved_api_key') as saved:
-            project = Path(tmp) / 'project'
-            project.mkdir()
-            (project / '.env').write_text('GEMINI_API_KEY=project-key')
-            (Path(tmp) / '.env').write_text('GEMINI_API_KEY=working-key')
-            self.assertEqual(env.resolve_api_key(project), 'project-key')
-            saved.assert_not_called()
 
 
 class ProviderTests(unittest.TestCase):
@@ -71,7 +28,7 @@ class ProviderTests(unittest.TestCase):
                 implementation = Mock(return_value=object())
                 request = dict(source_path=Path('article.pdf'), source_name='article.pdf', api_key='key', primary_model='model', response_schema={'type': 'object'}, schema_config=object(), instruction_path=Path('instructions.md'), request_timeout_sec=30, input_mode='text', context_length=1234, project_dir=Path('project'), reasoning_effort='high', endpoint_order=('endpoint',))
                 with patch.object(providers.importlib, 'import_module', return_value=SimpleNamespace(extract_document=implementation)) as load:
-                    result = providers.extract_document(provider=provider, service_tier='flex', openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks=False, **request)
+                    result = providers.extract_document(provider=provider, service_tier='flex', openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks=False, base_url='http://h/v1', response_format='none', **request)
                 load.assert_called_once_with(definition.adapter_module)
                 expected = dict(request)
                 if provider == 'gemini':
@@ -80,6 +37,10 @@ class ProviderTests(unittest.TestCase):
                 if provider == 'openrouter':
                     expected['preferred_provider'] = 'deepinfra/fp8'
                     expected['allow_fallbacks'] = False
+                if provider == 'openai_compatible':
+                    expected['base_url'] = 'http://h/v1'
+                    expected['response_format'] = 'none'
+                    expected['cancellation_event'] = None
                 implementation.assert_called_once_with(**expected)
                 self.assertIs(result, implementation.return_value)
 

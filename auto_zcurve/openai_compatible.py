@@ -186,30 +186,36 @@ def _call(
 
 def extract_document(*, source_path, source_name, api_key, primary_model,
                      response_schema, schema_config, instruction_path,
-                     request_timeout_sec=600, reasoning_effort=None, article_text=None, **kwargs):
-    from .config import load_app_settings
+                     request_timeout_sec=600, reasoning_effort=None, article_text=None,
+                     base_url="", response_format="json_schema", context_length=None,
+                     cancellation_event=None, **kwargs):
     from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
     from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
     from .prompts import build_system_prompt
     from .schema import normalize_extracted_json, validate_extracted_json
 
     started = time.monotonic()
-    from .sources import XML_TEXT_INPUT_MODE
+    from .sources import PDF_CHARS_PER_TOKEN, XML_TEXT_INPUT_MODE, check_context_length, estimate_tokens
 
-    settings = load_app_settings()
+    estimated_input_tokens = None
     if article_text is not None:
         prompt = build_system_prompt(schema_config, instruction_path, "xml") + "\n\nArticle text:\n" + article_text
         input_mode = XML_TEXT_INPUT_MODE
     else:
-        prompt = build_system_prompt(schema_config, instruction_path) + "\n\nArticle text:\n" + pdf_text(source_path, None)
+        # XML text is checked before dispatch; PDF text exists only once extracted here.
+        document_text = pdf_text(source_path, cancellation_event)
+        estimated_input_tokens = estimate_tokens(document_text, PDF_CHARS_PER_TOKEN)
+        check_context_length(estimated_input_tokens, context_length)
+        prompt = build_system_prompt(schema_config, instruction_path) + "\n\nArticle text:\n" + document_text
         input_mode = "local_text"
     text, tokens, finish_reason = _call(
         model=primary_model, api_key=api_key or "",
         prompt=prompt,
-        base_url=settings.openai_base_url,
-        response_format=settings.openai_response_format,
+        base_url=base_url,
+        response_format=response_format,
         response_schema=strict_response_schema(response_schema),
         timeout_sec=request_timeout_sec,
+        cancel_event=cancellation_event,
     )
     parsed, repaired_text = parse_json_with_repair(text, "OpenAI-compatible endpoint")
     normalize_extracted_json(parsed, schema_config)
@@ -229,4 +235,5 @@ def extract_document(*, source_path, source_name, api_key, primary_model,
         input_tokens=tokens.get("input_tokens"), output_tokens=tokens.get("output_tokens"),
         total_tokens=sum(v for v in tokens.values() if isinstance(v, int)) or None,
         input_mode=input_mode,
+        estimated_input_tokens=estimated_input_tokens,
     )

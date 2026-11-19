@@ -13,7 +13,7 @@ import urllib.request
 import webbrowser
 import zipfile
 from contextlib import contextmanager
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -28,40 +28,37 @@ from .config import (
     DEFAULTS,
     PDF_PARSER_LABELS,
     REASONING_EFFORT_LABELS,
+    RETRY_EXTRACTOR_CHANGE_LABELS,
     SERVICE_TIER_LABELS,
     AppSettings,
     RunSettings,
     load_app_settings,
     load_run_settings,
-    normalize_default_gemini_model,
-    normalize_default_openrouter_model,
-    normalize_endpoint_url,
-    normalize_openrouter_provider,
-    normalize_response_format,
     normalize_pdf_parser,
-    normalize_reasoning_effort,
-    normalize_service_tier,
     save_app_settings,
-    save_run_settings,
+    save_selected_extractor_id,
 )
-from .credentials import (
-    CredentialStoreUnavailable,
-    credential_store_available,
-    delete_saved_api_key,
-    load_saved_api_key,
-    saved_api_key_configured,
-    save_api_key,
+from .credentials import KeyVault, VaultUnavailable
+from .extractors import (
+    RESPONSE_FORMAT_LABELS,
+    Extractor,
+    ExtractorError,
+    ExtractorsUnreadable,
+    check_model,
+    create_extractor,
+    delete_extractor,
+    duplicate_extractor,
+    get_extractor,
+    legacy_claims,
+    load_extractors,
+    prepare_run,
+    project_extractor,
+    record_legacy_adoption,
+    set_key_saved,
+    update_extractor,
 )
 from .openrouter import list_model_endpoints
-from .models import (
-    DEFAULT_MODEL,
-    fallback_models,
-    list_live_models,
-    model_request_defaults,
-    normalize_model_name,
-    resolve_input_mode,
-    validate_model_option,
-)
+from .models import list_live_models, normalize_model_name
 from .paths import DEFAULT_INSTRUCTIONS
 from .preflight import run_preflight
 from .prompts import build_system_prompt
@@ -177,30 +174,30 @@ class Job:
 
 
 class WebConsole:
-    def __init__(self, job: Job, secret: str | None = None) -> None:
+    def __init__(self, job: Job, secrets: list[str] | None = None) -> None:
         self.job = job
-        self.secret = secret
+        self.secrets = list(secrets or [])
 
     def print(self, *parts: object) -> None:
-        self.job.emit("log", message=redact_secrets(" ".join(str(part) for part in parts), [self.secret]))
+        self.job.emit("log", message=redact_secrets(" ".join(str(part) for part in parts), self.secrets))
 
     def title(self, text: str, subtitle: str | None = None) -> None:
         self.job.emit(
             "log",
-            message=redact_secrets(text if subtitle is None else f"{text} — {subtitle}", [self.secret]),
+            message=redact_secrets(text if subtitle is None else f"{text} — {subtitle}", self.secrets),
         )
 
     def info(self, text: str) -> None:
-        self.job.emit("log", level="info", message=redact_secrets(text, [self.secret]))
+        self.job.emit("log", level="info", message=redact_secrets(text, self.secrets))
 
     def warn(self, text: str) -> None:
-        self.job.emit("log", level="warning", message=redact_secrets(text, [self.secret]))
+        self.job.emit("log", level="warning", message=redact_secrets(text, self.secrets))
 
     def error(self, text: str) -> None:
-        self.job.emit("log", level="error", message=redact_secrets(text, [self.secret]))
+        self.job.emit("log", level="error", message=redact_secrets(text, self.secrets))
 
     def success(self, text: str) -> None:
-        self.job.emit("log", level="success", message=redact_secrets(text, [self.secret]))
+        self.job.emit("log", level="success", message=redact_secrets(text, self.secrets))
 
     def table(self, title: str, columns, rows) -> None:
         self.job.emit(
@@ -208,7 +205,7 @@ class WebConsole:
             title=title,
             columns=list(columns),
             rows=[
-                [redact_secrets(value, [self.secret]) for value in row]
+                [redact_secrets(value, self.secrets) for value in row]
                 for row in rows
             ],
         )
@@ -239,8 +236,8 @@ class WebRuntime:
     def __init__(self, token: str, projects_root: Path | None = None) -> None:
         self.token = token
         self.projects_root = projects_root
-        self.session_api_keys: dict[str, str] = {}
-        self.key_warnings: dict[str, str] = {}
+        # Read from the credential store at most once, the first time a key is needed.
+        self.vault = KeyVault(legacy_claims=legacy_claims, on_legacy_adopted=record_legacy_adoption)
         self.jobs: dict[str, Job] = {}
         self.update_version: str | None = None
         self._jobs_lock = threading.Lock()
@@ -248,51 +245,21 @@ class WebRuntime:
     def project(self, project_id: str) -> ManagedProject:
         return get_project(project_id, root=self.projects_root)
 
-    @property
-    def session_api_key(self) -> str | None:
-        """Compatibility alias for the legacy Gemini-only runtime field."""
+    def has_key(self, extractor: Extractor) -> bool:
+        """Whether a key is saved or held for this session, without opening the credential store."""
+        return extractor.has_saved_key or self.vault.cached(extractor.id) is not None
 
-        return self.session_api_keys.get("gemini")
-
-    @session_api_key.setter
-    def session_api_key(self, value: str | None) -> None:
-        if value:
-            self.session_api_keys["gemini"] = value
-        else:
-            self.session_api_keys.pop("gemini", None)
-
-    @property
-    def key_warning(self) -> str | None:
-        return self.key_warnings.get("gemini")
-
-    @key_warning.setter
-    def key_warning(self, value: str | None) -> None:
-        if value:
-            self.key_warnings["gemini"] = value
-        else:
-            self.key_warnings.pop("gemini", None)
-
-    def api_key(self, provider: str = "gemini") -> str | None:
-        return self.session_api_keys.get(normalize_provider(provider))
-
-    def _load_key_from_store(self, provider: str) -> str | None:
-        """Blocking: reads the OS credential store. Call via a threadpool from async routes."""
-
-        selected = normalize_provider(provider)
-        existing = self.session_api_keys.get(selected)
-        if existing:
-            return existing
-        if not saved_api_key_configured(selected):
+    def key_for(self, extractor: Extractor) -> str | None:
+        """Blocking: may open the credential store once. Call via a threadpool from async routes."""
+        cached = self.vault.cached(extractor.id)
+        if cached is not None:
+            return cached
+        if not extractor.has_saved_key:
             return None
-        key = load_saved_api_key(selected)
-        if not key:
-            return None
-        self.session_api_keys[selected] = key
-        self.key_warnings.pop(selected, None)
-        return key
+        return self.vault.get(extractor.id)
 
     def secrets(self) -> list[str]:
-        return list(self.session_api_keys.values())
+        return self.vault.secrets()
 
     def check_for_update(self) -> None:
         request = urllib.request.Request(
@@ -310,7 +277,7 @@ class WebRuntime:
         except Exception:
             return
 
-    def start_job(self, project: ManagedProject, action: str, settings: RunSettings) -> Job:
+    def start_job(self, project: ManagedProject, action: str, settings: RunSettings, api_key: str | None = None) -> Job:
         with self._jobs_lock:
             existing = self.jobs.get(project.project_id)
             if existing and existing.status in {"queued", "running"}:
@@ -319,22 +286,19 @@ class WebRuntime:
             self.jobs[project.project_id] = job
         thread = threading.Thread(
             target=self._run_job,
-            args=(job, project, action, settings),
+            args=(job, project, action, settings, api_key),
             daemon=True,
             name=f"auto-zcurve-{project.project_id}",
         )
         thread.start()
         return job
 
-    def _run_job(self, job: Job, project: ManagedProject, action: str, settings: RunSettings) -> None:
+    def _run_job(self, job: Job, project: ManagedProject, action: str, settings: RunSettings, api_key: str | None) -> None:
         job.status = "running"
         label = "Report regeneration" if action == "report" else action.title()
         job.emit("status", status="running", message=f"{label} started")
         try:
-            api_key = self.api_key(settings.provider)
-            if action != "report" and not api_key and settings.provider != "openai_compatible":
-                raise RuntimeError(f"A {provider_label(settings.provider)} API key is required.")
-            console = WebConsole(job, api_key)
+            console = WebConsole(job, self.secrets())
             run_preflight(project.path, interactive=False, console=console)
             if action == "report":
                 summary = regenerate_report(
@@ -351,7 +315,7 @@ class WebRuntime:
                     assume_yes=True,
                     skip_report=False,
                     console=console,
-                    api_key=api_key,
+                    api_key=api_key or "",
                     cancellation_event=job.cancel_event,
                 )
             else:
@@ -363,7 +327,7 @@ class WebRuntime:
                     force=False,
                     skip_report=False,
                     console=console,
-                    api_key=api_key,
+                    api_key=api_key or "",
                     cancellation_event=job.cancel_event,
                 )
             if job.cancel_event.is_set():
@@ -391,15 +355,33 @@ class WebRuntime:
             )
 
 
+def _extractor_view(runtime: WebRuntime, extractor: Extractor) -> dict[str, object]:
+    """What the pages need to show an extractor. Never includes the key."""
+    return {
+        "id": extractor.id,
+        "name": extractor.name,
+        "provider": extractor.provider,
+        "provider_label": extractor.provider_label,
+        "model": extractor.model,
+        "summary": extractor.summary(),
+        "settings": extractor.snapshot(),
+        "has_key": runtime.has_key(extractor),
+        # False for a key held in memory for this session only.
+        "key_saved": extractor.has_saved_key,
+        "requires_key": extractor.requires_key,
+    }
+
+
 def _project_context(request: Request, runtime: WebRuntime, project: ManagedProject) -> dict:
     app_settings = load_app_settings()
-    snapshot = project_snapshot(project, default_model=app_settings.default_gemini_model)
+    snapshot = project_snapshot(project)
     snapshot["pdf_parser"] = app_settings.pdf_parser
     snapshot["pdf_parser_label"] = PDF_PARSER_LABELS[app_settings.pdf_parser]
     snapshot["max_upload_size_mb"] = app_settings.max_upload_size_mb
-    snapshot["default_gemini_model"] = app_settings.default_gemini_model
-    snapshot["default_openrouter_model"] = app_settings.default_openrouter_model
-    selected_provider = normalize_provider(snapshot.get("provider"))
+    chosen = project_extractor(project.path)
+    selected = chosen.extractor
+    key_ready = selected is not None and (runtime.has_key(selected) or not selected.requires_key)
+    model_ready = selected is not None and bool(selected.model)
     job = runtime.jobs.get(project.project_id)
     return {
         "request": request,
@@ -409,51 +391,20 @@ def _project_context(request: Request, runtime: WebRuntime, project: ManagedProj
         "app_settings": app_settings,
         "job": job.snapshot() if job else None,
         "schema_text": read_project_schema(project),
-        "models": fallback_models(selected_provider),
-        "providers": [(name, provider_label(name)) for name in PROVIDERS],
-        "provider_key_status": {name: runtime.api_key(name) is not None for name in PROVIDERS},
-        "provider_saved_key_status": {
-            name: saved_api_key_configured(name) for name in PROVIDERS
-        },
-        "provider_label": provider_label(selected_provider),
-        "has_api_key": runtime.api_key(selected_provider) is not None,
-        "has_saved_api_key": saved_api_key_configured(selected_provider),
-        "keyring_available": credential_store_available(),
+        "extractors": [_extractor_view(runtime, item) for item in load_extractors()],
+        "selected_extractor_id": chosen.extractor.id if chosen.extractor else "",
+        "selected_extractor_deleted": chosen.deleted,
+        "run_ready": key_ready and model_ready,
+        "model_missing": selected is not None and not model_ready,
+        "key_missing": model_ready and not key_ready,
         "is_macos": platform.system() == "Darwin",
-        "key_warning": runtime.key_warnings.get(selected_provider),
         "update_version": runtime.update_version,
     }
 
 
-def _openrouter_routing(
-    existing: RunSettings | None,
-    provider: str | None,
-    fallbacks: str | None,
-) -> dict[str, object]:
-    """Resolve the OpenRouter provider preference, keeping saved values for fields the form omitted."""
-    if fallbacks not in (None, "allow", "deny"):
-        raise ValueError("OpenRouter fallbacks must be `allow` or `deny`.")
-    return {
-        "openrouter_provider": normalize_openrouter_provider(
-            provider if provider is not None else (existing.openrouter_provider if existing else "")
-        ),
-        "openrouter_allow_fallbacks": (
-            fallbacks == "allow" if fallbacks is not None else (existing.openrouter_allow_fallbacks if existing else True)
-        ),
-    }
-
-
-def _credential_context(runtime: WebRuntime) -> list[dict[str, object]]:
-    return [
-        {
-            "name": name,
-            "label": provider_label(name),
-            "has_api_key": runtime.api_key(name) is not None,
-            "has_saved_api_key": saved_api_key_configured(name),
-            "key_warning": runtime.key_warnings.get(name),
-        }
-        for name in PROVIDERS
-    ]
+def _extractor_values(form: dict[str, object]) -> dict[str, object]:
+    """Extractor settings from a submitted form, without the key."""
+    return {name: value for name, value in form.items() if name != "api_key"}
 
 
 def _project_index_snapshot(project: ManagedProject) -> dict:
@@ -468,14 +419,6 @@ def _project_index_snapshot(project: ManagedProject) -> dict:
         "total_tokens": sum(int(record.get("total_tokens") or 0) for record in source_records),
         "has_report": (project.path / "output" / "report.html").is_file(),
     }
-
-
-def _catalog_models(runtime: WebRuntime, provider: str) -> list:
-    """Load the model catalogue for the model picker; may fetch it from the provider."""
-    key = runtime.api_key(provider) or ""
-    if provider == "gemini" and not key:
-        return fallback_models(provider)
-    return list_live_models(key, provider)
 
 
 def _spreadsheet_safe_download(path: Path) -> bytes:
@@ -529,6 +472,12 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     app.state.runtime = runtime
     app.add_middleware(LocalSecurityMiddleware)
 
+    @app.exception_handler(ExtractorsUnreadable)
+    async def extractors_unreadable(request: Request, exc: ExtractorsUnreadable):
+        # Every page and action that needs extractors stops here, so nothing
+        # overwrites the file before it is fixed.
+        return JSONResponse({"detail": str(exc)}, status_code=503)
+
     @app.get("/", include_in_schema=False)
     async def root():
         raise HTTPException(status_code=404)
@@ -579,13 +528,17 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             {
                 "token": token,
                 "version": __version__,
-                "credential_providers": _credential_context(runtime),
-                "keyring_available": credential_store_available(),
+                "extractors": [_extractor_view(runtime, item) for item in load_extractors()],
+                "providers": [(name, provider_label(name)) for name in PROVIDERS],
+                "extractor_defaults": Extractor(id="", name="", provider="gemini", model=""),
+                "keyring_available": runtime.vault.persistent,
                 "is_macos": platform.system() == "Darwin",
                 "app_settings": load_app_settings(),
                 "pdf_parser_labels": PDF_PARSER_LABELS,
+                "retry_extractor_change_labels": RETRY_EXTRACTOR_CHANGE_LABELS,
                 "reasoning_effort_labels": REASONING_EFFORT_LABELS,
                 "service_tier_labels": SERVICE_TIER_LABELS,
+                "response_format_labels": RESPONSE_FORMAT_LABELS,
                 "default_instructions": DEFAULT_INSTRUCTIONS.read_text(encoding="utf-8"),
                 "update_version": runtime.update_version,
             },
@@ -594,30 +547,19 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     @app.post(f"/{token}/settings")
     async def update_settings(
         pdf_parser: str = Form(DEFAULTS["pdf_parser"]),
-        parallel_requests: int = Form(DEFAULTS["parallel_requests"]),
-        request_timeout_sec: int = Form(DEFAULTS["request_timeout_sec"]),
         max_upload_size_mb: int = Form(DEFAULTS["max_upload_size_mb"]),
-        request_delay_sec: int = Form(DEFAULTS["request_delay_sec"]),
-        reasoning_effort: str = Form(DEFAULTS["reasoning_effort"]),
-        service_tier: Optional[str] = Form(None),
-        default_gemini_model: Optional[str] = Form(None),
-        default_openrouter_model: Optional[str] = Form(None),
-        openai_base_url: Optional[str] = Form(None),
-        openai_response_format: Optional[str] = Form(None),
+        retry_extractor_change: Optional[str] = Form(None),
     ):
         try:
             settings = AppSettings(
                 pdf_parser=normalize_pdf_parser(pdf_parser),
-                parallel_requests=max(1, min(int(parallel_requests), 32)),
-                request_delay_sec=max(0, min(int(request_delay_sec), 3600)),
-                request_timeout_sec=max(30, min(int(request_timeout_sec), 3600)),
                 max_upload_size_mb=max(1, min(int(max_upload_size_mb), 512)),
-                reasoning_effort=normalize_reasoning_effort(reasoning_effort),
-                service_tier=normalize_service_tier(service_tier if service_tier is not None else load_app_settings().service_tier),
-                default_gemini_model=normalize_default_gemini_model(default_gemini_model if default_gemini_model is not None else load_app_settings().default_gemini_model),
-                default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model if default_openrouter_model is not None else load_app_settings().default_openrouter_model),
-                openai_base_url=normalize_endpoint_url(openai_base_url if openai_base_url is not None else load_app_settings().openai_base_url),
-                openai_response_format=normalize_response_format(openai_response_format or load_app_settings().openai_response_format),
+                # A form without the field keeps the saved choice.
+                retry_extractor_change=(
+                    retry_extractor_change
+                    if retry_extractor_change is not None
+                    else load_app_settings().retry_extractor_change
+                ),
             )
             save_app_settings(settings)
         except (OSError, TypeError, ValueError) as exc:
@@ -626,53 +568,137 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             "saved": True,
             "pdf_parser": settings.pdf_parser,
             "pdf_parser_label": PDF_PARSER_LABELS[settings.pdf_parser],
-            "reasoning_effort": settings.reasoning_effort,
-            "reasoning_effort_label": REASONING_EFFORT_LABELS[settings.reasoning_effort],
-            "service_tier": settings.service_tier,
-            "service_tier_label": SERVICE_TIER_LABELS[settings.service_tier],
-            "request_delay_sec": settings.request_delay_sec,
-            "default_gemini_model": settings.default_gemini_model,
-            "default_openrouter_model": settings.default_openrouter_model,
         }
 
-    @app.post(f"/{token}/settings/providers/{{provider}}")
-    async def update_provider_settings(
-        provider: str,
-        service_tier: Optional[str] = Form(None),
-        default_gemini_model: str = Form(""),
-        default_openrouter_model: str = Form(""),
-    ):
+    def _save_key(extractor: Extractor, api_key: str) -> str | None:
+        """Blocking: store a key for an extractor. Returns a warning, if any."""
         try:
-            current = load_app_settings()
-            if provider == "gemini":
-                settings = replace(
-                    current,
-                    default_gemini_model=normalize_default_gemini_model(default_gemini_model),
-                    service_tier=normalize_service_tier(service_tier if service_tier is not None else current.service_tier),
-                )
-            elif provider == "openrouter":
-                settings = replace(current, default_openrouter_model=normalize_default_openrouter_model(default_openrouter_model))
-            else:
-                raise ValueError("Unsupported provider settings.")
-            save_app_settings(settings)
-        except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"saved": True}
+            persisted = runtime.vault.set(extractor.id, api_key)
+        except VaultUnavailable as exc:
+            return f"The key was not saved. {exc}"
+        set_key_saved(extractor.id, persisted)
+        if not persisted:
+            if runtime.vault.persistent:
+                return "The credential store refused the key, so it is kept for this app session only."
+            return "No secure credential store is available, so the key is kept for this app session only."
+        return None
 
-    @app.post(f"/{token}/settings/endpoint")
-    async def update_endpoint(
-        openai_base_url: str = Form(""),
-        openai_response_format: str = Form("json_schema"),
-    ):
+    def _extractor_response(extractor_id: str, warning: str | None = None) -> dict:
+        extractor = get_extractor(extractor_id)
+        assert extractor is not None
+        return {"extractor": _extractor_view(runtime, extractor), "warning": warning}
+
+    @app.post(f"/{token}/extractors")
+    async def new_extractor(request: Request):
+        form = dict(await request.form())
+        api_key = str(form.get("api_key") or "").strip()
+        values = _extractor_values(form)
+
+        def create() -> dict:
+            created = create_extractor(values, check=lambda item: check_model(item, api_key) if api_key else None)
+            warning = _save_key(created, api_key) if api_key else None
+            if not api_key and created.requires_key:
+                warning = "Saved without a key. Add one before running; the model will be checked when it runs."
+            return _extractor_response(created.id, warning)
+
         try:
-            save_app_settings(replace(
-                load_app_settings(),
-                openai_base_url=normalize_endpoint_url(openai_base_url),
-                openai_response_format=normalize_response_format(openai_response_format),
-            ))
-        except (OSError, ValueError) as exc:
+            return await asyncio.to_thread(create)
+        except ExtractorsUnreadable:
+            raise
+        except (ExtractorError, RuntimeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"saved": True}
+
+    @app.post(f"/{token}/extractors/{{extractor_id}}")
+    async def edit_extractor(extractor_id: str, request: Request):
+        if get_extractor(extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        values = _extractor_values(dict(await request.form()))
+        warnings: list[str] = []
+
+        def check(current: Extractor, updated: Extractor) -> None:
+            if updated.model == current.model or not updated.requires_key:
+                return
+            try:
+                key = runtime.key_for(current)
+            except VaultUnavailable:
+                key = None
+            if key:
+                check_model(updated, key)
+            else:
+                warnings.append("The model will be checked when it runs.")
+
+        try:
+            updated = await asyncio.to_thread(update_extractor, extractor_id, values, check=check)
+        except (ExtractorError, RuntimeError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _extractor_response(updated.id, " ".join(warnings) or None)
+
+    @app.post(f"/{token}/extractors/{{extractor_id}}/duplicate")
+    async def copy_extractor(extractor_id: str):
+        try:
+            copy = await asyncio.to_thread(duplicate_extractor, extractor_id)
+        except ExtractorError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _extractor_response(copy.id)
+
+    def _projects_using(extractor_id: str) -> list[str]:
+        """Names of projects whose next run would use this extractor, saved or from their last run."""
+        return [
+            item.name for item in list_projects(root=projects_root)
+            if (chosen := project_extractor(item.path).extractor) is not None and chosen.id == extractor_id
+        ]
+
+    @app.get(f"/{token}/api/extractors/{{extractor_id}}/projects")
+    async def extractor_projects(extractor_id: str):
+        """Projects that would be left without this extractor if it were deleted. Never opens the key vault."""
+        if await asyncio.to_thread(get_extractor, extractor_id) is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        return {"projects": await asyncio.to_thread(_projects_using, extractor_id)}
+
+    @app.post(f"/{token}/extractors/{{extractor_id}}/delete")
+    async def remove_extractor(extractor_id: str):
+        # Check first so a stale request returns 404 without scanning projects.
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
+        if extractor is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        affected = await asyncio.to_thread(_projects_using, extractor_id)
+        # The key goes first: if it can't be removed, the extractor stays so
+        # its removal can be retried from Settings.
+        if runtime.has_key(extractor):
+            try:
+                await asyncio.to_thread(runtime.vault.delete, extractor.id, extractor.legacy_credential)
+            except VaultUnavailable as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"The extractor was not deleted because its saved key could not be removed. {exc}",
+                ) from exc
+        try:
+            await asyncio.to_thread(delete_extractor, extractor_id)
+        except ExtractorError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": True, "projects": affected, "warning": None}
+
+    @app.post(f"/{token}/extractors/{{extractor_id}}/key")
+    async def replace_extractor_key(extractor_id: str, api_key: str = Form(...)):
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
+        if extractor is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        if not api_key.strip():
+            raise HTTPException(status_code=400, detail="Enter an API key.")
+        warning = await asyncio.to_thread(_save_key, extractor, api_key)
+        return {"saved": warning is None, "warning": warning}
+
+    @app.post(f"/{token}/extractors/{{extractor_id}}/key/delete")
+    async def remove_extractor_key(extractor_id: str):
+        extractor = await asyncio.to_thread(get_extractor, extractor_id)
+        if extractor is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
+        try:
+            await asyncio.to_thread(runtime.vault.delete, extractor.id, extractor.legacy_credential)
+        except VaultUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await asyncio.to_thread(set_key_saved, extractor.id, False)
+        return {"deleted": True}
 
     @app.post(f"/{token}/projects")
     async def new_project(name: str = Form(...)):
@@ -686,38 +712,45 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def project_index():
         return [_project_index_snapshot(item) for item in list_projects(root=projects_root)]
 
-    @app.get(f"/{token}/api/models/{{provider}}")
-    async def model_catalog(provider: str):
+    @app.get(f"/{token}/api/extractors/{{extractor_id}}/models")
+    async def extractor_models(extractor_id: str):
+        """Model suggestions for an extractor, using its key (may open the credential store once)."""
+        extractor = get_extractor(extractor_id)
+        if extractor is None:
+            raise HTTPException(status_code=404, detail="That extractor no longer exists.")
         try:
-            selected = normalize_provider(provider)
-            options = await asyncio.to_thread(_catalog_models, runtime, selected)
+            key = await asyncio.to_thread(runtime.key_for, extractor)
+            if extractor.requires_key and not key:
+                return []
+            options = await asyncio.to_thread(list_live_models, key or "", extractor.provider)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        parser = load_app_settings().pdf_parser
-        catalog = []
-        for option in options:
-            try:
-                input_mode = resolve_input_mode(selected, option, parser)
-            except ValueError:
-                continue
-            catalog.append(
-                {
-                    "id": option.name,
-                    "name": option.display_name,
-                    "description": option.description,
-                    "provider": option.provider,
-                    "input_mode": input_mode,
-                    "context_length": option.context_length,
-                    "parallel_requests": option.parallel_requests,
-                    "request_delay_sec": option.request_delay_sec,
-                }
-            )
-        return catalog
+        return [{"id": option.name, "name": option.display_name} for option in options]
+
+    @app.post(f"/{token}/api/models")
+    async def typed_key_models(provider: str = Form(...), api_key: str = Form("")):
+        """Model suggestions before an extractor is saved, using the key typed into the form.
+
+        The key is sent to the provider for this one request only: it is never
+        stored, logged, or included in the response or an error message.
+        """
+        key = api_key.strip()
+        try:
+            selected = normalize_provider(provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=redact_secrets(exc, [key])) from None
+        if selected == "gemini" and not key:
+            raise HTTPException(status_code=400, detail="Enter an API key to load Gemini models.")
+        try:
+            options = await asyncio.to_thread(list_live_models, key, selected)
+        except Exception as exc:  # Provider SDK errors vary; any of them must reach the user redacted.
+            raise HTTPException(status_code=503, detail=redact_secrets(exc, [key]) or "Models could not be loaded.") from None
+        return [{"id": option.name, "name": option.display_name} for option in options]
 
     @app.get(f"/{token}/api/models/openrouter/endpoints")
-    async def openrouter_model_endpoints(model: str):
-        # The listing is public: send only a key already unlocked this session, never read the store.
-        key = runtime.api_key("openrouter")
+    async def openrouter_model_endpoints(model: str, extractor_id: str = ""):
+        # The listing is public: send only a key already in memory, never read the store.
+        key = runtime.vault.cached(extractor_id) if extractor_id else None
         try:
             normalized = normalize_model_name(model, "openrouter")
             return await asyncio.to_thread(list_model_endpoints, normalized, api_key=key)
@@ -725,18 +758,6 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    @app.post(f"/{token}/api/models/openrouter/validate")
-    async def validate_openrouter_model(model: str = Form(...)):
-        key = await asyncio.to_thread(runtime._load_key_from_store, "openrouter")
-        if not key:
-            raise HTTPException(status_code=400, detail="An OpenRouter API key is required to validate a model.")
-        try:
-            option = await asyncio.to_thread(validate_model_option, "openrouter", model, key)
-        except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"valid": True, "id": option.name, "parallel_requests": option.parallel_requests,
-                "request_delay_sec": option.request_delay_sec}
 
     @app.get(f"/{token}/projects/{{project_id}}", response_class=HTMLResponse)
     async def project_page(request: Request, project_id: str):
@@ -813,7 +834,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         except ProjectError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         app_settings = load_app_settings()
-        payload = project_snapshot(project, default_model=app_settings.default_gemini_model)
+        payload = project_snapshot(project)
         payload["pdf_parser"] = app_settings.pdf_parser
         payload["pdf_parser_label"] = PDF_PARSER_LABELS[app_settings.pdf_parser]
         job = runtime.jobs.get(project_id)
@@ -916,202 +937,43 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
                 runtime.jobs.pop(project_id, None)
         return result
 
-    @app.post(f"/{token}/credentials")
-    async def credentials(
-        api_key: str = Form(...),
-        provider: str = Form("gemini"),
-        remember: Optional[str] = Form(None),
-    ):
-        try:
-            selected = normalize_provider(provider)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        key = api_key.strip()
-        if not key:
-            raise HTTPException(status_code=400, detail=f"Enter a {provider_label(selected)} API key.")
-        runtime.session_api_keys[selected] = key
-        runtime.key_warnings.pop(selected, None)
-        if remember:
-            try:
-                save_api_key(key) if selected == "gemini" else save_api_key(key, selected)
-            except CredentialStoreUnavailable as exc:
-                runtime.key_warnings[selected] = str(exc)
-        warning = runtime.key_warnings.get(selected)
-        return {
-            "provider": selected,
-            "saved": bool(remember and warning is None),
-            "session_only": not remember or warning is not None,
-            "warning": warning,
-        }
-
-    @app.post(f"/{token}/credentials/load")
-    async def load_credentials(provider: str = Form("gemini")):
-        try:
-            selected = normalize_provider(provider)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        key = load_saved_api_key() if selected == "gemini" else load_saved_api_key(selected)
-        if not key:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No saved {provider_label(selected)} API key was found in the credential store.",
-            )
-        runtime.session_api_keys[selected] = key
-        runtime.key_warnings.pop(selected, None)
-        return {"loaded": True, "provider": selected}
-
-    @app.post(f"/{token}/credentials/delete")
-    async def delete_credentials(provider: str = Form("gemini")):
-        try:
-            selected = normalize_provider(provider)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        runtime.session_api_keys.pop(selected, None)
-        runtime.key_warnings.pop(selected, None)
-        deleted = delete_saved_api_key(selected)
-        return {"deleted": deleted, "provider": selected}
-
     @app.post(f"/{token}/projects/{{project_id}}/settings")
-    async def save_project_settings_route(
-        project_id: str,
-        provider: str = Form("gemini"),
-        model: str = Form(DEFAULT_MODEL),
-        parallel_requests: Optional[int] = Form(None),
-        request_delay_sec: Optional[int] = Form(None),
-        openrouter_provider: Optional[str] = Form(None),
-        openrouter_fallbacks: Optional[str] = Form(None),
-    ):
+    async def save_project_settings_route(project_id: str, extractor_id: str = Form(...)):
         try:
             project = runtime.project(project_id)
-            existing = load_run_settings(project.path)
-            selected = normalize_provider(provider)
-            normalized_model = normalize_model_name(model, selected)
-            if selected == "openrouter":
-                key = await asyncio.to_thread(runtime._load_key_from_store, selected)
-                if key is None:
-                    raise ValueError("An OpenRouter API key is required to validate a model.")
-                await asyncio.to_thread(validate_model_option, selected, normalized_model, key)
-            current = existing or RunSettings(primary_model=normalized_model, provider=selected)
-            default_parallel, default_delay = model_request_defaults(normalized_model, selected)
-            settings = RunSettings(
-                primary_model=normalized_model,
-                provider=selected,
-                request_timeout_sec=current.request_timeout_sec,
-                parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else default_parallel), 32)),
-                request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else default_delay), 3600)),
-                max_upload_size_mb=current.max_upload_size_mb,
-                pdf_parser=current.pdf_parser,
-                reasoning_effort=current.reasoning_effort,
-                service_tier=current.service_tier,
-                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
-            )
-            save_run_settings(project.path, settings)
-        except (OSError, ProjectError, RuntimeError, TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"saved": True, "parallel_requests": settings.parallel_requests, "request_delay_sec": settings.request_delay_sec}
+        except ProjectError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        extractor = get_extractor(extractor_id)
+        if extractor is None:
+            raise HTTPException(status_code=400, detail="That extractor no longer exists. Choose another.")
+        save_selected_extractor_id(project.path, extractor.id)
+        return {"saved": True, "extractor": _extractor_view(runtime, extractor)}
+
+    async def _prepare_run(project: ManagedProject, extractor_id: str | None) -> tuple[RunSettings, str | None]:
+        """The settings and key for a run or retry with the chosen extractor."""
+        chosen = None
+        if extractor_id:
+            chosen = await asyncio.to_thread(get_extractor, extractor_id)
+            if chosen is None:
+                raise ValueError("That extractor no longer exists. Choose another.")
+        return await asyncio.to_thread(prepare_run, project.path, chosen, runtime.key_for)
 
     @app.post(f"/{token}/projects/{{project_id}}/run")
-    async def start_run(
-        project_id: str,
-        provider: str = Form("gemini"),
-        model: Optional[str] = Form(None),
-        parallel_requests: int | None = Form(None),
-        request_delay_sec: int | None = Form(None),
-        openrouter_provider: Optional[str] = Form(None),
-        openrouter_fallbacks: Optional[str] = Form(None),
-    ):
+    async def start_run(project_id: str, extractor_id: Optional[str] = Form(None)):
         try:
             project = runtime.project(project_id)
-            existing = load_run_settings(project.path)
-            app_defaults = load_app_settings()
-            selected = normalize_provider(provider)
-            effective_model = model or (
-                app_defaults.default_openrouter_model if selected == "openrouter" else ("" if selected == "openai_compatible" else app_defaults.default_gemini_model)
-            )
-            key = await asyncio.to_thread(runtime._load_key_from_store, selected)
-            if key is None and selected != "openai_compatible":
-                raise ValueError(f"A {provider_label(selected)} API key is required.")
-            if selected == "openai_compatible":
-                if key is None and saved_api_key_configured(selected):
-                    raise ValueError("The saved endpoint key could not be unlocked. Unlock or remove it in Settings.")
-                if not normalize_endpoint_url(app_defaults.openai_base_url):
-                    raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
-            if selected == "openrouter":
-                await asyncio.to_thread(validate_model_option, selected, effective_model, key)
-            default_parallel, default_delay = model_request_defaults(effective_model, selected)
-            use_saved_values = existing is not None and existing.provider == selected
-            settings = RunSettings(
-                primary_model=normalize_model_name(effective_model, selected),
-                provider=selected,
-                request_timeout_sec=existing.request_timeout_sec if existing else app_defaults.request_timeout_sec,
-                parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else (existing.parallel_requests if use_saved_values else default_parallel)), 32)),
-                request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else (existing.request_delay_sec if use_saved_values else default_delay)), 3600)),
-                max_upload_size_mb=existing.max_upload_size_mb if existing else app_defaults.max_upload_size_mb,
-                pdf_parser=app_defaults.pdf_parser,
-                reasoning_effort=app_defaults.reasoning_effort,
-                service_tier=app_defaults.service_tier,
-                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
-            )
-            job = runtime.start_job(project, "run", settings)
+            settings, key = await _prepare_run(project, extractor_id)
+            job = runtime.start_job(project, "run", settings, key)
         except (ProjectError, RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return JSONResponse({"status": job.status}, status_code=202)
 
     @app.post(f"/{token}/projects/{{project_id}}/retry")
-    async def start_retry(
-        project_id: str,
-        provider: Optional[str] = Form(None),
-        model: Optional[str] = Form(None),
-        parallel_requests: Optional[int] = Form(None),
-        request_delay_sec: Optional[int] = Form(None),
-        openrouter_provider: Optional[str] = Form(None),
-        openrouter_fallbacks: Optional[str] = Form(None),
-    ):
+    async def start_retry(project_id: str, extractor_id: Optional[str] = Form(None)):
         try:
             project = runtime.project(project_id)
-            existing = load_run_settings(project.path)
-            app_defaults = load_app_settings()
-            if existing is None:
-                existing = RunSettings(
-                    primary_model=app_defaults.default_gemini_model,
-                    request_timeout_sec=app_defaults.request_timeout_sec,
-                    parallel_requests=app_defaults.parallel_requests,
-                    max_upload_size_mb=app_defaults.max_upload_size_mb,
-                    pdf_parser=app_defaults.pdf_parser,
-                    reasoning_effort=app_defaults.reasoning_effort,
-                    service_tier=app_defaults.service_tier,
-                    request_delay_sec=app_defaults.request_delay_sec,
-                )
-            selected = normalize_provider(provider or existing.provider)
-            selected_model = model or (
-                existing.primary_model if existing.provider == selected
-                else (app_defaults.default_openrouter_model if selected == "openrouter" else ("" if selected == "openai_compatible" else app_defaults.default_gemini_model))
-            )
-            key = await asyncio.to_thread(runtime._load_key_from_store, selected)
-            if key is None and selected != "openai_compatible":
-                raise ValueError(f"A {provider_label(selected)} API key is required.")
-            if selected == "openai_compatible":
-                if key is None and saved_api_key_configured(selected):
-                    raise ValueError("The saved endpoint key could not be unlocked. Unlock or remove it in Settings.")
-                if not normalize_endpoint_url(app_defaults.openai_base_url):
-                    raise ValueError("Configure an OpenAI-compatible API base URL in Settings first.")
-            if selected == "openrouter":
-                await asyncio.to_thread(validate_model_option, selected, selected_model, key)
-            default_parallel, default_delay = model_request_defaults(selected_model, selected)
-            use_saved_values = existing.provider == selected
-            settings = RunSettings(
-                primary_model=normalize_model_name(selected_model, selected),
-                provider=selected,
-                request_timeout_sec=existing.request_timeout_sec,
-                parallel_requests=max(1, min(int(parallel_requests if parallel_requests is not None else (existing.parallel_requests if use_saved_values else default_parallel)), 32)),
-                request_delay_sec=max(0, min(int(request_delay_sec if request_delay_sec is not None else (existing.request_delay_sec if use_saved_values else default_delay)), 3600)),
-                max_upload_size_mb=existing.max_upload_size_mb,
-                pdf_parser=app_defaults.pdf_parser,
-                reasoning_effort=app_defaults.reasoning_effort,
-                service_tier=app_defaults.service_tier,
-                **_openrouter_routing(existing, openrouter_provider, openrouter_fallbacks),
-            )
-            job = runtime.start_job(project, "retry", settings)
+            settings, key = await _prepare_run(project, extractor_id)
+            job = runtime.start_job(project, "retry", settings, key)
         except (ProjectError, RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return JSONResponse({"status": job.status}, status_code=202)
@@ -1120,9 +982,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def start_report_regeneration(project_id: str):
         try:
             project = runtime.project(project_id)
-            existing = load_run_settings(project.path)
-            if existing is None:
-                existing = RunSettings(primary_model=load_app_settings().default_gemini_model)
+            existing = load_run_settings(project.path) or RunSettings(primary_model="")
             job = runtime.start_job(project, "report", existing)
         except ProjectError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

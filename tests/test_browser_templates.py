@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from auto_zcurve import web
+from auto_zcurve.config import save_selected_extractor_id
+from auto_zcurve.extractors import create_extractor
 from auto_zcurve.projects import create_project
 
 
@@ -27,13 +29,15 @@ class BrowserTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             isolated_config = str(root / 'config')
-            with patch.dict(os.environ, {'XDG_CONFIG_HOME': isolated_config, 'APPDATA': isolated_config}), patch.object(web, 'saved_api_key_configured', return_value=False):
+            with patch.dict(os.environ, {'XDG_CONFIG_HOME': isolated_config, 'APPDATA': isolated_config}):
                 project = create_project('Template integration', root=root / 'projects')
+                extractor = create_extractor({'name': "Lab's Gemini", 'provider': 'gemini', 'model': 'gemini-3.6-flash'})
+                save_selected_extractor_id(project.path, extractor.id)
                 (project.path / 'sources' / "A 'quoted' paper.pdf").write_bytes(b'%PDF-1.4')
                 app = web.create_app(token='token', projects_root=root / 'projects')
                 with TestClient(app, base_url='http://127.0.0.1') as client:
                     responses = {}
-                    for route in ['/token/api/projects', f'/token/api/projects/{project.project_id}', '/token/api/models/gemini']:
+                    for route in ['/token/api/projects', f'/token/api/projects/{project.project_id}', f'/token/api/extractors/{extractor.id}/projects']:
                         response = client.get(route)
                         self.assertEqual(response.status_code, 200, response.text)
                         responses[route] = response.json()

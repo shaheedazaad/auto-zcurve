@@ -15,6 +15,8 @@ async function main() {
     const { window } = dom;
     window.matchMedia = () => ({ matches: false, addEventListener() {} });
     window.scrollTo = () => {};
+    window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+    window.HTMLDialogElement.prototype.close = function () { this.open = false; };
     window.addEventListener('error', event => errors.push(event.message));
     window.fetch = async url => {
       const route = new URL(url, window.location.href).pathname;
@@ -31,6 +33,8 @@ async function main() {
       assert.equal(document.querySelector('[data-pdf-count]').textContent, '1 file');
       assert.equal(document.querySelector('.article-name').textContent, "A 'quoted' paper.pdf");
       assert.equal(document.querySelector('.js-run').disabled, true, 'A missing credential must prevent runs');
+      assert.equal(document.querySelector('#extractor').selectedOptions[0].textContent, "Lab's Gemini");
+      assert.equal(document.querySelector('[data-run-credential-prompt]').hidden, false);
       document.querySelector('[data-tab-target=schema]').click();
       assert.equal(document.querySelector('[data-tab-panel=schema]').hidden, false);
       assert.ok(document.querySelector('.yaml-highlight code .yaml-key'));
@@ -41,6 +45,18 @@ async function main() {
     } else {
       assert.ok(document.querySelector('.js-app-settings'));
       assert.ok(document.querySelector('.settings-nav [aria-current=location]'));
+      document.querySelector('[data-edit-extractor]').click();
+      assert.equal(document.querySelector('#extractor-dialog').open, true);
+      assert.equal(document.querySelector('#extractor-name').value, "Lab's Gemini");
+      assert.equal(document.querySelector('#extractor-provider').disabled, true);
+      assert.equal(document.querySelector('[data-provider-fields=gemini]').hidden, false);
+      assert.equal(document.querySelector('#extractor-base-url').disabled, true);
+      const asked = [];
+      window.confirm = message => { asked.push(message); return false; };
+      document.querySelector('.js-delete-extractor').dispatchEvent(new window.Event('submit', { cancelable: true }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.equal(asked.length, 1);
+      assert.match(asked[0], /Template integration/, 'The delete confirmation must name affected projects');
     }
     assert.deepEqual(errors, []);
   } finally {

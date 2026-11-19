@@ -62,18 +62,23 @@ settings or schema issue than a problem with any one article.
 
 ## The app asks for an API key
 
-Open **Settings → Provider connections**, expand the selected provider, and
-add its key. A saved key can be unlocked there or loaded when you start a
-run. See [API keys and privacy](api-key.md).
+The project's extractor has no key. Open **Settings**, click **Edit** on the
+extractor, and paste a key into **API key**. See
+[API keys and privacy](api-key.md).
+
+## I set GEMINI_API_KEY but the app doesn't use it
+
+API keys are no longer read from environment variables or `.env` files. Add
+the key to an [extractor](settings.md#extractors) instead.
 
 ## My OpenAI-compatible endpoint will not run
 
 Check the [endpoint settings](settings.md#openai-compatible):
 
 - Use the API base URL, including `/v1` if required, without `/chat/completions`.
-- Make sure the server is running and the project's model ID matches a model it serves.
-- Add or replace the key if the server requires authentication.
-- If it rejects `response_format`, select a supported JSON output mode and save.
+- Make sure the server is running and the extractor's model ID matches a model it serves.
+- Add or replace the extractor's key if the server requires authentication.
+- If it rejects `response_format`, edit the extractor and choose a supported JSON output mode.
 - If a PDF has no extractable text, run OCR first. This provider does not send figures.
 
 A successful connection does not guarantee valid extraction output. All JSON
@@ -90,15 +95,27 @@ credentials are preserved; the scripts remove the app and launcher.
 This is expected — auto-zcurve's bundled runtime is Python underneath, and
 macOS sometimes surfaces that name (occasionally with a version number)
 instead of "auto-zcurve" in the authorization prompt. Approving it lets
-auto-zcurve read the key you've stored in your Keychain.
+auto-zcurve read the keys you've stored in your Keychain. All extractors'
+keys share one Keychain item, so you are asked once per session, or again
+if you denied access the first time.
 
-## I want to change which Gemini models are offered
+## How do I use a different model?
 
-The root `models.yml` file (in the folder where you installed auto-zcurve)
-lists the Gemini models available in the app. Edit it and the change takes
-effect immediately — no restart needed. See the
-[README](https://github.com/shaheedazaad/auto-zcurve#model-allowlist) for
-the exact format.
+Edit the project's extractor in **Settings** and enter any model ID the
+provider offers, or create a new extractor and choose it on the project's
+**Run analysis** tab. For Gemini and OpenRouter, **Show available models**
+lists the provider's current models, using the extractor's saved key or the
+key typed into the form (OpenRouter's list needs no key). OpenAI-compatible
+endpoints have no list; enter the model ID your server serves.
+
+## The app says it couldn't read `extractors.json`
+
+The file that holds your extractors is damaged or can't be opened, so the app
+stops rather than risk saving over it. The message names the file. Fix it, or
+move it somewhere else. Without the file, the app starts with no extractors,
+unless settings or saved keys from a version before extractors are still
+there, in which case it recreates extractors from them as it does on upgrade.
+Your saved API keys are kept separately and aren't affected.
 
 ## Where are my projects actually stored?
 

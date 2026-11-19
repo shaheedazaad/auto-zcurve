@@ -1,9 +1,19 @@
 name: Locked environment
 
 on:
+  # Branches with a PR are tested by the pull_request event; running push too
+  # would test every PR commit twice.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+# A newer commit on the same PR replaces its unfinished run. Each main commit
+# gets its own group, because a group keeps only one pending run and would
+# otherwise drop a queued main run even without cancel-in-progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   browser-tests:
@@ -47,6 +57,8 @@ jobs:
         with:
           frozen: true
           cache: true
+          # PRs reuse main's cache without spending a minute saving their own.
+          cache-write: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Verify locked install
         run: pixi install --locked
       - name: Run Python and R tests with Python coverage (fails below 100%)

@@ -1,83 +1,89 @@
-# Settings and providers
+# Settings and extractors
 
-Open **Settings** in the top bar. The sidebar links to provider connections,
-run defaults, and the bundled extraction instructions. On a narrow screen,
-this navigation appears above the settings.
+Open **Settings** in the top bar. The sidebar links to **Extractors**,
+**Files and parsing**, and the bundled extraction instructions. On a narrow
+screen, this navigation appears above the settings.
 
-![Settings overview with sidebar links, collapsed provider connections, and run defaults](assets/screenshots/settings.png)
+## Extractors
 
-## Provider connections
+An **extractor** is a saved setup for reaching a model: a name, a provider, a
+model, an API key, and request settings. Each project chooses one extractor on
+**Run analysis**, and every run and retry uses exactly its settings.
 
-Each provider has an expandable section. Click its heading to open or close
-it, or use its sidebar link to jump there and open it. Several providers can
-remain expanded at once.
+You can keep as many extractors as you like, including several for the same
+provider. For example, two Gemini extractors can use different API keys, or
+the same key with a different model or service tier.
 
-API keys belong to the provider shown in that section. **Add key** opens a
-password dialog; **Replace**, **Unlock**, and **Remove** appear when relevant.
-See [API keys and privacy](api-key.md) for storage and access details.
+The list shows each extractor's provider, model, and whether its key is saved.
+
+- **Add extractor** opens a dialog to create one.
+- **Edit** opens the same dialog with the saved settings. The provider can't
+  be changed; create a new extractor to use another provider.
+- **Duplicate** copies every setting except the API key, under a new name.
+- **Delete** removes the extractor and its saved key. If the key can't be
+  removed (for example, the credential store is locked), nothing is deleted;
+  try again once the store is unlocked. Projects that used it ask you to
+  choose another extractor before their next run.
+
+### Settings every extractor has
+
+| Setting | What it does |
+| --- | --- |
+| Name | How the extractor appears in projects. Names must be unique. |
+| Provider | Gemini, OpenRouter (Experimental), or OpenAI-compatible. |
+| Model | The exact model ID. |
+| Parallel articles | How many articles are processed at once (1–32, default 1). |
+| Delay between requests | Minimum seconds between request starts (default 0). |
+| Request timeout | Seconds allowed for one request (default 600). |
+| API key | Optional when creating; see [API keys and privacy](api-key.md). |
+
+For Gemini and OpenRouter, creating an extractor with a key, or changing its
+model on an edit, asks the provider whether the model can be used with that
+key, and refuses a model it doesn't recognise. Without a key, the extractor is
+saved and the model is checked when it first runs. For Gemini and OpenRouter,
+**Show available models** loads the provider's model list as suggestions,
+using the extractor's saved key or, before one is saved, the key typed into
+the form (sent for that one request only, never stored). OpenRouter's list
+loads without a key. Suggestions load only when you click the button.
+OpenAI-compatible servers have no model catalog here: the model ID is passed
+to the configured server as entered, and the server reports a model it
+doesn't know.
 
 ### Gemini
 
-Expand **Gemini** to manage its key, **Default Gemini model**, and
-**Gemini service tier**. Save the model and tier with **Save Gemini settings**;
-the API key dialog has its own save button.
+**Service tier** chooses between Flex (lower cost, variable latency),
+Standard, and Priority (higher cost, lower latency). Gemini receives the
+original PDF.
 
-![Expanded Gemini settings with Add key, default model, service tier, and Save Gemini settings](assets/screenshots/settings-gemini.png)
+### OpenRouter (Experimental)
 
-The default model prefills the model field for new projects. A project can
-choose another allowed Gemini model on **Run analysis**. Gemini receives the
-original PDF. Its model choices are controlled by the installed `models.yml`.
+Enter an exact OpenRouter model ID, such as `vendor/model`. The model must
+support strict structured outputs. PDF processing uses OpenRouter's
+file-parser service.
 
-### OpenRouter
-
-Expand **OpenRouter (Experimental)** to manage its key and optional
-**Default OpenRouter model**. Click **Save OpenRouter (Experimental) settings**
-after changing the default.
-
-![Expanded OpenRouter settings with Add key and the optional default model field](assets/screenshots/settings-openrouter.png)
-
-Enter an exact model ID, such as the ID shown by your provider, on
-**Run analysis**. There is no built-in OpenRouter model picker. The app checks
-the live model catalog for structured-output and compatible input support
-when you save or run. PDF processing uses OpenRouter's file-parser service.
-
-Two more choices appear on **Run analysis** when OpenRouter is selected:
-
-- **Route to provider** lists the providers that currently serve the model
-  with structured output, such as `DeepInfra (fp8)`. Leave it on
-  **Automatic** to let OpenRouter choose. Providers can run different
-  quantizations of the same model, so pinning one keeps results consistent.
-  If the provider you saved stops serving the model, it stays selected and
-  is marked **(not listed for this model)**. Pick another provider or
-  **Automatic** if requests start failing.
+- **Reasoning effort** is sent when the model supports reasoning. Higher
+  effort can improve accuracy, at more cost and latency.
+- **Route to provider** pins the provider that serves the model, such as
+  `deepinfra/fp8`. After you choose a model, the field suggests the providers
+  that currently serve it with structured output. Leave it empty to let
+  OpenRouter choose. Providers can run different quantizations of the same
+  model, so pinning one keeps results consistent.
 - **Fallbacks** controls what happens when that provider is unavailable.
   **Allow other providers** retries elsewhere. **Don't fall back** fails the
-  request instead, so every result comes from the provider you chose. With
-  **Automatic**, it limits each request to OpenRouter's first choice.
-
-Both are saved with the project. Changing them does not re-extract PDFs that
-were already processed.
+  request instead, so every result comes from the provider you chose.
 
 ### OpenAI-compatible
 
-Expand **OpenAI-compatible** to connect a hosted or local server that supports
-Chat Completions:
+Connect a hosted or local server that supports Chat Completions.
 
-1. Enter its **API base URL**, including its API prefix. For example,
-   `http://localhost:8000/v1`. Do not append `/chat/completions`, credentials,
-   a query string, or a fragment.
-2. Choose a **JSON output mode** supported by that server.
-3. Click **Save endpoint**.
-4. Use **Add key** if the server requires authentication. Keyless servers do
-   not need an API key.
-5. In a project's **Run analysis** section, choose **OpenAI-compatible** and
-   enter the exact model ID served by that endpoint. Save the project settings
-   or start the run.
-
-![Expanded OpenAI-compatible settings with an example local API base URL and Strict JSON schema selected](assets/screenshots/settings-openai-compatible.png)
-
-The screenshot uses an example local address. Enter the address of your own
-server and select an output mode it supports before saving.
+1. Enter its **API base URL**, including its API prefix, for example
+   `http://localhost:8000/v1`. Do not append `/chat/completions`,
+   credentials, a query string, or a fragment.
+2. Enter the exact **Model** ID the server serves.
+3. Choose a **JSON output mode** the server supports.
+4. Optionally enter the model's **Context length** in tokens, so XML and PDF
+   articles that are clearly too long fail before they are sent.
+5. Add an API key only if the server requires one.
 
 | JSON output mode | What the app requests |
 | --- | --- |
@@ -86,32 +92,51 @@ server and select an output mode it supports before saving.
 | Prompt only | JSON requested in the prompt, without a response-format parameter. |
 
 Every response is checked against the project's extraction schema, including
-responses from prompt-only mode. The app does not query a model catalog for
-these endpoints; the server must recognise the model ID you enter.
+responses from prompt-only mode. PDFs are converted locally to text with page
+numbers before being sent. Figures are not included. Scanned PDFs need OCR
+first; a PDF with no extractable text fails with an explanatory message.
 
-PDFs are converted locally to text with page numbers before being sent.
-Figures are not included. Scanned PDFs need OCR first; a PDF with no
-extractable text fails with an explanatory message.
+## Choosing an extractor for a project
 
-There is one shared OpenAI-compatible connection for the app. Changing it
-affects projects that use this provider. When switching servers, replace or
-remove the old saved key as well so it is not used with the new endpoint.
-The app's Gemini service tier and reasoning setting are not sent to this
-endpoint.
+On a project's **Run analysis** tab, choose an extractor from the
+**Extractor** list. The choice is saved for the project straight away, and
+the page shows that extractor's settings. **Edit extractor** opens it in
+Settings.
 
-## Run defaults
+**Run analysis** and **Retry** are available once the chosen extractor has a
+key, or needs none. The next run reprocesses every article if the extractor's
+provider or model changed, or any setting that changes how articles are
+sent: the reasoning effort or route to provider and fallbacks (OpenRouter),
+the service tier (Gemini), or the API base URL or JSON output mode
+(OpenAI-compatible). Changing the PDF parser does the same. Changing the
+context length doesn't: it only decides whether an article is sent, and
+articles it stopped are recorded as failed, so **Retry** picks them up.
 
-**Throughput and uploads** groups parallel articles, the delay between
-requests, request timeout, and maximum file size. **Extraction preferences**
-groups the PDF parser and reasoning setting. Click **Save settings** to save
-these controls. Provider settings are saved separately and remain unchanged.
+**Retry** with a different extractor re-extracts only the failed and
+needs-review articles. By default the project keeps its last run's settings,
+so the next **Run analysis** re-runs every article with the new extractor and
+all results come from one setup. To keep the other articles' results instead,
+change **Retrying with a different extractor** under
+[Files and parsing](#files-and-parsing).
 
-![Run defaults showing parallel articles, request delay and timeout, upload size, PDF parser, and reasoning effort](assets/screenshots/settings-run-defaults.png)
+Each run records the extractor it used, and a copy of its settings, in the
+project. Results and run logs name the extractor that produced each article,
+so editing or deleting an extractor later doesn't change what past results
+say about how they were made.
 
-Projects can save their own parallel-request and delay values on **Run
-analysis**. Model defaults may also prefill these fields. The PDF parser
-control does not change the OpenAI-compatible provider's local text input,
-and it does not apply to XML articles, which are always sent as text.
+## Files and parsing
+
+These settings apply to every project:
+
+- **Maximum file size**, in megabytes, applied when files are uploaded.
+- **PDF parser**, how PDF content is prepared before it reaches the model. It
+  does not change the OpenAI-compatible provider's local text input, and it
+  does not apply to XML articles, which are always sent as text.
+- **Retrying with a different extractor**: **Re-run every article on the next
+  run** (the default) or **Keep other articles' results**. See
+  [Choosing an extractor for a project](#choosing-an-extractor-for-a-project).
+
+Click **Save settings** to save them.
 
 ## Default extraction instructions
 
@@ -121,3 +146,35 @@ This view is read-only. Each project has an independent editable copy under
 [customising the extraction instructions](quickstart.md#3-check-the-extraction-instructions).
 
 ![Expanded read-only bundled extraction instructions in Settings](assets/screenshots/settings-extraction-instructions.png)
+
+## Upgrading from an earlier version
+
+The first time this version starts, it turns your existing provider setup into
+extractors, using the previous default model and settings. An extractor is
+created for:
+
+- **Gemini**, if it had a saved key, or a default model or service tier other
+  than the old defaults.
+- **OpenRouter**, if it had a saved key or a default model.
+- **OpenAI-compatible**, if it had a saved key or an API base URL.
+
+Any other setting changed on its own, such as OpenRouter reasoning effort
+without a saved key or model, isn't carried over. Saved keys move into the new
+key storage the first time a key is needed.
+
+!!! warning "The upgrade can't be undone"
+    The old settings are removed and old saved keys are deleted once they
+    have moved. If you go back to an earlier version, re-enter your keys and
+    default models there.
+
+Every saved key gets an extractor, so no old key is left behind. If its
+earlier settings are missing or unusable, for example an OpenAI-compatible key
+saved without an API base URL, the extractor keeps the key and shows the
+missing setting as **Not set**. Edit it to enter the model and, for
+OpenAI-compatible, the API base URL before running it. Delete the extractor
+if you no longer need that key. Projects whose last run used the
+same provider and model as one of these extractors select it automatically;
+others ask you to choose one.
+
+API keys are no longer read from environment variables such as
+`GEMINI_API_KEY`, or from `.env` files. Add each key to an extractor instead.

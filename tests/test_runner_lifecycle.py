@@ -1,13 +1,15 @@
+import json
+import os
 import tempfile
 import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from auto_zcurve import runner as r
 from auto_zcurve.artifacts import save_extractions, load_extractions, load_run_log
-from auto_zcurve.config import RunSettings, save_run_settings
+from auto_zcurve.config import AppSettings, RunSettings, load_run_settings, save_app_settings, save_run_settings
 from auto_zcurve.models import ModelOption
 from auto_zcurve.llm import ExtractionResult
 
@@ -23,6 +25,10 @@ class RunnerLifecycleTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name)
+        # Retries read the app settings; keep them out of the real config directory.
+        config = patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.project / 'config')})
+        config.start()
+        self.addCleanup(config.stop)
         (self.project / 'sources').mkdir()
         (self.project / 'extraction_schema.yml').write_text('effects: {claim: {type: string}}')
         self.source = self.project / 'sources/a.pdf'
@@ -125,6 +131,51 @@ class RunnerLifecycleTests(unittest.TestCase):
             self.run_project()
         process.assert_not_called()
 
+    def test_an_unfinished_reprocess_is_remembered_for_the_next_run(self):
+        save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
+        save_run_settings(self.project, RunSettings(primary_model='old'))
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths', side_effect=r.RunCancelled('cancelled')), self.assertRaises(r.RunCancelled):
+            self.run_project()
+        # The change is still pending, so the next run reprocesses the article again.
+        self.assertEqual(r.load_run_settings(self.project).primary_model, 'old')
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
+            self.run_project()
+        process.assert_called_once()
+        self.assertEqual(r.load_run_settings(self.project).primary_model, 'test')
+
+    def test_only_settings_a_provider_uses_trigger_reprocessing(self):
+        cases = [
+            # (provider, previous change, reprocess?)
+            ('gemini', {'reasoning_effort': 'low'}, False),
+            ('gemini', {'service_tier': 'priority'}, True),
+            ('openrouter', {'service_tier': 'priority'}, False),
+            ('openrouter', {'reasoning_effort': 'low'}, True),
+            ('openai_compatible', {'reasoning_effort': 'low', 'service_tier': 'priority'}, False),
+            ('openrouter', {'openrouter_provider': 'deepinfra'}, True),
+            ('openrouter', {'openrouter_allow_fallbacks': False}, True),
+            ('gemini', {'openrouter_provider': 'deepinfra', 'base_url': 'http://old/v1'}, False),
+            ('openai_compatible', {'base_url': 'http://old/v1'}, True),
+            ('openai_compatible', {'response_format': 'json_object'}, True),
+            ('openai_compatible', {'openrouter_provider': 'deepinfra'}, False),
+            # Runs from before extractors recorded no endpoint, so its absence is not a change.
+            ('openai_compatible', {'legacy': True}, False),
+        ]
+        current = {'openrouter_provider': '', 'openrouter_allow_fallbacks': True, 'base_url': 'http://new/v1', 'response_format': 'json_schema'}
+        for provider, previous, reprocess in cases:
+            with self.subTest(provider=provider, previous=previous):
+                save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'ok'}])
+                path = self.project / '.auto_zcurve/run_settings.json'
+                path.parent.mkdir(exist_ok=True)
+                if previous.get('legacy'):
+                    payload = {'provider': provider, 'primary_model': 'test'}
+                else:
+                    payload = {'extractor': {'provider': provider, 'model': 'test', **{**current, **previous}}}
+                path.write_text(json.dumps(payload))
+                settings = RunSettings(primary_model='test', provider=provider, request_delay_sec=0, **current)
+                with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths') as process:
+                    self.run_project(settings=settings)
+                self.assertEqual(process.called, reprocess)
+
     def test_retry_selected_failures_and_report_regeneration(self):
         for report in [self.project / 'output/report.html', self.project.parent / 'outside.html']:
             save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}, {'source_name': 'b.pdf', 'status': 'error'}])
@@ -171,6 +222,52 @@ class RunnerLifecycleTests(unittest.TestCase):
 
         with patch.object(r.threading, 'Thread', SynchronousThread), patch.object(r, '_process_one', side_effect=ValueError('bad schema')), self.assertRaisesRegex(ValueError, 'bad schema'):
             r._process_paths(paths=[self.source, self.source], workers=2, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=Mock(), cancellation_event=None)
+
+    def test_waiting_for_a_slow_source_keeps_polling(self):
+        # The first poll for a result times out, as it does when a source takes longer than 0.1 s.
+        timed_out = []
+        original_queue = r.queue.Queue
+        class SlowQueue(original_queue):
+            def get(self, block=True, timeout=None):
+                # Only the main loop's timed poll; workers take paths with get_nowait.
+                if timeout is not None and not timed_out:
+                    timed_out.append(True)
+                    raise r.queue.Empty
+                return super().get(block, timeout)
+
+        progress = Mock()
+        with patch.object(r.queue, 'Queue', SlowQueue), patch.object(r, '_process_one', return_value=ExtractionResult(self.source, 'a.pdf', 'ok')):
+            r._process_paths(paths=[self.source], workers=1, project_dir=self.project, settings=self.settings, api_key='secret', retry=False, run_id='run', model_option=self.option, progress=progress, cancellation_event=None)
+        self.assertEqual(timed_out, [True])
+        progress.advance.assert_called_once_with('ok: a.pdf')
+
+    def test_retry_with_changed_settings_reruns_everything_next_by_default(self):
+        save_run_settings(self.project, RunSettings(primary_model='old', request_delay_sec=0))
+        for setting, kwargs, recorded in [
+            (None, {}, 'old'),  # App default: re-run every article next time.
+            ('rerun_all', {}, 'old'),
+            ('keep_results', {}, 'test'),
+            ('keep_results', {'rerun_all_after_change': True}, 'old'),  # An explicit choice wins.
+        ]:
+            with self.subTest(setting=setting, kwargs=kwargs):
+                save_run_settings(self.project, RunSettings(primary_model='old', request_delay_sec=0))
+                if setting:
+                    save_app_settings(AppSettings(retry_extractor_change=setting))
+                save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
+                console = MagicMock()
+                with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths'):
+                    self.retry(console=console, **kwargs)
+                self.assertEqual(load_run_settings(self.project).primary_model, recorded)
+                message = ' '.join(str(call.args[0]) for call in console.info.call_args_list)
+                self.assertIn('re-run every article' if recorded == 'old' else 'keep their existing results', message)
+
+        # Unchanged settings are always recorded, and say nothing about a change.
+        save_run_settings(self.project, RunSettings(primary_model='test', request_delay_sec=0))
+        console = MagicMock()
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, '_process_paths'):
+            self.retry(console=console)
+        console.info.assert_not_called()
+        self.assertEqual(load_run_settings(self.project).primary_model, 'test')
 
     def test_retry_can_skip_report_after_processing(self):
         save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])

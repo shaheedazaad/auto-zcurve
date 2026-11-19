@@ -6,13 +6,15 @@ import tempfile
 import time
 import unittest
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from auto_zcurve.config import save_selected_extractor_id
 from auto_zcurve.credentials import CredentialStoreUnavailable
-from auto_zcurve.models import ModelOption
+from auto_zcurve.extractors import create_extractor, save_extractors, set_key_saved
 from auto_zcurve.projects import create_project
 from auto_zcurve.runner import RunCancelled, RunSummary
 from auto_zcurve.web import create_app
@@ -33,6 +35,15 @@ class WebAppTests(unittest.TestCase):
         self.config_environment.start()
         self.app = create_app(token=TOKEN, projects_root=self.root)
         self.client = TestClient(self.app, base_url="http://127.0.0.1")
+
+    def use_extractor(self, project, key=None, **values):
+        """Select an extractor for the project, with a key kept for this session only."""
+        extractor = create_extractor({"name": f"Extractor {project.project_id}", "provider": "gemini", "model": "gemini-3.5-flash", **values})
+        if key:
+            with patch("auto_zcurve.credentials._keyring_module", side_effect=CredentialStoreUnavailable("none")):
+                self.app.state.runtime.vault.set(extractor.id, key)
+        save_selected_extractor_id(project.path, extractor.id)
+        return extractor
 
     def tearDown(self):
         self.client.close()
@@ -204,47 +215,29 @@ class WebAppTests(unittest.TestCase):
             response.text,
         )
 
-    def test_settings_page_defaults_to_cloudflare_and_persists_app_defaults(self):
+    def test_settings_page_offers_extractors_and_persists_app_settings(self):
         page = self.client.get(f"/{TOKEN}/settings")
         self.assertEqual(page.status_code, 200)
         self.assertIn('data-page="settings"', page.text)
+        self.assertIn("No extractors yet", page.text)
+        self.assertIn('id="extractor-dialog"', page.text)
         self.assertIn('name="parallel_requests" type="number" min="1" max="32" value="1"', page.text)
-        self.assertIn('name="request_delay_sec" type="number" min="0" max="3600" value="30"', page.text)
+        self.assertIn('name="request_delay_sec" type="number" min="0" max="3600" value="0"', page.text)
         self.assertNotIn('value="cloudflare-ai"', page.text)
-        self.assertIn('id="key-dialog-title-gemini"', page.text)
-        self.assertIn('id="default-gemini-model"', page.text)
-        self.assertIn('id="default-openrouter-model"', page.text)
-        self.assertIn(f'name="default_gemini_model"', page.text)
+        for removed in ("default_gemini_model", "default_openrouter_model", "key-dialog-title-gemini"):
+            self.assertNotIn(removed, page.text)
 
         saved = self.client.post(
             f"/{TOKEN}/settings",
-            data={
-                "pdf_parser": "cloudflare-ai",
-                "parallel_requests": "4",
-                "request_delay_sec": "45",
-                "request_timeout_sec": "900",
-                "max_upload_size_mb": "64",
-                "reasoning_effort": "low",
-                "default_gemini_model": "gemini-3.1-flash-lite",
-                "default_openrouter_model": "openai/gpt-5",
-            },
+            data={"pdf_parser": "cloudflare-ai", "max_upload_size_mb": "64"},
             headers=ORIGIN,
         )
         self.assertEqual(saved.status_code, 200)
         self.assertEqual(saved.json()["pdf_parser"], "cloudflare-ai")
-        self.assertEqual(saved.json()["reasoning_effort"], "low")
-        self.assertEqual(saved.json()["request_delay_sec"], 45)
-        self.assertEqual(saved.json()["default_gemini_model"], "gemini-3.1-flash-lite")
-        self.assertEqual(saved.json()["default_openrouter_model"], "openai/gpt-5")
-
-        reopened = self.client.get(f"/{TOKEN}/settings")
-        self.assertIn('value="gemini-3.1-flash-lite"', reopened.text)
-        self.assertIn('value="openai/gpt-5"', reopened.text)
 
         project = create_project("Configured defaults", root=self.root)
         project_page = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
         self.assertIn("up to 64 MB each", project_page.text)
-        self.assertIn('value="gemini-3.1-flash-lite"', project_page.text)
 
     def test_settings_rejects_unknown_parser(self):
         response = self.client.post(
@@ -254,19 +247,6 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unsupported PDF parser", response.json()["detail"])
-
-    def test_settings_can_remove_saved_and_session_key(self):
-        self.app.state.runtime.session_api_keys["openrouter"] = "session-key"
-        with patch("auto_zcurve.web.delete_saved_api_key", return_value=True) as delete_key:
-            response = self.client.post(
-                f"/{TOKEN}/credentials/delete",
-                data={"provider": "openrouter"},
-                headers=ORIGIN,
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["deleted"])
-        self.assertIsNone(self.app.state.runtime.api_key("openrouter"))
-        delete_key.assert_called_once_with("openrouter")
 
     def test_invalid_upload_and_missing_project(self):
         project = create_project("Uploads", root=self.root)
@@ -300,15 +280,13 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("article-09.pdf", articles_panel)
         self.assertNotIn("article-10.pdf", articles_panel)
         self.assertIn("data-article-pagination", response.text)
-        self.assertIn('list="gemini-model-options"', response.text)
-        self.assertIn('value="gemini-3.6-flash"', response.text)
-        self.assertIn('value="gemini-3-flash-preview"', response.text)
-        self.assertIn("data-run-credential-prompt", response.text)
+        self.assertIn("data-no-extractors", response.text)
+        self.assertIn("data-run-credential-prompt hidden", response.text)
+        self.assertIn("data-run-actions hidden", response.text)
         self.assertNotIn("data-key-notice", response.text)
         self.assertIn('<span class="badge article-status" data-variant="outline">Ready</span>', response.text)
         self.assertIn('class="file-icon article-file-icon"', response.text)
         self.assertIn('id="project-actions-trigger"', response.text)
-        self.assertIn('value="gemini" data-key-ready="false" data-saved-key="', response.text)
         self.assertIn(
             f'/{TOKEN}/projects/{project.project_id}/schema',
             response.text,
@@ -373,7 +351,7 @@ class WebAppTests(unittest.TestCase):
             '<div class="alert" data-variant="warning" data-slow-extraction-warning hidden>\n'
             '            <h2>This paper is taking longer than a minute.</h2>\n'
             '            <section>\n'
-            '              <p>Flex tier can queue requests to reduce cost.',
+            '              <p>If this is a Gemini extractor, its flex tier can queue requests to reduce cost.',
             response.text,
         )
 
@@ -396,28 +374,51 @@ class WebAppTests(unittest.TestCase):
     def test_project_credential_prompt_links_to_central_settings(self):
         project = create_project("Provider credentials", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-        self.app.state.runtime.session_api_keys["openrouter"] = "openrouter-key"
+        extractor = self.use_extractor(project)
 
         response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Add a Gemini API key to run", response.text)
-        self.assertIn(f'href="/{TOKEN}/settings">Enter API key in Settings</a>', response.text)
+        self.assertIn("Add an API key to run", response.text)
+        self.assertIn(f'href="/{TOKEN}/settings#extractor-{extractor.id}" data-setup-extractor-link>Add a key in Settings</a>', response.text)
+        self.assertNotIn("data-run-credential-prompt hidden", response.text)
         self.assertIn("data-run-actions hidden", response.text)
-        self.assertIn('value="openrouter" data-key-ready="true"', response.text)
-        self.assertIn("syncProviderCredentialState", (Path("auto_zcurve/static/app.js")).read_text(encoding="utf-8"))
+        self.assertIn('data-runnable="false"', response.text)
+
+    def test_extractor_without_a_model_asks_for_one_before_a_key(self):
+        project = create_project("No model", root=self.root)
+        extractor = self.use_extractor(project)
+        save_extractors([replace(extractor, model="")])
+
+        response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
+
+        self.assertIn("Choose a model to run", response.text)
+        self.assertNotIn("data-run-model-prompt hidden", response.text)
+        self.assertIn("data-run-credential-prompt hidden", response.text)
+        self.assertIn('data-needs="model" data-runnable="false"', response.text)
+
+    def test_a_session_only_key_is_not_called_saved(self):
+        project = create_project("Session key", root=self.root)
+        self.use_extractor(project, key="session-key")
+
+        project_page = self.client.get(f"/{TOKEN}/projects/{project.project_id}").text
+        settings_page = self.client.get(f"/{TOKEN}/settings").text
+
+        self.assertIn("<dt>API key</dt><dd>This session only</dd>", project_page)
+        self.assertIn('<span class="badge" data-variant="outline">Key for this session</span>', settings_page)
 
     def test_project_with_saved_key_shows_run_actions_without_unlocking(self):
         project = create_project("Run panel with saved key", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-        with patch("auto_zcurve.web.saved_api_key_configured", return_value=True):
+        extractor = self.use_extractor(project)
+        set_key_saved(extractor.id, True)
+        with patch("auto_zcurve.credentials._keyring_module", side_effect=AssertionError("Keychain must not be read")):
             response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("data-run-actions", response.text)
         self.assertNotIn("data-run-actions hidden", response.text)
-        self.assertNotIn("Unlock", response.text)
-        self.assertNotIn('class="card key-notice"', response.text)
+        self.assertIn("<dt>API key</dt><dd>Saved</dd>", response.text)
 
     def test_partial_project_offers_to_continue_remaining_pdfs(self):
         project = create_project("Resume extraction", root=self.root)
@@ -427,7 +428,7 @@ class WebAppTests(unittest.TestCase):
             '[{"source_name":"finished.pdf","status":"ok","effects":1}]\n',
             encoding="utf-8",
         )
-        self.app.state.runtime.session_api_key = "session-key"
+        self.use_extractor(project, key="session-key")
 
         response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
 
@@ -493,183 +494,10 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(rejected.status_code, 400)
 
-    def test_project_template_tolerates_hot_reload_without_saved_key_status(self):
-        project = create_project("Hot reload", root=self.root)
-
-        from auto_zcurve import web as web_module
-
-        original_context = web_module._project_context
-
-        def legacy_context(request, runtime, managed_project):
-            context = original_context(request, runtime, managed_project)
-            context.pop("provider_saved_key_status")
-            return context
-
-        with patch("auto_zcurve.web._project_context", side_effect=legacy_context):
-            response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('value="openrouter" data-key-ready="false" data-saved-key="false"', response.text)
-
-    def test_session_key_fallback_does_not_write_secret(self):
-        with patch(
-            "auto_zcurve.web.save_api_key",
-            side_effect=CredentialStoreUnavailable("No secure store"),
-        ):
-            response = self.client.post(
-                f"/{TOKEN}/credentials",
-                data={"api_key": "top-secret-key", "remember": "yes"},
-                headers=ORIGIN,
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["session_only"])
-        self.assertEqual(self.app.state.runtime.session_api_key, "top-secret-key")
-        for path in self.root.rglob("*"):
-            if path.is_file():
-                self.assertNotIn(b"top-secret-key", path.read_bytes())
-
-    def test_settings_page_does_not_read_saved_api_key(self):
-        with patch("auto_zcurve.web.saved_api_key_configured", return_value=True):
-            with patch(
-                "auto_zcurve.web.load_saved_api_key",
-                side_effect=AssertionError("Keychain must not be read while rendering"),
-            ):
-                response = self.client.get(f"/{TOKEN}/settings")
-                project = create_project("No passive Keychain access", root=self.root)
-                project_response = self.client.get(f"/{TOKEN}/projects/{project.project_id}")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(project_response.status_code, 200)
-        self.assertIn(">Unlock<", response.text)
-        self.assertIn("Keys are loaded when you unlock them or start an action that needs them", response.text)
-        self.assertNotIn('placeholder="••••••••••••"', response.text)
-
-    def test_settings_explains_when_a_provider_has_no_saved_key(self):
-        with patch("auto_zcurve.web.saved_api_key_configured", return_value=False):
-            response = self.client.get(f"/{TOKEN}/settings")
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn(">Unlock<", response.text)
-        self.assertIn("No key stored", response.text)
-        self.assertIn('data-open-key-dialog="gemini"', response.text)
-
-    def test_saved_api_key_is_read_only_after_explicit_unlock(self):
-        with patch("auto_zcurve.web.load_saved_api_key", return_value="saved-secret-key") as load_key:
-            response = self.client.post(f"/{TOKEN}/credentials/load", headers=ORIGIN)
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["loaded"])
-        self.assertEqual(self.app.state.runtime.session_api_key, "saved-secret-key")
-        load_key.assert_called_once_with()
-        self.assertNotIn("saved-secret-key", response.text)
-
-    def test_run_auto_loads_saved_key_without_explicit_unlock(self):
-        project = create_project("Auto unlock on run", root=self.root)
-        (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-
-        with (
-            patch("auto_zcurve.web.saved_api_key_configured", return_value=True),
-            patch("auto_zcurve.web.load_saved_api_key", return_value="saved-secret-key") as load_key,
-            patch("auto_zcurve.web.run_preflight"),
-            patch("auto_zcurve.web.run_project"),
-        ):
-            response = self.client.post(
-                f"/{TOKEN}/projects/{project.project_id}/run",
-                data={"model": "gemini-3.5-flash"},
-                headers=ORIGIN,
-            )
-        self.assertEqual(response.status_code, 202)
-        load_key.assert_called_once()
-        self.assertEqual(self.app.state.runtime.session_api_key, "saved-secret-key")
-
-    def test_run_without_saved_or_session_key_still_fails(self):
-        project = create_project("No key anywhere", root=self.root)
-        (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-
-        with patch("auto_zcurve.web.saved_api_key_configured", return_value=False):
-            response = self.client.post(
-                f"/{TOKEN}/projects/{project.project_id}/run",
-                data={"model": "gemini-3.5-flash"},
-                headers=ORIGIN,
-            )
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("API key is required", response.json()["detail"])
-
-    def test_openrouter_credentials_and_filtered_model_catalog_are_separate(self):
-        response = self.client.post(
-            f"/{TOKEN}/credentials",
-            data={"provider": "openrouter", "api_key": "openrouter-session-key"},
-            headers=ORIGIN,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["provider"], "openrouter")
-        self.assertEqual(self.app.state.runtime.api_key("openrouter"), "openrouter-session-key")
-        self.assertIsNone(self.app.state.runtime.api_key("gemini"))
-
-        with patch(
-            "auto_zcurve.web.list_live_models",
-            return_value=[
-                ModelOption(
-                    "deepseek/model",
-                    "DeepSeek Model",
-                    provider="openrouter",
-                    input_mode="local_markdown",
-                    context_length=163840,
-                )
-            ],
-        ) as live_models:
-            catalog = self.client.get(f"/{TOKEN}/api/models/openrouter")
-        self.assertEqual(catalog.status_code, 200)
-        self.assertEqual(catalog.json()[0]["id"], "deepseek/model")
-        self.assertEqual(catalog.json()[0]["input_mode"], "cloudflare_pdf")
-        self.assertEqual(catalog.json()[0]["context_length"], 163840)
-        live_models.assert_called_once_with("openrouter-session-key", "openrouter")
-
-    def test_retry_uses_the_provider_and_model_currently_selected_in_the_page(self):
-        project = create_project("Retry with replacement model", root=self.root)
-        self.app.state.runtime.session_api_keys["openrouter"] = "openrouter-session-key"
-
-        with (
-            patch.object(self.app.state.runtime, "start_job") as start_job,
-            patch(
-                "auto_zcurve.web.validate_model_option",
-                return_value=ModelOption(
-                    "vendor/compatible", "Compatible", provider="openrouter", input_mode="cloudflare_pdf"
-                ),
-            ),
-        ):
-            start_job.return_value.status = "queued"
-            response = self.client.post(
-                f"/{TOKEN}/projects/{project.project_id}/retry",
-                data={
-                    "provider": "openrouter",
-                    "model": "vendor/compatible",
-                    "parallel_requests": "3",
-                },
-                headers=ORIGIN,
-            )
-
-        self.assertEqual(response.status_code, 202)
-        settings = start_job.call_args.args[2]
-        self.assertEqual(settings.provider, "openrouter")
-        self.assertEqual(settings.primary_model, "vendor/compatible")
-        self.assertEqual(settings.parallel_requests, 3)
-        self.assertEqual(settings.pdf_parser, "native")
-
-        with patch.object(self.app.state.runtime, "start_job") as start_job:
-            rejected = self.client.post(
-                f"/{TOKEN}/projects/{project.project_id}/retry",
-                data={
-                    "provider": "openrouter",
-                    "model": "google/gemini-3.7-flash:batch",
-                },
-                headers=ORIGIN,
-            )
-        self.assertEqual(rejected.status_code, 409)
-        self.assertIn("batch-only models", rejected.json()["detail"])
-        start_job.assert_not_called()
-
     def test_run_progress_summary_and_results_download(self):
         project = create_project("Analysis", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
-        self.app.state.runtime.session_api_key = "session-key"
+        self.use_extractor(project, key="session-key", model="models/gemini-research-preview")
 
         def fake_run(**kwargs):
             output = kwargs["project_dir"] / "output"
@@ -700,14 +528,12 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
                 progress.advance("ok: study.pdf")
             return RunSummary(output / "report.html", 1, 0, 3, 2, 10, 4, 14)
 
-        custom_model = "models/gemini-research-preview"
         with (
             patch("auto_zcurve.web.run_preflight"),
             patch("auto_zcurve.web.run_project", side_effect=fake_run) as run_mock,
         ):
             response = self.client.post(
                 f"/{TOKEN}/projects/{project.project_id}/run",
-                data={"model": custom_model, "parallel_requests": "2"},
                 headers=ORIGIN,
             )
             self.assertEqual(response.status_code, 202)
@@ -894,7 +720,7 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
 
         self.assertEqual(payload["job"]["status"], "complete")
         regenerate.assert_called_once()
-        self.assertIsNone(self.app.state.runtime.session_api_key)
+        self.assertEqual(self.app.state.runtime.secrets(), [])
         self.assertIn("Regenerate report", self.client.get(
             f"/{TOKEN}/projects/{project.project_id}"
         ).text)
@@ -903,7 +729,7 @@ Fitted using values (ODR = 0.89, 95% CI [0.80, 0.95]).
         project = create_project("Cancellation", root=self.root)
         (project.path / "sources" / "study.pdf").write_bytes(b"%PDF-fixture")
         secret = "session-key-that-must-not-leak"
-        self.app.state.runtime.session_api_key = secret
+        self.use_extractor(project, key=secret)
 
         def wait_for_cancel(**kwargs):
             deadline = time.monotonic() + 2

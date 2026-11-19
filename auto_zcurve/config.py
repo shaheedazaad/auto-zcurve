@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from .credentials import credentials_dir
-from .models import DEFAULT_MODEL, normalize_model_name
 from .providers import normalize_provider
 
 
@@ -15,6 +15,18 @@ PDF_PARSER_LABELS = {
     "cloudflare-ai": "Cloudflare AI",
     "native": "Model-native PDF",
 }
+# What a retry does when its extractor settings differ from the project's last run.
+RETRY_EXTRACTOR_CHANGE_LABELS = {
+    "rerun_all": "Re-run every article on the next run",
+    "keep_results": "Keep other articles' results",
+}
+
+
+def normalize_retry_extractor_change(value: object) -> str:
+    choice = str(value or "rerun_all").strip().lower()
+    return choice if choice in RETRY_EXTRACTOR_CHANGE_LABELS else "rerun_all"
+
+
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 REASONING_EFFORT_LABELS = {
     "none": "Off",
@@ -63,40 +75,19 @@ def normalize_service_tier(value: object) -> str:
     return tier
 
 
-def normalize_default_gemini_model(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return DEFAULT_MODEL
-    try:
-        return normalize_model_name(text, "gemini")
-    except ValueError:
-        return DEFAULT_MODEL
-
-
-def normalize_default_openrouter_model(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return normalize_model_name(text, "openrouter")
-
-
 @dataclass(frozen=True)
 class AppSettings:
+    """Application-wide settings that are not about a model; those belong to extractors."""
+
     pdf_parser: str = DEFAULTS["pdf_parser"]
-    reasoning_effort: str = DEFAULTS["reasoning_effort"]
-    service_tier: str = DEFAULTS["service_tier"]
-    request_timeout_sec: int = DEFAULTS["request_timeout_sec"]
-    parallel_requests: int = DEFAULTS["parallel_requests"]
-    request_delay_sec: int = DEFAULTS["request_delay_sec"]
     max_upload_size_mb: int = DEFAULTS["max_upload_size_mb"]
-    default_gemini_model: str = DEFAULT_MODEL
-    default_openrouter_model: str = ""
-    openai_base_url: str = ""
-    openai_response_format: str = "json_schema"
+    retry_extractor_change: str = "rerun_all"
 
 
 @dataclass
 class RunSettings:
+    """The concrete settings one run or retry uses, taken from its extractor."""
+
     primary_model: str
     request_timeout_sec: int = DEFAULTS["request_timeout_sec"]
     parallel_requests: int = DEFAULTS["parallel_requests"]
@@ -108,6 +99,12 @@ class RunSettings:
     service_tier: str = DEFAULTS["service_tier"]
     openrouter_provider: str = ""
     openrouter_allow_fallbacks: bool = True
+    base_url: str = ""
+    response_format: str = "json_schema"
+    context_length: int | None = None
+    extractor_id: str = ""
+    # Every non-secret setting of the extractor when the run started.
+    extractor: dict | None = None
 
 
 OPENROUTER_PROVIDER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)?$")
@@ -146,25 +143,11 @@ def load_app_settings() -> AppSettings:
             return AppSettings()
         return AppSettings(
             pdf_parser=normalize_pdf_parser(raw.get("pdf_parser")),
-            reasoning_effort=normalize_reasoning_effort(raw.get("reasoning_effort")),
-            service_tier=normalize_service_tier(raw.get("service_tier")),
-            request_timeout_sec=max(
-                30,
-                min(int(raw.get("request_timeout_sec") or DEFAULTS["request_timeout_sec"]), 3600),
-            ),
-            parallel_requests=max(
-                1,
-                min(int(raw.get("parallel_requests") or DEFAULTS["parallel_requests"]), 32),
-            ),
-            request_delay_sec=max(0, min(int(raw.get("request_delay_sec") if raw.get("request_delay_sec") is not None else DEFAULTS["request_delay_sec"]), 3600)),
             max_upload_size_mb=max(
                 1,
                 min(int(raw.get("max_upload_size_mb") or DEFAULTS["max_upload_size_mb"]), 512),
             ),
-            default_gemini_model=normalize_default_gemini_model(raw.get("default_gemini_model")),
-            default_openrouter_model=normalize_default_openrouter_model(raw.get("default_openrouter_model")),
-            openai_base_url=normalize_endpoint_url(str(raw.get("openai_base_url") or "")),
-            openai_response_format=normalize_response_format(raw.get("openai_response_format", "json_schema")),
+            retry_extractor_change=normalize_retry_extractor_change(raw.get("retry_extractor_change")),
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return AppSettings()
@@ -173,16 +156,8 @@ def load_app_settings() -> AppSettings:
 def save_app_settings(settings: AppSettings) -> None:
     normalized = AppSettings(
         pdf_parser=normalize_pdf_parser(settings.pdf_parser),
-        reasoning_effort=normalize_reasoning_effort(settings.reasoning_effort),
-        service_tier=normalize_service_tier(settings.service_tier),
-        request_timeout_sec=max(30, min(int(settings.request_timeout_sec), 3600)),
-        parallel_requests=max(1, min(int(settings.parallel_requests), 32)),
-        request_delay_sec=max(0, min(int(settings.request_delay_sec), 3600)),
         max_upload_size_mb=max(1, min(int(settings.max_upload_size_mb), 512)),
-        default_gemini_model=normalize_default_gemini_model(settings.default_gemini_model),
-        default_openrouter_model=normalize_default_openrouter_model(settings.default_openrouter_model),
-        openai_base_url=normalize_endpoint_url(settings.openai_base_url),
-        openai_response_format=normalize_response_format(settings.openai_response_format),
+        retry_extractor_change=normalize_retry_extractor_change(settings.retry_extractor_change),
     )
     path = app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,16 +167,8 @@ def save_app_settings(settings: AppSettings) -> None:
             json.dumps(
                 {
                     "pdf_parser": normalized.pdf_parser,
-                    "reasoning_effort": normalized.reasoning_effort,
-                    "service_tier": normalized.service_tier,
-                    "request_timeout_sec": normalized.request_timeout_sec,
-                    "parallel_requests": normalized.parallel_requests,
-                    "request_delay_sec": normalized.request_delay_sec,
                     "max_upload_size_mb": normalized.max_upload_size_mb,
-                    "default_gemini_model": normalized.default_gemini_model,
-                    "default_openrouter_model": normalized.default_openrouter_model,
-                    "openai_base_url": normalized.openai_base_url,
-                    "openai_response_format": normalized.openai_response_format,
+                    "retry_extractor_change": normalized.retry_extractor_change,
                 },
                 indent=2,
             )
@@ -260,49 +227,110 @@ def remove_legacy_effect_definition(project_dir: Path) -> None:
         return
 
 
+def _bounded_int(value: object, default: int, low: int, high: int) -> int:
+    try:
+        number = int(value) if value is not None and value != "" else default
+    except (TypeError, ValueError):
+        number = default
+    return max(low, min(number, high))
+
+
 def load_run_settings(project_dir: Path) -> RunSettings | None:
+    """Read the settings of the project's last run or retry.
+
+    Current files hold an extractor snapshot; files from before extractors
+    hold flat provider and model fields and are still read. An unreadable or
+    corrupt file counts as no previous run, so the next run or retry can
+    replace it.
+    """
     path = settings_path(project_dir)
     if not path.exists():
         return None
 
-    with path.open("r", encoding="utf-8") as handle:
-        raw = json.load(handle)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
 
-    primary_model = str(raw.get("primary_model") or "").strip()
+    snapshot = raw.get("extractor") if isinstance(raw.get("extractor"), dict) else None
+    source = snapshot if snapshot is not None else raw
+    primary_model = str(source.get("model" if snapshot is not None else "primary_model") or "").strip()
     if not primary_model:
         return None
+    context_length = source.get("context_length")
 
     return RunSettings(
         primary_model=primary_model,
-        provider=normalize_provider(raw.get("provider") or "gemini"),
-        request_timeout_sec=int(raw.get("request_timeout_sec") or DEFAULTS["request_timeout_sec"]),
-        parallel_requests=int(raw.get("parallel_requests") or DEFAULTS["parallel_requests"]),
-        request_delay_sec=max(0, min(int(raw.get("request_delay_sec") if raw.get("request_delay_sec") is not None else DEFAULTS["request_delay_sec"]), 3600)),
-        max_upload_size_mb=int(raw.get("max_upload_size_mb") or DEFAULTS["max_upload_size_mb"]),
+        provider=normalize_provider(source.get("provider") or "gemini"),
+        request_timeout_sec=_bounded_int(source.get("request_timeout_sec"), DEFAULTS["request_timeout_sec"], 30, 3600),
+        parallel_requests=_bounded_int(source.get("parallel_requests"), DEFAULTS["parallel_requests"], 1, 32),
+        request_delay_sec=_bounded_int(source.get("request_delay_sec"), DEFAULTS["request_delay_sec"], 0, 3600),
+        max_upload_size_mb=_bounded_int(raw.get("max_upload_size_mb"), DEFAULTS["max_upload_size_mb"], 1, 512),
         pdf_parser=normalize_pdf_parser(raw.get("pdf_parser")),
-        reasoning_effort=normalize_reasoning_effort(raw.get("reasoning_effort")),
-        service_tier=normalize_service_tier(raw.get("service_tier")),
-        openrouter_provider=normalize_openrouter_provider(raw.get("openrouter_provider")),
-        openrouter_allow_fallbacks=raw.get("openrouter_allow_fallbacks", True) is not False,
+        reasoning_effort=normalize_reasoning_effort(source.get("reasoning_effort")),
+        service_tier=normalize_service_tier(source.get("service_tier")),
+        openrouter_provider=normalize_openrouter_provider(source.get("openrouter_provider")),
+        openrouter_allow_fallbacks=source.get("openrouter_allow_fallbacks", True) is not False,
+        base_url=str(source.get("base_url") or ""),
+        response_format=str(source.get("response_format") or "json_schema"),
+        context_length=int(context_length) if isinstance(context_length, int) and context_length > 0 else None,
+        extractor_id=str(raw.get("extractor_id") or ""),
+        extractor=snapshot,
     )
 
 
 def save_run_settings(project_dir: Path, settings: RunSettings) -> None:
+    """Record the settings a run used: its extractor's id and a snapshot of that extractor."""
     path = settings_path(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = dict(settings.extractor or {})
+    if settings.extractor is None:
+        # Settings built without an extractor snapshot still record what the
+        # run used, so reading them back never substitutes defaults.
+        snapshot.update({
+            name: getattr(settings, name)
+            for name in (
+                "request_timeout_sec", "parallel_requests", "request_delay_sec", "reasoning_effort",
+                "service_tier", "openrouter_provider", "openrouter_allow_fallbacks", "base_url",
+                "response_format", "context_length",
+            )
+        })
+    snapshot.update(provider=normalize_provider(settings.provider), model=settings.primary_model)
     payload = {
-        "primary_model": settings.primary_model,
-        "provider": normalize_provider(settings.provider),
-        "request_timeout_sec": settings.request_timeout_sec,
-        "parallel_requests": settings.parallel_requests,
-        "request_delay_sec": settings.request_delay_sec,
-        "max_upload_size_mb": settings.max_upload_size_mb,
+        "extractor_id": settings.extractor_id,
+        "extractor": snapshot,
         "pdf_parser": normalize_pdf_parser(settings.pdf_parser),
-        "reasoning_effort": normalize_reasoning_effort(settings.reasoning_effort),
-        "service_tier": normalize_service_tier(settings.service_tier),
-        "openrouter_provider": normalize_openrouter_provider(settings.openrouter_provider),
-        "openrouter_allow_fallbacks": bool(settings.openrouter_allow_fallbacks),
+        "max_upload_size_mb": settings.max_upload_size_mb,
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")
+
+
+def selected_extractor_path(project_dir: Path) -> Path:
+    return project_dir / ".auto_zcurve" / "extractor.json"
+
+
+def load_selected_extractor_id(project_dir: Path) -> str:
+    """The extractor chosen for the project's next run, or "" when none is chosen."""
+    try:
+        raw = json.loads(selected_extractor_path(project_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(raw.get("extractor_id") or "") if isinstance(raw, dict) else ""
+
+
+def save_selected_extractor_id(project_dir: Path, extractor_id: str) -> None:
+    path = selected_extractor_path(project_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Replace atomically so an interrupted write never leaves an empty file. A
+    # unique name, so concurrent requests can't share the temporary file.
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps({"extractor_id": extractor_id}) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)

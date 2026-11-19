@@ -14,20 +14,21 @@ The CLI accepts an arbitrary project directory containing a `sources/` folder
 of PDFs:
 
 ```sh
-auto-zcurve run /path/to/project --yes --model gemini-3.6-flash
+auto-zcurve extractors
+auto-zcurve run /path/to/project --yes --extractor "Lab Gemini"
 auto-zcurve retry /path/to/project --yes
 ```
 
-Gemini is the default provider. OpenRouter is an experimental backup and
-requires an exact manually supplied model ID that supports PDF/file input and
-structured output.
+Runs use an extractor created in the browser app under **Settings**. The
+extractor sets the provider, model, API key, and request settings;
+`auto-zcurve extractors` lists them. Without `--extractor`, a project uses
+the extractor chosen for it in the browser app or used by its last run. API keys come only from the extractor's saved
+key, never from environment variables or `.env` files.
 
 Common options include:
 
 ```text
---api-key KEY       use a session key without saving it
---provider NAME     select gemini or openrouter (experimental)
---parallel N        process N PDFs concurrently
+--extractor NAME    run with this extractor (name, ignoring case)
 --force             reprocess successful PDFs (run only)
 --skip-report       skip R/Quarto report generation
 --source PATH       retry one source path (retry only; repeatable)

@@ -74,49 +74,37 @@ In the app:
 2. Add several PDF or XML articles by dragging or choosing files. XML is sent
    to the model as UTF-8 text, without parsing.
 3. Review or customize the project’s extraction instructions and extraction schema.
-4. Open **Settings**, expand a provider to configure its connection and default model, and set run defaults.
-5. Select a Gemini model for the project.
+4. Open **Settings** and add an extractor: a named setup with a provider, model, API key, and request settings.
+5. Choose the extractor for the project.
 6. Run the analysis and follow its live progress.
 7. Review the summary, view or regenerate the report, retry failed articles, open the project
    folder, or download a ZIP of the result files.
 
-Gemini accepts an exact Gemini API model ID and receives the original PDF. The
-Gemini integration never falls back to prompt-only JSON or response healing.
-OpenAI-compatible endpoints offer explicit JSON schema, JSON object, and
-prompt-only modes; all responses are validated against the project schema.
+### Extractors
 
-### Model allowlist
+An extractor is a saved setup for reaching a model: provider, model, endpoint,
+API key, and request settings such as parallel articles and request delay.
+Create as many as you like under **Settings → Extractors**, including several
+for the same provider with different keys. A project chooses one extractor,
+shows its settings read-only, and runs and retries with exactly those
+settings. Each run records the extractor and a copy of its settings.
 
-The root [`models.yml`](models.yml) controls which Gemini models appear and are
-accepted when a run starts:
+- **Gemini** accepts any Gemini API model ID available to the key and
+  receives the original PDF. It never falls back to prompt-only JSON or
+  response healing.
+- **OpenRouter** is an experimental backup provider. Enter an exact model ID;
+  the app checks live support for file input and structured output. Quality,
+  latency, and reliability can vary by model and provider route.
+- **OpenAI-compatible** Chat Completions endpoints take an API base URL, a
+  JSON output mode (explicit JSON schema, JSON object, or prompt only), and
+  an optional key. This provider sends locally extracted PDF text with page
+  numbers; scanned pages need OCR and figures are not sent.
 
-```yaml
-models:
-  gemini:
-    - id: gemini-3.6-flash
-    - id: gemma-4-31b-it
-    - id: gemma-4-26b-a4b-it
-```
-
-Changes are read when the model catalog is requested and again when a run starts,
-so editing the file does not require rebuilding the application. Removing
-`models.yml` restores live-catalog behavior for backward compatibility.
-
-OpenRouter is available as an experimental backup provider. It is intentionally
-not listed in `models.yml`: enter an exact OpenRouter model ID manually and the
-app validates live support for PDF/file input and structured output before a run.
-Quality, latency, and reliability can vary by model and provider route.
-
-OpenAI-compatible Chat Completions endpoints can be configured under
-**Settings → Provider connections → OpenAI-compatible**. Set the API base URL
-and JSON output mode, optionally add a key, and enter the exact model ID in
-the project. This provider sends locally extracted PDF text with page numbers;
-scanned pages need OCR and figures are not sent. See the
+All responses are validated against the project schema. See the
 [settings guide](docs/settings.md) for details.
 
 Projects have left-hand workflow navigation. The project library supports
-name search, sorting, and pagination. Settings has its own sidebar, with
-expandable provider sections and independent save buttons.
+name search, sorting, and pagination. Settings has its own sidebar.
 
 Projects are stored in the normal per-user application-data directory:
 
@@ -128,17 +116,21 @@ Duplicate filenames are preserved with a numbered suffix.
 
 ## API key privacy
 
-Create a Gemini key in [Google AI Studio](https://aistudio.google.com/app/apikey).
-OpenRouter projects use an `OPENROUTER_API_KEY` (or its separately saved
-credential) instead.
-When “Remember securely” is selected, auto-zcurve uses the operating system’s
-credential store through Python Keyring. If Linux has no usable secret-service
-backend, the app clearly marks the key as session-only. It never falls back to
-a plaintext file. Saved keys are not read
-automatically when the app starts. Unlock them in Settings or let the app
-load the selected provider's key when you run, retry, or validate an OpenRouter model. On macOS, the authorization
-dialog may identify auto-zcurve's bundled runtime as “Python,” sometimes with
-a version number.
+Create a Gemini key in [Google AI Studio](https://aistudio.google.com/app/apikey)
+and add it to an extractor. Every extractor's key is kept in one item in the
+operating system's credential store, through Python Keyring. That item is
+first read when a key is needed (a run, a retry, saving or removing an
+extractor's key, or loading its model list). After a successful read it isn't
+read again that app session; a failed read is retried the next time a key is
+needed. It is written when a key is saved, removed, or migrated. Starting the app or opening
+a page never reads it. If no usable credential store is available, or it
+refuses a write, keys are kept in memory for the session only. If the store is
+locked or unreadable, the key is not saved. The app never falls back to a
+plaintext file.
+On macOS, the authorization dialog may identify auto-zcurve's bundled runtime
+as “Python,” sometimes with a version number.
+
+API keys are never read from environment variables or `.env` files.
 
 API keys are not included in project files, logs, URLs, result downloads, or
 reports.

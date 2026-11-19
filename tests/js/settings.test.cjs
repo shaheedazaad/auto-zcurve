@@ -34,92 +34,365 @@ test('invalid settings do not submit', async () => {
   } finally { page.close(); }
 });
 
-test('credential saving reports secure, session-only, warning, and failure outcomes', async () => {
-  for (const [options, expected, state] of [
-    [{ response: { saved: true } }, 'Saved securely.', 'u-success'],
-    [{ response: { saved: false } }, 'Key is ready for this session.', 'u-success'],
-    [{ response: { warning: 'Keychain locked' } }, 'Keychain locked', 'u-warning'],
-    [{ ok: false, response: { detail: 'Invalid key' } }, 'Invalid key', 'u-error'],
-  ]) {
-    const page = mount(keyForm, options);
-    try {
-      await page.submit('form');
-      const message = page.document.querySelector('.form-message');
-      assert.equal(message.textContent, expected);
-      assert.equal(message.classList.contains(state), true);
-      assert.equal(message.classList.contains('layout-class'), true);
-      assert.equal(page.document.querySelector('[name=api_key]').value, options.ok === false ? 'secret' : '');
-      assert.equal(page.timers.length, options.ok === false ? 0 : 1);
-    } finally { page.close(); }
-  }
-});
+const extractor = { id: 'abc', name: 'Router', provider: 'openrouter', has_key: true, requires_key: true,
+  settings: { name: 'Router', provider: 'openrouter', model: 'vendor/model', reasoning_effort: 'low', openrouter_provider: 'deepinfra/fp8', openrouter_allow_fallbacks: false, parallel_requests: 2, request_delay_sec: 0, request_timeout_sec: 600 } };
+const local = { ...extractor, id: 'loc', name: 'Local', provider: 'openai_compatible', has_key: false, requires_key: false,
+  settings: { name: 'Local', provider: 'openai_compatible', model: 'q', base_url: 'http://h/v1', response_format: 'none', context_length: null } };
+const row = item => `<div class="row" id="extractor-${item.id}" data-extractor-row data-extractor='${JSON.stringify(item)}'><button data-edit-extractor>Edit</button>
+<form class="js-extractor-action" action="/token/extractors/${item.id}/duplicate"></form>
+<form class="js-delete-extractor" action="/token/extractors/${item.id}/delete" data-extractor-id="${item.id}" data-extractor-name="${item.name}"></form></div>`;
+const extractorPage = `<nav class="settings-nav"><a href="#extractors">Extractors</a><a href="#files-and-parsing">Files</a></nav>
+<button data-new-extractor>Add</button>${row(extractor)}${row(local)}<p class="form-message keep" data-extractor-list-message></p>
+<dialog id="extractor-dialog"><form class="js-extractor-form" action="/token/extractors" data-create-action="/token/extractors">
+<h2 data-extractor-dialog-title></h2>
+<input name="name" required><select name="provider"><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="openai_compatible">Endpoint</option></select>
+<p data-provider-locked hidden></p>
+<input name="model" required><datalist id="extractor-model-options"></datalist><p data-model-hint></p><button type="button" data-load-models hidden>Load</button>
+<div data-provider-fields="openrouter"><select name="reasoning_effort"><option value="high">High</option><option value="low">Low</option></select>
+<input name="openrouter_provider"><datalist id="extractor-openrouter-endpoints"></datalist><p data-openrouter-provider-status></p>
+<select name="openrouter_allow_fallbacks"><option value="allow">Allow</option><option value="deny">Deny</option></select></div>
+<div data-provider-fields="gemini"><select name="service_tier"><option value="flex">Flex</option></select></div>
+<div data-provider-fields="openai_compatible"><input name="base_url" required><select name="response_format"><option value="json_schema">Schema</option><option value="none">None</option></select><input name="context_length"></div>
+<input name="parallel_requests" value="1"><input name="request_delay_sec" value="0"><input name="request_timeout_sec" value="600">
+<label data-key-label></label><input name="api_key"><div data-key-actions hidden><span data-key-badge data-variant="success">Key saved</span><button type="button" data-remove-key>Remove</button></div>
+<p class="form-message"></p><button type="button" data-close-extractor-dialog>Cancel</button><button type="submit">Save</button></form></dialog>`;
+const json = (body, ok = true) => ({ ok, json: async () => body });
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const field = (page, name) => page.document.querySelector('.js-extractor-form').elements.namedItem(name);
+const dialogMessage = page => page.document.querySelector('#extractor-dialog .form-message');
 
-test('key dialogs open, focus the input, and close', () => {
-  const page = mount('<button data-open-key-dialog="gemini">Open</button><button id="missing" data-open-key-dialog="missing">Missing</button><dialog id="key-dialog-gemini"><input name="api_key"><button data-close-key-dialog>Close</button></dialog>');
+test('settings navigation marks the current section', () => {
+  const page = mount(extractorPage);
   try {
-    page.document.querySelector('[data-open-key-dialog]').click();
-    const dialog = page.document.querySelector('dialog');
-    assert.equal(dialog.open, true);
-    assert.equal(page.document.activeElement, dialog.querySelector('input'));
-    page.document.querySelector('[data-close-key-dialog]').click();
-    assert.equal(dialog.open, false);
-    page.document.querySelector('#missing').click();
-  } finally { page.close(); }
-});
-
-test('unlock and removal report request outcomes through enclosing status element', async () => {
-  for (const action of ['load', 'delete']) {
-    for (const failed of [false, true]) {
-      const page = mount(`<div data-credential-row><form class="js-${action}-credentials" action="/token/credentials/${action}" data-provider-label="Gemini"><input name="provider" value="gemini"></form><p class="form-message retained"></p></div>`, { ok: !failed, response: failed ? { detail: 'Unavailable' } : {} });
-      try {
-        await page.submit('form');
-        assert.equal(page.calls.length, 1);
-        assert.equal(page.document.querySelector('.form-message').textContent, failed ? 'Unavailable' : action === 'load' ? 'Saved key unlocked for this session.' : 'Key removed.');
-        assert.equal(page.document.querySelector('.form-message').classList.contains('retained'), true);
-        if (action === 'delete') assert.match(page.confirmations[0], /Gemini/);
-      } finally { page.close(); }
-    }
-  }
-});
-
-test('declining key removal does not send a request', async () => {
-  const page = mount('<form class="js-delete-credentials"><p class="form-message"></p></form>', { confirm: false });
-  try {
-    await page.submit('form');
-    assert.equal(page.calls.length, 0);
-  } finally { page.close(); }
-});
-
-test('settings navigation marks current location and expands target provider', () => {
-  const page = mount('<nav class="settings-nav"><a href="#provider-connections">Connections</a><a href="#gemini">Gemini</a></nav><details class="provider-settings" id="gemini"></details>');
-  try {
-    const links = page.document.querySelectorAll('a');
+    const links = page.document.querySelectorAll('.settings-nav a');
     assert.equal(links[0].getAttribute('aria-current'), 'location');
-    links[1].click();
-    assert.equal(page.document.querySelector('details').open, true);
-    page.window.location.hash = '#gemini';
+    page.window.location.hash = '#files-and-parsing';
     page.window.dispatchEvent(new page.window.Event('hashchange'));
     assert.equal(links[1].getAttribute('aria-current'), 'location');
     assert.equal(links[0].hasAttribute('aria-current'), false);
   } finally { page.close(); }
 });
 
-test('successful credential changes schedule a page refresh', async t => {
-  for (const action of ['credentials', 'load-credentials', 'delete-credentials']) {
-    const page = mount(`<form class="js-${action}" action="/credentials"><input name="provider" value="gemini"><input name="api_key" value="secret"><p class="form-message"></p></form>`);
-    t.after(page.close);
-    await page.submit('form');
-    assert.equal(page.timers.length, 1);
-    assert.equal(page.browserErrors.length, 0);
-    page.timers[0]();
-    assert.equal(page.browserErrors.length, 1);
-    assert.match(page.browserErrors[0].message, /navigation/i);
+test('adding an extractor shows only its provider fields and saves it with its key', async () => {
+  for (const [response, ok, expected, state] of [
+    [{ warning: null }, true, 'Extractor saved.', 'u-success'],
+    [{ warning: 'Saved without a key.' }, true, 'Saved without a key.', 'u-warning'],
+    [{ detail: 'Bad model' }, false, 'Bad model', 'u-error'],
+  ]) {
+    const page = mount(extractorPage, { ok, response });
+    try {
+      page.document.querySelector('[data-new-extractor]').click();
+      const dialog = page.document.querySelector('#extractor-dialog');
+      assert.equal(dialog.open, true);
+      assert.equal(page.document.querySelector('[data-extractor-dialog-title]').textContent, 'Add extractor');
+      assert.equal(field(page, 'provider').disabled, false);
+      assert.equal(page.document.querySelector('[data-provider-fields=gemini]').hidden, false);
+      assert.equal(field(page, 'base_url').disabled, true);
+      field(page, 'provider').value = 'openai_compatible';
+      field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+      assert.equal(field(page, 'base_url').disabled, false);
+      assert.match(page.document.querySelector('[data-model-hint]').textContent, /your server/);
+      field(page, 'provider').value = 'openrouter';
+      field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+      assert.equal(field(page, 'model').placeholder, 'vendor/model');
+      field(page, 'name').value = 'New'; field(page, 'model').value = 'v/m'; field(page, 'api_key').value = 'secret';
+      await page.submit('.js-extractor-form');
+      assert.equal(page.calls.length, 1);
+      assert.equal(page.calls[0][0], 'http://localhost/token/extractors');
+      assert.equal(page.calls[0][1].body.get('api_key'), 'secret');
+      assert.equal(page.calls[0][1].body.get('base_url'), null);
+      assert.equal(dialogMessage(page).textContent, expected);
+      assert.ok(dialogMessage(page).classList.contains(state));
+      assert.equal(page.timers.length, ok ? 1 : 0);
+      assert.equal(page.document.querySelector('button[type=submit]').disabled, false);
+    } finally { page.close(); }
   }
 });
 
-test('legacy credential rows receive status outside their form', async t => {
-  const page = mount('<div class="row"><form class="js-load-credentials"><input name="provider" value="gemini"></form><p class="form-message layout"></p></div>');
-  t.after(page.close); await page.submit('form');
-  assert.equal(page.document.querySelector('.form-message').textContent, 'Saved key unlocked for this session.');
-  assert.ok(page.document.querySelector('.form-message').classList.contains('layout'));
+test('an incomplete extractor form is not sent', async () => {
+  const page = mount(extractorPage);
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    await page.submit('.js-extractor-form');
+    assert.equal(page.calls.length, 0);
+    page.document.querySelector('[data-close-extractor-dialog]').click();
+    assert.equal(page.document.querySelector('#extractor-dialog').open, false);
+  } finally { page.close(); }
+});
+
+test('editing fills the saved settings, keeps the provider, and replaces the key separately', async () => {
+  const responses = [json({ warning: 'Model checked later.' }), json({ warning: 'Kept for this session.' })];
+  const page = mount(extractorPage, { fetch: async () => responses.shift() });
+  try {
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    assert.equal(page.document.querySelector('[data-extractor-dialog-title]').textContent, 'Edit Router');
+    assert.equal(field(page, 'provider').disabled, true);
+    assert.equal(field(page, 'provider').value, 'openrouter');
+    assert.equal(field(page, 'openrouter_allow_fallbacks').value, 'deny');
+    assert.equal(field(page, 'openrouter_provider').value, 'deepinfra/fp8');
+    assert.equal(field(page, 'reasoning_effort').value, 'low');
+    assert.equal(page.document.querySelector('[data-key-actions]').hidden, false);
+    assert.equal(page.document.querySelector('[data-load-models]').hidden, false);
+    assert.match(page.document.querySelector('[data-key-label]').textContent, /Replace/);
+    field(page, 'api_key').value = 'new-key';
+    await page.submit('.js-extractor-form'); await flush();
+    assert.equal(page.calls[0][0], 'http://localhost/token/extractors/abc');
+    assert.equal(page.calls[0][1].body.get('api_key'), null);
+    assert.equal(page.calls[1][0], '/token/extractors/abc/key');
+    assert.equal(page.calls[1][1].body.get('api_key'), 'new-key');
+    assert.equal(dialogMessage(page).textContent, 'Model checked later. Kept for this session.');
+    assert.equal(field(page, 'api_key').value, '');
+  } finally { page.close(); }
+});
+
+test('editing a keyless endpoint offers no model list and keeps empty values', () => {
+  const page = mount(extractorPage);
+  try {
+    page.document.querySelector('#extractor-loc [data-edit-extractor]').click();
+    assert.equal(page.document.querySelector('[data-load-models]').hidden, true);
+    assert.equal(page.document.querySelector('[data-key-actions]').hidden, true);
+    assert.equal(field(page, 'context_length').value, '');
+    assert.equal(field(page, 'base_url').value, 'http://h/v1');
+  } finally { page.close(); }
+});
+
+test('a settings link to an extractor opens it for editing', () => {
+  const page = mount(extractorPage, { url: 'http://localhost/token/settings#extractor-abc' });
+  try {
+    assert.equal(page.document.querySelector('#extractor-dialog').open, true);
+    assert.equal(field(page, 'name').value, 'Router');
+    // The hash is cleared so a reload after saving doesn't reopen the dialog.
+    assert.equal(page.window.location.hash, '');
+    assert.equal(page.window.location.pathname, '/token/settings');
+  } finally { page.close(); }
+});
+
+test('the key badge says when a key lasts only for this session', () => {
+  const sessionOnly = { ...extractor, id: 'mem', key_saved: false };
+  const page = mount(extractorPage + row(sessionOnly));
+  try {
+    const badge = page.document.querySelector('[data-key-badge]');
+    page.document.querySelector('#extractor-mem [data-edit-extractor]').click();
+    assert.equal(badge.textContent, 'Key for this session');
+    assert.equal(badge.dataset.variant, 'outline');
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    assert.equal(badge.textContent, 'Key saved');
+    assert.equal(badge.dataset.variant, 'success');
+  } finally { page.close(); }
+});
+
+test('a slow provider list for an earlier model never replaces the current one', async () => {
+  const pending = [];
+  const page = mount(extractorPage, { fetch: () => new Promise(resolve => pending.push(resolve)) });
+  try {
+    const status = page.document.querySelector('[data-openrouter-provider-status]');
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    for (const model of ['vendor/old', 'vendor/new']) {
+      field(page, 'model').value = model;
+      field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    }
+    pending[1](json([{ tag: 'new', name: 'New' }])); await flush();
+    pending[0](json([{ tag: 'old', name: 'Old' }, { tag: 'old2', name: 'Old 2' }])); await flush();
+    assert.match(status.textContent, /1 provider serves/);
+    assert.deepEqual([...page.document.querySelectorAll('#extractor-openrouter-endpoints option')].map(option => option.value), ['new']);
+    field(page, 'model').value = 'vendor/failing';
+    field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    // The previous model's providers are cleared while the new list loads.
+    assert.equal(page.document.querySelectorAll('#extractor-openrouter-endpoints option').length, 0);
+    page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+    pending[2](json({ detail: 'Down' }, false)); await flush();
+    assert.doesNotMatch(status.textContent, /Down/);
+  } finally { page.close(); }
+});
+
+test('model suggestions load on request', async () => {
+  for (const [response, ok, expected] of [
+    [[{ id: 'a/<b>', name: 'A' }], true, /1 model available/],
+    [[{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], true, /2 models available/],
+    [[], true, /no models/],
+    [{ detail: 'Offline' }, false, /Offline/],
+    [{}, false, /could not be loaded/],
+  ]) {
+    const page = mount(extractorPage, { ok, response });
+    try {
+      page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+      page.document.querySelector('[data-load-models]').click(); await flush();
+      assert.equal(page.calls[0][0], '/token/api/extractors/abc/models');
+      assert.match(page.document.querySelector('[data-model-hint]').textContent, expected);
+      if (ok && response.length) assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, response.length);
+      assert.equal(page.document.querySelector('[data-load-models]').disabled, false);
+    } finally { page.close(); }
+  }
+});
+
+test('a new extractor loads model suggestions on request with the typed key', async () => {
+  const page = mount(extractorPage, { response: [{ id: 'gemini-x', name: 'Gemini X' }] });
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    const load = page.document.querySelector('[data-load-models]');
+    assert.equal(load.hidden, false);
+    assert.equal(page.calls.length, 0);
+    field(page, 'api_key').value = ' typed-key ';
+    load.click(); await flush();
+    assert.equal(page.calls.length, 1);
+    assert.equal(page.calls[0][0], '/token/api/models');
+    assert.equal(page.calls[0][1].method, 'POST');
+    assert.equal(page.calls[0][1].body.get('provider'), 'gemini');
+    assert.equal(page.calls[0][1].body.get('api_key'), 'typed-key');
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 1);
+    field(page, 'provider').value = 'openai_compatible';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, true);
+    assert.equal(page.document.querySelectorAll('#extractor-model-options option').length, 0);
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.hidden, false);
+    field(page, 'api_key').value = '';
+    load.click(); await flush();
+    assert.equal(page.calls[1][1].body.get('provider'), 'openrouter');
+    assert.equal(page.calls[1][1].body.get('api_key'), '');
+  } finally { page.close(); }
+});
+
+test('a model list that arrives after the provider changed is ignored', async () => {
+  const pending = [];
+  const page = mount(extractorPage, { fetch: () => new Promise(resolve => pending.push(resolve)) });
+  try {
+    const load = page.document.querySelector('[data-load-models]');
+    const hint = page.document.querySelector('[data-model-hint]');
+    const options = () => page.document.querySelectorAll('#extractor-model-options option').length;
+    page.document.querySelector('[data-new-extractor]').click();
+    field(page, 'api_key').value = 'typed-key';
+    load.click();
+    assert.equal(load.disabled, true);
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'provider').dispatchEvent(new page.window.Event('change'));
+    assert.equal(load.disabled, false);
+    const openrouterHint = hint.textContent;
+    pending[0](json([{ id: 'gemini-x', name: 'Gemini X' }])); await flush();
+    assert.equal(options(), 0);
+    assert.equal(hint.textContent, openrouterHint);
+    // A stale failure is ignored too, including after the dialog is reopened.
+    load.click();
+    page.document.querySelector('[data-new-extractor]').click();
+    pending[1](json({ detail: 'Offline' }, false)); await flush();
+    assert.doesNotMatch(hint.textContent, /Offline/);
+    assert.equal(load.disabled, false);
+  } finally { page.close(); }
+});
+
+test('choosing an OpenRouter model lists the providers serving it', async () => {
+  for (const [response, ok, expected] of [
+    [[{ tag: 'a/b', name: 'A' }, { tag: 'c', name: 'C' }], true, /2 providers serve/],
+    [[{ tag: 'a/b', name: 'A' }], true, /1 provider serves/],
+    [[], true, /No provider currently/],
+    [{ detail: 'Down' }, false, /Down/],
+    [{}, false, /could not be loaded/],
+  ]) {
+    const page = mount(extractorPage, { ok, response });
+    try {
+      page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+      field(page, 'model').value = 'vendor/other';
+      field(page, 'model').dispatchEvent(new page.window.Event('change')); await flush();
+      assert.equal(page.calls[0][0], '/token/api/models/openrouter/endpoints?model=vendor%2Fother&extractor_id=abc');
+      assert.match(page.document.querySelector('[data-openrouter-provider-status]').textContent, expected);
+    } finally { page.close(); }
+  }
+  const page = mount(extractorPage);
+  try {
+    page.document.querySelector('[data-new-extractor]').click();
+    field(page, 'model').dispatchEvent(new page.window.Event('change'));
+    field(page, 'provider').value = 'openrouter';
+    field(page, 'model').value = 'v/m';
+    field(page, 'model').dispatchEvent(new page.window.Event('change')); await flush();
+    assert.equal(page.calls.length, 1);
+    assert.match(page.calls[0][0], /extractor_id=$/);
+    field(page, 'model').value = ' ';
+    field(page, 'model').dispatchEvent(new page.window.Event('change')); await flush();
+    assert.equal(page.calls.length, 1);
+  } finally { page.close(); }
+});
+
+test('removing a saved key asks first', async () => {
+  for (const [confirm, ok, expected] of [[false, true, ''], [true, true, 'Key removed.'], [true, false, 'Locked']]) {
+    const page = mount(extractorPage, { confirm, ok, response: ok ? {} : { detail: 'Locked' } });
+    try {
+      page.document.querySelector('#extractor-abc [data-edit-extractor]').click();
+      page.document.querySelector('[data-remove-key]').click(); await flush();
+      assert.equal(page.calls.length, confirm ? 1 : 0);
+      if (confirm) assert.equal(page.calls[0][0], '/token/extractors/abc/key/delete');
+      assert.equal(dialogMessage(page).textContent, expected);
+      assert.match(page.confirmations[0], /Router/);
+    } finally { page.close(); }
+  }
+});
+
+test('duplicating opens the copy for editing and reports failures', async () => {
+  for (const ok of [true, false]) {
+    const page = mount(extractorPage, { ok, response: ok ? { extractor: { id: 'copy' } } : { detail: 'Gone' } });
+    try {
+      await page.submit('#extractor-abc .js-extractor-action');
+      assert.equal(page.calls[0][0], 'http://localhost/token/extractors/abc/duplicate');
+      assert.equal(page.timers.length > 0, ok);
+      assert.equal(page.window.location.hash, ok ? '#extractor-copy' : '');
+      const message = page.document.querySelector('[data-extractor-list-message]');
+      assert.equal(message.textContent, ok ? '' : 'Gone');
+      assert.ok(message.classList.contains('keep'));
+    } finally { page.close(); }
+  }
+});
+
+// Answers the affected-projects listing and the delete request separately.
+const deleteFetch = (listing, deletion) => async url => (String(url).includes('/api/extractors/')
+  ? (listing instanceof Error ? Promise.reject(listing) : listing)
+  : deletion);
+
+test('deleting an extractor lists the projects using it before confirming', async () => {
+  for (const [confirm, listing, using, deletion, expected, state] of [
+    [false, json({ projects: [] }), /No projects use it/, null, '', null],
+    [true, json({ projects: ['Study A', 'Study B'] }), /These projects use it and will need another extractor: Study A, Study B\./, json({ projects: [] }), 'Deleted “Router”.', 'u-success'],
+    [true, json({ projects: ['Study A'] }), /Study A/, json({ projects: ['Study A'], warning: 'Key kept.' }), 'Deleted “Router”. Key kept. Choose another extractor for: Study A.', 'u-warning'],
+    [true, json({}), /No projects use it/, json({}), 'Deleted “Router”.', 'u-success'],
+    [true, json({ projects: [] }), /No projects use it/, json({ detail: 'Gone' }, false), 'Gone', 'u-error'],
+  ]) {
+    const page = mount(extractorPage, { confirm, fetch: deleteFetch(listing, deletion) });
+    try {
+      await page.submit('#extractor-abc .js-delete-extractor'); await flush();
+      assert.equal(page.calls[0][0], '/token/api/extractors/abc/projects');
+      assert.equal(page.calls.length, confirm ? 2 : 1);
+      if (confirm) assert.equal(page.calls[1][0], 'http://localhost/token/extractors/abc/delete');
+      assert.match(page.confirmations[0], /Router/);
+      assert.match(page.confirmations[0], using);
+      const message = page.document.querySelector('[data-extractor-list-message]');
+      assert.equal(message.textContent, expected);
+      if (state) assert.ok(message.classList.contains(state));
+    } finally { page.close(); }
+  }
+});
+
+test('an extractor is not deleted when its projects cannot be listed', async () => {
+  for (const [listing, expected] of [
+    [json({ detail: 'That extractor no longer exists.' }, false), 'That extractor no longer exists.'],
+    [{ ok: false, json: async () => { throw new Error('invalid'); } }, 'The projects using this extractor could not be listed.'],
+    [new Error('Offline'), 'Offline'],
+  ]) {
+    const page = mount(extractorPage, { fetch: deleteFetch(listing, json({})) });
+    try {
+      await page.submit('#extractor-abc .js-delete-extractor'); await flush();
+      assert.equal(page.calls.length, 1);
+      assert.equal(page.confirmations.length, 0);
+      assert.equal(page.document.querySelector('[data-extractor-list-message]').textContent, expected);
+    } finally { page.close(); }
+  }
+});
+
+test('extractor actions work without a list message or a dialog', async () => {
+  const page = mount(`<form class="js-extractor-action" action="/token/extractors/x/duplicate"></form><form class="js-delete-extractor" action="/token/extractors/x/delete" data-extractor-id="x"></form>`,
+    { fetch: deleteFetch(json({ projects: [] }), json({ detail: 'Gone' }, false)) });
+  try {
+    await page.submit('.js-extractor-action');
+    await page.submit('.js-delete-extractor'); await flush();
+    assert.match(page.confirmations[0], /this extractor/);
+    assert.equal(page.browserErrors.length, 0);
+  } finally { page.close(); }
 });

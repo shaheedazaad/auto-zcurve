@@ -13,7 +13,6 @@ from unittest.mock import patch
 from auto_zcurve import openai_compatible as oc
 from auto_zcurve import openrouter as orr
 from auto_zcurve.artifacts import load_extractions, upsert_extraction
-from auto_zcurve.config import AppSettings, save_app_settings
 from auto_zcurve.llm import parse_json_with_repair
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
 
@@ -102,7 +101,7 @@ class OpenAICompatibleExtractionTests(Fixture):
         env = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.root / "config")})
         env.start()
         self.addCleanup(env.stop)
-        save_app_settings(AppSettings(openai_base_url="http://localhost:8000/v1"))
+        self.kwargs["base_url"] = "http://localhost:8000/v1"
 
     def extract(self, text: str, finish_reason: str | None):
         with patch.object(oc, "pdf_text", return_value="[Page 1]\nStudy"), patch.object(
