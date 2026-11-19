@@ -285,6 +285,7 @@ class OpenRouterTests(unittest.TestCase):
         self.assertEqual(limit([endpoint("small", 65_536, context=65_536)]), 32_768)
         self.assertEqual(limit([endpoint("roomy", 8_192, context=200_000)]), 8_192)
         self.assertEqual(limit([endpoint("no-context", 50_000, context=None)]), 50_000)
+        self.assertEqual(limit([endpoint("odd-context", 50_000, context="lots")]), 50_000)
         self.assertIsNone(limit([endpoint("cramped", 30_000, context=30_000)]))
         self.assertEqual(
             limit([endpoint("cramped", 30_000, context=30_000), endpoint("roomy", 100_000, context=1_000_000)]),
