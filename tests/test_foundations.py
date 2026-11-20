@@ -26,7 +26,7 @@ class ProviderTests(unittest.TestCase):
         for provider, definition in providers.PROVIDER_REGISTRY.items():
             with self.subTest(provider=provider):
                 implementation = Mock(return_value=object())
-                request = dict(source_path=Path('article.pdf'), source_name='article.pdf', api_key='key', primary_model='model', response_schema={'type': 'object'}, schema_config=object(), instruction_path=Path('instructions.md'), request_timeout_sec=30, input_mode='text', context_length=1234, project_dir=Path('project'), reasoning_effort='high', endpoint_order=('endpoint',))
+                request = dict(source_path=Path('article.pdf'), source_name='article.pdf', api_key='key', primary_model='model', response_schema={'type': 'object'}, schema_config=object(), instruction_path=Path('instructions.md'), request_timeout_sec=30, input_mode='text', context_length=1234, project_dir=Path('project'), reasoning_effort='high', endpoint_order=('endpoint',), max_output_tokens=65536)
                 with patch.object(providers.importlib, 'import_module', return_value=SimpleNamespace(extract_document=implementation)) as load:
                     result = providers.extract_document(provider=provider, service_tier='flex', openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks=False, base_url='http://h/v1', response_format='none', **request)
                 load.assert_called_once_with(definition.adapter_module)

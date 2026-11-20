@@ -167,6 +167,12 @@
         openrouter: "An exact OpenRouter model ID (vendor/model). It must support structured outputs.",
         openai_compatible: "The exact model ID your server serves.",
       };
+      // What an empty maximum output means for each provider.
+      const defaultOutputLabels = {
+        gemini: "Model maximum",
+        openrouter: "Endpoint maximum",
+        openai_compatible: "Server default",
+      };
       let editing = null;
       // Only the latest model-list request may update the suggestions, so a slow
       // answer for an earlier provider or extractor can't overwrite them.
@@ -185,6 +191,7 @@
         modelOptions.innerHTML = "";
         loadModels.hidden = provider === "openai_compatible";
         modelField.placeholder = provider === "openrouter" ? "vendor/model" : "Model ID";
+        field("max_output_tokens").placeholder = defaultOutputLabels[provider];
       };
 
       // Only the latest provider-list request may update the list, so a slow

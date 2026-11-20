@@ -65,6 +65,7 @@ class ExtractorDefinitionTests(ExtractorTestCase):
             "at most 60": {"name": "x" * 61, "provider": "gemini", "model": "m"},
             "Invalid OpenRouter provider": {"name": "Route", "provider": "openrouter", "model": "v/m", "openrouter_provider": "bad slug!"},
             "Unsupported service tier": {"name": "Tier", "provider": "gemini", "model": "m", "service_tier": "turbo"},
+            "Maximum output must be between": {"name": "Out", "provider": "gemini", "model": "m", "max_output_tokens": "0"},
         }
         for reason, values in cases.items():
             with self.subTest(reason=reason), self.assertRaisesRegex(ex.ExtractorError, reason):
@@ -154,6 +155,12 @@ class ExtractorDefinitionTests(ExtractorTestCase):
         self.assertIn(("Route to provider", "Automatic"), router.summary())
         self.assertIn(("Service tier", "Flex (lower cost, variable latency)"), gemini.summary())
         self.assertNotIn("Context length", dict(ex.create_extractor({"name": "L2", "provider": "openai_compatible", "model": "q", "base_url": "http://h/v1"}).summary()))
+        # An empty maximum output names the limit each provider then uses.
+        self.assertIn(("Maximum output", "Server default"), local.summary())
+        self.assertIn(("Maximum output", "Endpoint maximum"), router.summary())
+        self.assertIn(("Maximum output", "Model maximum"), gemini.summary())
+        capped = ex.create_extractor({"name": "C", "provider": "openrouter", "model": "v/m", "max_output_tokens": "65536"})
+        self.assertIn(("Maximum output", "65,536 tokens"), capped.summary())
 
     def test_unreadable_or_damaged_files_are_tolerated(self):
         ex.create_extractor({"name": "Good", "provider": "gemini", "model": "m"})
@@ -386,10 +393,11 @@ class ExtractorRunTests(ExtractorTestCase):
         local = ex.create_extractor({
             "name": "Local", "provider": "openai_compatible", "model": "qwen",
             "base_url": "http://localhost:8000/v1/", "response_format": "none",
-            "context_length": "32000", "parallel_requests": "4",
+            "context_length": "32000", "parallel_requests": "4", "max_output_tokens": "16000",
         })
 
         settings = ex.run_settings_for(local, AppSettings(pdf_parser="native", max_upload_size_mb=12))
+        self.assertEqual((settings.max_output_tokens, settings.extractor["max_output_tokens"]), (16000, 16000))
 
         self.assertEqual((settings.provider, settings.primary_model), ("openai_compatible", "qwen"))
         self.assertEqual((settings.base_url, settings.response_format, settings.context_length), ("http://localhost:8000/v1", "none", 32000))

@@ -102,6 +102,8 @@ class RunSettings:
     base_url: str = ""
     response_format: str = "json_schema"
     context_length: int | None = None
+    # None uses the provider's own limit (for OpenRouter, the lowest endpoint limit; see endpoint_output_limit).
+    max_output_tokens: int | None = None
     extractor_id: str = ""
     # Every non-secret setting of the extractor when the run started.
     extractor: dict | None = None
@@ -227,6 +229,11 @@ def remove_legacy_effect_definition(project_dir: Path) -> None:
         return
 
 
+def _positive_int(value: object) -> int | None:
+    # bool is an int subclass, so a JSON true would otherwise load as 1.
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
 def _bounded_int(value: object, default: int, low: int, high: int) -> int:
     try:
         number = int(value) if value is not None and value != "" else default
@@ -260,7 +267,6 @@ def load_run_settings(project_dir: Path) -> RunSettings | None:
     primary_model = str(source.get("model" if snapshot is not None else "primary_model") or "").strip()
     if not primary_model:
         return None
-    context_length = source.get("context_length")
 
     return RunSettings(
         primary_model=primary_model,
@@ -276,7 +282,8 @@ def load_run_settings(project_dir: Path) -> RunSettings | None:
         openrouter_allow_fallbacks=source.get("openrouter_allow_fallbacks", True) is not False,
         base_url=str(source.get("base_url") or ""),
         response_format=str(source.get("response_format") or "json_schema"),
-        context_length=int(context_length) if isinstance(context_length, int) and context_length > 0 else None,
+        context_length=_positive_int(source.get("context_length")),
+        max_output_tokens=_positive_int(source.get("max_output_tokens")),
         extractor_id=str(raw.get("extractor_id") or ""),
         extractor=snapshot,
     )
@@ -295,7 +302,7 @@ def save_run_settings(project_dir: Path, settings: RunSettings) -> None:
             for name in (
                 "request_timeout_sec", "parallel_requests", "request_delay_sec", "reasoning_effort",
                 "service_tier", "openrouter_provider", "openrouter_allow_fallbacks", "base_url",
-                "response_format", "context_length",
+                "response_format", "context_length", "max_output_tokens",
             )
         })
     snapshot.update(provider=normalize_provider(settings.provider), model=settings.primary_model)

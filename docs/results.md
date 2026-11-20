@@ -82,6 +82,8 @@ An extraction is marked **Needs review** instead of **Done** when:
   normally. `MAX_TOKENS` (Gemini) or `length` (OpenRouter and
   OpenAI-compatible endpoints) means it ran out of output space, so effects at
   the end of the article may be missing or a statistic may be cut short.
+  See the extractor's [Maximum output](settings.md#settings-every-extractor-has)
+  setting for ways to give it more room.
   `SAFETY`, `RECITATION`, `content_filter`, and other reasons mean the
   provider stopped the response early. A normal finish is `STOP` for Gemini
   and `stop` for the others; a response with no finish reason also counts as

@@ -243,6 +243,11 @@
 
         <fieldset class="settings-group"><legend>Requests</legend><div class="grid-2">
           <div class="field">
+            <label for="extractor-max-output">Maximum output (optional)</label>
+            <input class="input" id="extractor-max-output" name="max_output_tokens" type="number" min="1" max="100000000" placeholder="Endpoint maximum">
+            <p>Tokens the model may write for one article, reasoning included. Leave empty to use the provider’s own limit.</p>
+          </div>
+          <div class="field">
             <label for="extractor-parallel">Parallel articles</label>
             <input class="input" id="extractor-parallel" name="parallel_requests" type="number" min="1" max="32" value="{{ extractor_defaults.parallel_requests }}" required>
           </div>

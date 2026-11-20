@@ -249,6 +249,10 @@ class RunnerTests(unittest.TestCase):
         self.settings = RunSettings(provider="openrouter", primary_model="vendor/model", request_delay_sec=0)
         self.option = ModelOption("vendor/model", "Model", provider="openrouter", input_mode="cloudflare_pdf")
         self.calls: list[dict] = []
+        # Runs look up OpenRouter's endpoint output limit; never over the network here.
+        limit = patch.object(r, "resolve_max_output_tokens", return_value=None)
+        limit.start()
+        self.addCleanup(limit.stop)
 
     def fake_extract(self, **kwargs):
         self.calls.append(kwargs)

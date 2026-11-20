@@ -28,8 +28,6 @@ from .sources import XML_TEXT_INPUT_MODE
 
 API_BASE = "https://openrouter.ai/api/v1"
 USER_AGENT = "auto-zcurve"
-LOCAL_OUTPUT_TOKEN_RESERVE = 32_768
-LOCAL_CONTEXT_SAFETY_RATIO = 0.85
 MAX_COMPLETION_ATTEMPTS = MAX_PROVIDER_ATTEMPTS
 OPENROUTER_PDF_ENGINES = ("cloudflare-ai", "mistral-ocr")
 # OpenAI-style finish reasons; anything else (length, content_filter, ...) needs review.
@@ -127,6 +125,22 @@ def list_models(
     return [model for model in models if isinstance(model, dict)]
 
 
+def _structured_endpoints(model_id: str, *, api_key: str | None, timeout_sec: int) -> list[dict[str, Any]]:
+    """The provider endpoints serving a model that can return strict structured output."""
+    model_path = "/".join(urllib.parse.quote(part, safe="") for part in model_id.split(":", 1)[0].split("/"))
+    payload = _request_json(f"{API_BASE}/models/{model_path}/endpoints", api_key=api_key, timeout_sec=timeout_sec)
+    data = payload.get("data")
+    endpoints = data.get("endpoints") if isinstance(data, dict) else None
+    if not isinstance(endpoints, list):
+        raise RuntimeError("OpenRouter returned an invalid endpoint list.")
+    return [
+        endpoint for endpoint in endpoints
+        if isinstance(endpoint, dict)
+        and str(endpoint.get("tag") or "").strip()
+        and "structured_outputs" in {str(value).lower() for value in endpoint.get("supported_parameters") or []}
+    ]
+
+
 def list_model_endpoints(
     model_id: str,
     *,
@@ -134,24 +148,71 @@ def list_model_endpoints(
     timeout_sec: int = 30,
 ) -> list[dict[str, str]]:
     """List the provider endpoints serving a model that can return strict structured output."""
-    model_path = "/".join(urllib.parse.quote(part, safe="") for part in model_id.split(":", 1)[0].split("/"))
-    payload = _request_json(f"{API_BASE}/models/{model_path}/endpoints", api_key=api_key, timeout_sec=timeout_sec)
-    data = payload.get("data")
-    endpoints = data.get("endpoints") if isinstance(data, dict) else None
-    if not isinstance(endpoints, list):
-        raise RuntimeError("OpenRouter returned an invalid endpoint list.")
     listed: dict[str, dict[str, str]] = {}
-    for endpoint in endpoints:
-        if not isinstance(endpoint, dict):
-            continue
+    for endpoint in _structured_endpoints(model_id, api_key=api_key, timeout_sec=timeout_sec):
         tag = str(endpoint.get("tag") or "").strip().lower()
-        parameters = {str(value).lower() for value in endpoint.get("supported_parameters") or []}
-        if not tag or "structured_outputs" not in parameters or tag in listed:
+        if tag in listed:
             continue
         details = [part for part in (tag.partition("/")[2], str(endpoint.get("quantization") or "")) if part and part != "unknown"]
         name = str(endpoint.get("provider_name") or tag)
         listed[tag] = {"tag": tag, "name": f"{name} ({', '.join(dict.fromkeys(details))})" if details else name}
     return sorted(listed.values(), key=lambda item: item["name"].lower())
+
+
+def _routes_to(tag: str, provider: str) -> bool:
+    """Whether a provider slug such as `deepinfra` or `deepinfra/fp8` names this endpoint tag."""
+    return tag == provider or tag.startswith(provider + "/")
+
+
+def input_token_reserve(context_length: int) -> int:
+    """Context left for the article when an output default is chosen.
+
+    OpenRouter parses PDFs itself, so the article's size isn't known up front.
+    """
+    return max(context_length // 4, 32_768)
+
+
+def _default_output_limit(endpoint: dict[str, Any]) -> int | None:
+    """An endpoint's output maximum, less whatever would crowd the article out of its context."""
+    try:
+        limit = int(endpoint.get("max_completion_tokens") or 0)
+    except (TypeError, ValueError):
+        return None
+    try:
+        context_length = int(endpoint.get("context_length") or 0)
+    except (TypeError, ValueError):
+        context_length = 0
+    if limit > 0 and context_length > 0:
+        limit = min(limit, context_length - input_token_reserve(context_length))
+    # An endpoint too small to hold both the article and any output can't serve
+    # these requests, so it doesn't count towards the lowest limit.
+    return limit if limit > 0 else None
+
+
+def endpoint_output_limit(
+    model_id: str,
+    *,
+    preferred_provider: str = "",
+    api_key: str | None = None,
+    timeout_sec: int = 30,
+) -> int | None:
+    """The default output cap for a model: the lowest its likely endpoints allow.
+
+    With a preferred provider, that provider's endpoints count, since OpenRouter
+    tries it first; otherwise, or when none of its endpoints states a limit,
+    every structured-output endpoint does. Each endpoint's limit leaves room
+    in its context for the article. None when no endpoint states a limit.
+    """
+    endpoints = _structured_endpoints(model_id, api_key=api_key, timeout_sec=timeout_sec)
+    preferred = [
+        endpoint for endpoint in endpoints
+        if preferred_provider and _routes_to(str(endpoint.get("tag") or "").strip().lower(), preferred_provider)
+    ]
+    for candidates in (preferred, endpoints):
+        limits = [limit for limit in map(_default_output_limit, candidates) if limit]
+        if limits:
+            return min(limits)
+    return None
 
 
 def supports_native_structured_pdf(model: dict[str, Any]) -> bool:
@@ -330,8 +391,12 @@ def extract_document(
     preferred_provider: str = "",
     allow_fallbacks: bool = True,
     article_text: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> ExtractionResult:
-    """Extract one source: a PDF as a file part, or article text with no parser plugin."""
+    """Extract one source: a PDF as a file part, or article text with no parser plugin.
+
+    `max_output_tokens` caps the response, reasoning included; None sends no cap.
+    """
     started = time.monotonic()
     parsed_document = None
     estimated_input_tokens = None
@@ -392,8 +457,8 @@ def extract_document(
     if input_mode != XML_TEXT_INPUT_MODE:
         engine = "native" if input_mode == "native_pdf" else OPENROUTER_PDF_ENGINES[0]
         payload["plugins"] = [{"id": "file-parser", "pdf": {"engine": engine}}]
-    if input_mode == "cloudflare_pdf":
-        payload["max_tokens"] = LOCAL_OUTPUT_TOKEN_RESERVE
+    if max_output_tokens:
+        payload["max_tokens"] = max_output_tokens
     usage: dict[str, int | None] = {
         "input_tokens": None,
         "output_tokens": None,

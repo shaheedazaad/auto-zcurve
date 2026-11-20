@@ -74,6 +74,7 @@ def extract_document(
     openrouter_allow_fallbacks: bool = True,
     base_url: str = "",
     response_format: str = "json_schema",
+    max_output_tokens: int | None = None,
 ) -> ExtractionResult:
     """Extract one source of any source format with the selected provider.
 
@@ -107,6 +108,7 @@ def extract_document(
         project_dir=project_dir,
         reasoning_effort=reasoning_effort,
         endpoint_order=endpoint_order,
+        max_output_tokens=max_output_tokens,
     )
     if article_text is not None:
         kwargs["article_text"] = article_text

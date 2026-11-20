@@ -55,6 +55,20 @@ class ModelDiscoveryTests(unittest.TestCase):
         catalog.assert_called_once_with(api_key='key', timeout_sec=9, structured_outputs_only=False)
         self.assertEqual((option.display_name, option.context_length, option.supports_reasoning, option.input_mode), ('Display', 123, True, 'cloudflare_pdf'))
 
+    def test_output_limit_is_the_extractors_own_else_the_openrouter_endpoints(self):
+        with patch('auto_zcurve.openrouter.endpoint_output_limit', return_value=393_216) as lookup:
+            self.assertEqual(m.resolve_max_output_tokens('openrouter', 'v/m', 8_000, 'key'), 8_000)
+            for provider in ('gemini', 'openai_compatible'):
+                self.assertIsNone(m.resolve_max_output_tokens(provider, 'model', None, 'key'))
+            lookup.assert_not_called()
+            limit = m.resolve_max_output_tokens(
+                'openrouter', 'v/m', None, '', openrouter_provider='deepinfra/fp8', timeout_sec=9,
+            )
+        self.assertEqual(limit, 393_216)
+        lookup.assert_called_once_with(
+            'v/m', preferred_provider='deepinfra/fp8', api_key=None, timeout_sec=9,
+        )
+
     def test_custom_endpoint_validation(self):
         option = m.validate_model_option('openai_compatible', 'local', '', context_length=4096)
         self.assertEqual((option.name, option.provider, option.input_mode, option.context_length), ('local', 'openai_compatible', 'local_text', 4096))

@@ -58,12 +58,12 @@ class ConfigTests(unittest.TestCase):
             settings = RunSettings(
                 primary_model="vendor/model", provider="openrouter", request_timeout_sec=120,
                 parallel_requests=3, request_delay_sec=7, reasoning_effort="low",
-                openrouter_provider="deepinfra", openrouter_allow_fallbacks=False,
+                openrouter_provider="deepinfra", openrouter_allow_fallbacks=False, max_output_tokens=65536,
             )
             save_run_settings(project, settings)
             loaded = load_run_settings(project)
             for name in ("request_timeout_sec", "parallel_requests", "request_delay_sec", "reasoning_effort",
-                         "openrouter_provider", "openrouter_allow_fallbacks"):
+                         "openrouter_provider", "openrouter_allow_fallbacks", "max_output_tokens"):
                 self.assertEqual(getattr(loaded, name), getattr(settings, name), name)
 
     def test_legacy_flat_run_settings_still_load(self):
@@ -79,6 +79,18 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual((loaded.openrouter_provider, loaded.openrouter_allow_fallbacks), ("deepinfra/fp8", False))
             self.assertEqual((loaded.parallel_requests, loaded.request_delay_sec, loaded.extractor_id), (1, 3600, ""))
             self.assertIsNone(loaded.extractor)
+
+    def test_boolean_token_limits_in_run_settings_load_as_unset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            path = project / ".auto_zcurve" / "run_settings.json"
+            path.parent.mkdir()
+            path.write_text(json.dumps({"extractor_id": "abc", "extractor": {
+                "provider": "openai_compatible", "model": "qwen", "max_output_tokens": True, "context_length": True,
+            }}), encoding="utf-8")
+            loaded = load_run_settings(project)
+            self.assertIsNone(loaded.max_output_tokens)
+            self.assertIsNone(loaded.context_length)
 
     def test_selected_extractor_is_remembered_per_project(self):
         with tempfile.TemporaryDirectory() as tmp:

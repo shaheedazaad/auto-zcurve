@@ -11,7 +11,13 @@ from auto_zcurve.models import (
     validate_model,
     validate_model_option,
 )
-from auto_zcurve.openrouter import MAX_COMPLETION_ATTEMPTS, extract_document, list_model_endpoints, strict_response_schema
+from auto_zcurve.openrouter import (
+    MAX_COMPLETION_ATTEMPTS,
+    endpoint_output_limit,
+    extract_document,
+    list_model_endpoints,
+    strict_response_schema,
+)
 from auto_zcurve.schema import build_response_schema, parse_extraction_schema
 
 
@@ -242,6 +248,81 @@ class OpenRouterTests(unittest.TestCase):
             with patch("auto_zcurve.openrouter._request_json", return_value=bad), self.assertRaisesRegex(RuntimeError, "invalid endpoint list"):
                 list_model_endpoints("vendor/model")
 
+    def test_endpoint_output_limit_is_the_lowest_of_the_likely_endpoints(self):
+        def endpoint(tag, limit, context=1_000_000, structured=True):
+            return {
+                "tag": tag,
+                "max_completion_tokens": limit,
+                "context_length": context,
+                "supported_parameters": ["structured_outputs"] if structured else [],
+            }
+
+        def limit(endpoints, **kwargs):
+            with patch("auto_zcurve.openrouter._request_json", return_value={"data": {"endpoints": endpoints}}):
+                return endpoint_output_limit("vendor/model", **kwargs)
+
+        endpoints = [
+            endpoint("deepinfra/fp8", 393_216),
+            endpoint("deepinfra/fp8/flex", 400_000),
+            endpoint("wafer/us", 600_000),
+            endpoint("particle-ai/us", 131_072),
+            endpoint("tiny", 1_000, structured=False),
+            endpoint("unknown", None),
+            endpoint("odd", "lots"),
+        ]
+        # Automatic routing: any structured-output endpoint may serve the request.
+        self.assertEqual(limit(endpoints), 131_072)
+        # A pinned provider is tried first, so only its endpoints count, fallbacks or not.
+        self.assertEqual(limit(endpoints, preferred_provider="deepinfra/fp8"), 393_216)
+        self.assertEqual(limit(endpoints, preferred_provider="wafer"), 600_000)
+        # A pin that matches no endpoint, or none stating a limit, falls back to every endpoint.
+        self.assertEqual(limit(endpoints, preferred_provider="deep"), 131_072)
+        self.assertEqual(limit(endpoints, preferred_provider="unknown"), 131_072)
+        self.assertIsNone(limit([endpoint("unknown", None), endpoint("tiny", 1_000, structured=False)]))
+
+        # Each endpoint leaves a quarter of its context, at least 32,768 tokens, for the article.
+        self.assertEqual(limit([endpoint("same", 200_000, context=200_000)]), 150_000)
+        self.assertEqual(limit([endpoint("small", 65_536, context=65_536)]), 32_768)
+        self.assertEqual(limit([endpoint("roomy", 8_192, context=200_000)]), 8_192)
+        self.assertEqual(limit([endpoint("no-context", 50_000, context=None)]), 50_000)
+        self.assertEqual(limit([endpoint("odd-context", 50_000, context="lots")]), 50_000)
+        self.assertIsNone(limit([endpoint("cramped", 30_000, context=30_000)]))
+        self.assertEqual(
+            limit([endpoint("cramped", 30_000, context=30_000), endpoint("roomy", 100_000, context=1_000_000)]),
+            100_000,
+        )
+
+    def test_extract_sends_the_output_limit_only_when_one_is_given(self):
+        config = parse_extraction_schema(
+            "name: result\neffects:\n  claim:\n    type: string\n    required: true\n"
+        )
+        response = {"choices": [{"message": {"content": '{"effects":[{"claim":"Finding"}]}'}}]}
+        for limit in (None, 393_216):
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                pdf = root / "study.pdf"
+                pdf.write_bytes(b"%PDF-fixture")
+                with (
+                    patch("auto_zcurve.openrouter.build_system_prompt", return_value="Extract"),
+                    patch("auto_zcurve.openrouter._request_json", return_value=response) as request,
+                ):
+                    extract_document(
+                        source_path=pdf,
+                        source_name=pdf.name,
+                        api_key="secret",
+                        primary_model="vendor/model",
+                        response_schema=build_response_schema(config),
+                        schema_config=config,
+                        instruction_path=root / "unused.md",
+                        input_mode="cloudflare_pdf",
+                        max_output_tokens=limit,
+                    )
+                payload = request.call_args.kwargs["payload"]
+                if limit is None:
+                    self.assertNotIn("max_tokens", payload)
+                else:
+                    self.assertEqual(payload["max_tokens"], limit)
+
     def test_extract_pdf_uses_cloudflare_parser_for_deepseek_by_default_mode(self):
         config = parse_extraction_schema(
             "name: result\neffects:\n  claim:\n    type: string\n    required: true\n"
@@ -276,7 +357,7 @@ class OpenRouterTests(unittest.TestCase):
             payload["plugins"],
             [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
         )
-        self.assertEqual(payload["max_tokens"], 32768)
+        self.assertNotIn("max_tokens", payload)
         self.assertIn("file_data", str(payload["messages"]))
         self.assertEqual(result.input_mode, "cloudflare_pdf")
 

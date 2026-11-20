@@ -34,6 +34,7 @@ The list shows each extractor's provider, model, and whether its key is saved.
 | Name | How the extractor appears in projects. Names must be unique. |
 | Provider | Gemini, OpenRouter (Experimental), or OpenAI-compatible. |
 | Model | The exact model ID. |
+| Maximum output | Optional. The most tokens the model may write for one article, reasoning included. Leave it empty to use the provider's own limit (see below). |
 | Parallel articles | How many articles are processed at once (1–32, default 1). |
 | Delay between requests | Minimum seconds between request starts (default 0). |
 | Request timeout | Seconds allowed for one request (default 600). |
@@ -50,6 +51,27 @@ loads without a key. Suggestions load only when you click the button.
 OpenAI-compatible servers have no model catalog here: the model ID is passed
 to the configured server as entered, and the server reports a model it
 doesn't know.
+
+When **Maximum output** is empty:
+
+- **Gemini** uses the model's own maximum.
+- **OpenRouter** uses the providers' maximum, looked up when each run or retry
+  starts. If **Route to provider** is set, that provider's limit is used,
+  since OpenRouter tries it first. Otherwise, or if that provider states no
+  limit for the model, the lowest limit among the providers serving the model
+  with structured output is used. Where a provider states its context length,
+  the limit leaves room in it for the article (a quarter of the context, at
+  least 32,768 tokens); a provider whose context is too small for that is left
+  out. If the lookup fails, the run warns and sends no limit, so OpenRouter's
+  default applies.
+- **OpenAI-compatible** servers use their own default.
+
+An article with many effects can need a lot of output. If articles come back
+with `finish reason: MAX_TOKENS` or `length` (see
+[Needs review](results.md#needs-review)), raise the maximum output, lower the
+reasoning effort, or route OpenRouter to a provider with a higher limit.
+Changing the maximum output doesn't make **Run analysis** re-extract articles;
+use **Retry** for the ones that need review.
 
 ### Gemini
 

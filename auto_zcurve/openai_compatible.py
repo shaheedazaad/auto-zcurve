@@ -69,6 +69,13 @@ def pdf_text(path: Path, cancel_event: threading.Event | None) -> str:
     return "\n\n".join(pages)
 
 
+def _max_output_key(base_url: str) -> str:
+    from urllib.parse import urlsplit
+
+    host = urlsplit(base_url).hostname or ""
+    return "max_completion_tokens" if host == "api.openai.com" else "max_tokens"
+
+
 def _redact(text: str, api_key: str) -> str:
     return text.replace(api_key, "[redacted]") if api_key else text
 
@@ -92,6 +99,7 @@ def _call(
     response_schema: dict[str, Any],
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     reasoning_effort: str = "",
+    max_output_tokens: int | None = None,
     cancel_event: threading.Event | None = None,
 ) -> tuple[str, dict[str, int | None], str | None]:
     from .openrouter import choice_finish_reason
@@ -122,6 +130,9 @@ def _call(
         base_url = normalize_base_url(base_url)
     except ValueError as exc:
         raise ProviderError(str(exc)) from exc
+    if max_output_tokens:
+        # OpenAI's own API rejects max_tokens for reasoning models; local servers expect max_tokens.
+        payload[_max_output_key(base_url)] = max_output_tokens
     if not model.strip():
         raise ProviderError("Enter the model ID served by your OpenAI-compatible endpoint.")
     cancel_event = cancel_event or threading.Event()
@@ -188,7 +199,7 @@ def extract_document(*, source_path, source_name, api_key, primary_model,
                      response_schema, schema_config, instruction_path,
                      request_timeout_sec=600, reasoning_effort=None, article_text=None,
                      base_url="", response_format="json_schema", context_length=None,
-                     cancellation_event=None, **kwargs):
+                     cancellation_event=None, max_output_tokens=None, **kwargs):
     from .llm import ExtractionResult, extraction_review_reasons, parse_json_with_repair, review_status
     from .openrouter import NORMAL_FINISH_REASONS, strict_response_schema
     from .prompts import build_system_prompt
@@ -215,6 +226,7 @@ def extract_document(*, source_path, source_name, api_key, primary_model,
         response_format=response_format,
         response_schema=strict_response_schema(response_schema),
         timeout_sec=request_timeout_sec,
+        max_output_tokens=max_output_tokens,
         cancel_event=cancellation_event,
     )
     parsed, repaired_text = parse_json_with_repair(text, "OpenAI-compatible endpoint")

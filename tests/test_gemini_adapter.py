@@ -49,6 +49,10 @@ class GeminiAdapterTests(unittest.TestCase):
         self.assertEqual(kwargs['config'].response_mime_type, 'application/json')
         self.assertEqual(kwargs['config'].response_schema, {'type': 'object'})
         self.assertEqual(kwargs['config'].service_tier, 'flex')
+        # No cap unless the extractor sets one, so Gemini uses the model's maximum.
+        self.assertIsNone(kwargs['config'].max_output_tokens)
+        gemini._generate(client, uploaded, 'gemini-test', 'extract', {'type': 'object'}, 'flex', 32_000)
+        self.assertEqual(client.models.generate_content.call_args.kwargs['config'].max_output_tokens, 32_000)
         self.assertEqual(result, ({'effects': []}, '{"effects":[]}', None, {'input_tokens': 7, 'output_tokens': 3, 'total_tokens': 10}, []))
 
     def test_extraction_upload_names_results_and_validation_errors(self):

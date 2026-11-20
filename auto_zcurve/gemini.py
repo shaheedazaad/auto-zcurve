@@ -162,6 +162,7 @@ def _generate(
     prompt: str,
     response_schema: dict[str, Any],
     service_tier: str = "standard",
+    max_output_tokens: int | None = None,
 ) -> tuple[dict[str, Any], str, str | None, dict[str, int | None], list[str]]:
     try:
         from google.genai import types
@@ -175,6 +176,8 @@ def _generate(
             response_mime_type="application/json",
             response_schema=response_schema,
             service_tier=normalize_service_tier(service_tier),
+            # None leaves Gemini's default: the model's own maximum.
+            max_output_tokens=max_output_tokens or None,
         ),
     )
     raw_text = _response_text(response)
@@ -200,6 +203,7 @@ def extract_document(
     endpoint_order: tuple[str, ...] = (),
     cancellation_event: object | None = None,
     article_text: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> ExtractionResult:
     """Extract one source: a PDF is uploaded; article text goes in the prompt."""
     started = time.monotonic()
@@ -218,7 +222,9 @@ def extract_document(
         document = _upload_pdf(client, source_path, cancellation_event)
         used_input_mode = "native_pdf"
     parsed, raw_text, repaired_text, usage, finish_reasons = _with_retries(
-        lambda: _generate(client, document, primary_model, prompt, response_schema, service_tier),
+        lambda: _generate(
+            client, document, primary_model, prompt, response_schema, service_tier, max_output_tokens
+        ),
         cancellation_event,
     )
     try:

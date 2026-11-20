@@ -36,6 +36,10 @@ class RunnerLifecycleTests(unittest.TestCase):
         self.settings = RunSettings(primary_model='test', request_delay_sec=0)
         self.console = Console()
         self.option = ModelOption('test', 'Test', supports_reasoning=True)
+        # OpenRouter runs look up the endpoints' output limit; never over the network here.
+        limit = patch.object(r, 'resolve_max_output_tokens', return_value=None)
+        self.resolve_limit = limit.start()
+        self.addCleanup(limit.stop)
 
     def run_project(self, **kwargs):
         return r.run_project(**dict(dict(project_dir=self.project, settings=self.settings, assume_yes=True, interactive=False, force=False, skip_report=True, console=self.console, api_key='secret'), **kwargs))
@@ -109,6 +113,31 @@ class RunnerLifecycleTests(unittest.TestCase):
         with patch.object(r, 'extract_document', side_effect=r.RunCancelled('cancelled')), self.assertRaises(r.RunCancelled):
             self.process()
         self.assertEqual(len(load_run_log(self.project)), 1)
+
+    def test_each_request_carries_the_output_limit_settled_at_the_start(self):
+        settings = RunSettings(
+            primary_model='test', provider='openrouter', request_delay_sec=0, max_output_tokens=None,
+            openrouter_provider='deepinfra/fp8', openrouter_allow_fallbacks=False,
+        )
+        self.resolve_limit.return_value = 393_216
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction) as extract:
+            self.run_project(settings=settings, force=True)
+        self.resolve_limit.assert_called_once_with(
+            'openrouter', 'test', None, 'secret',
+            openrouter_provider='deepinfra/fp8', timeout_sec=30,
+        )
+        self.assertEqual(extract.call_args.kwargs['max_output_tokens'], 393_216)
+
+    def test_an_unreadable_endpoint_list_sends_no_output_limit_and_warns(self):
+        settings = RunSettings(primary_model='test', provider='openrouter', request_delay_sec=0)
+        self.resolve_limit.side_effect = ConnectionResetError('connection to secret reset')
+        save_extractions(self.project, [{'source_name': 'a.pdf', 'status': 'error'}])
+        with patch.object(r, 'validate_model_option', return_value=self.option), patch.object(r, 'extract_document', side_effect=self.extraction) as extract:
+            self.retry(settings=settings)
+        self.assertIsNone(extract.call_args.kwargs['max_output_tokens'])
+        warning = self.console.warn.call_args.args[0]
+        self.assertIn("maximum output", warning)
+        self.assertNotIn('secret', warning)
 
     def test_no_work_and_layout_incomplete_return_without_provider(self):
         with patch.object(r, 'ensure_project_layout', return_value=False):
