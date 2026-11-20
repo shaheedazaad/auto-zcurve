@@ -28,7 +28,9 @@ from auto_zcurve.artifacts import (
 )
 from auto_zcurve.config import RunSettings
 from auto_zcurve.llm import (
+    NO_EFFECTS_REASON,
     ExtractionResult,
+    flag_empty_extraction,
     finish_reason_review_reason,
     record_review_reasons,
     review_status,
@@ -65,6 +67,20 @@ class StatusHelperTests(unittest.TestCase):
         self.assertIsNone(finish_reason_review_reason("end_turn", normal=("end_turn",)))
         self.assertEqual(review_status([]), "ok")
         self.assertEqual(review_status(["JSON was repaired"]), "needs_review")
+
+    def test_an_extraction_without_effects_needs_review(self):
+        cases = [
+            ("ok", {"effects": []}, (), "needs_review", (NO_EFFECTS_REASON,)),
+            ("ok", None, (), "needs_review", (NO_EFFECTS_REASON,)),
+            ("needs_review", {"effects": []}, ("JSON was repaired",), "needs_review", ("JSON was repaired", NO_EFFECTS_REASON)),
+            ("ok", {"effects": [{"claim": "x"}]}, (), "ok", ()),
+            ("error", None, (), "error", ()),
+        ]
+        for status, data, reasons, expected_status, expected_reasons in cases:
+            with self.subTest(status=status, data=data):
+                result = ExtractionResult(Path("a.pdf"), "a.pdf", status, data=data, review_reasons=reasons)
+                flag_empty_extraction(result)
+                self.assertEqual((result.status, result.review_reasons), (expected_status, expected_reasons))
 
     def test_saved_reasons_tolerate_legacy_and_malformed_records(self):
         self.assertEqual(record_review_reasons({}), [])
@@ -147,6 +163,15 @@ class ArtifactAndRunnerTests(unittest.TestCase):
         with run_log_csv_path(self.project).open(newline="") as handle:
             row = next(csv.DictReader(handle))
         self.assertEqual((row["status"], row["review_reasons"]), ("needs_review", "JSON was repaired"))
+
+    def test_a_run_that_extracts_no_effects_is_saved_as_needing_review(self):
+        def empty(**kwargs):
+            return ExtractionResult(kwargs["source_path"], kwargs["source_name"], "ok", data={"effects": []})
+
+        with patch.object(r, "extract_document", side_effect=empty):
+            r._process_one(project_dir=self.project, source_path=self.project / "sources/new.pdf", settings=self.settings, api_key="key", retry=False, run_id="run", model_option=self.option)
+        record = load_extractions(self.project)[0]
+        self.assertEqual((record["status"], record["review_reasons"], record["effects"]), ("needs_review", [NO_EFFECTS_REASON], 0))
 
     def test_plain_run_skips_needs_review_and_retry_includes_it(self):
         self.saved_states()

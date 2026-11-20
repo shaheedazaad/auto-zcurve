@@ -14,6 +14,7 @@ STATUS_ERROR = "error"
 EXTRACTED_STATUSES = frozenset({STATUS_OK, STATUS_NEEDS_REVIEW})
 
 JSON_REPAIRED_REASON = "JSON was repaired"
+NO_EFFECTS_REASON = "no effects extracted"
 
 # Each provider request gets this many attempts in total before it fails.
 MAX_PROVIDER_ATTEMPTS = 3
@@ -153,3 +154,11 @@ class ExtractionResult:
     def effect_count(self) -> int:
         effects = (self.data or {}).get("effects") if self.data else None
         return len(effects) if isinstance(effects, list) else 0
+
+
+def flag_empty_extraction(result: ExtractionResult) -> None:
+    """Mark an extraction with no effects for review: a model can return an
+    empty list when it fails, and a real article rarely reports no tests."""
+    if result.status in EXTRACTED_STATUSES and result.effect_count == 0:
+        result.status = STATUS_NEEDS_REVIEW
+        result.review_reasons = (*result.review_reasons, NO_EFFECTS_REASON)

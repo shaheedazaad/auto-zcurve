@@ -88,6 +88,9 @@ An extraction is marked **Needs review** instead of **Done** when:
   provider stopped the response early. A normal finish is `STOP` for Gemini
   and `stop` for the others; a response with no finish reason also counts as
   normal.
+- **"no effects extracted"**: the response was valid but listed no effects.
+  Few articles report no statistical tests, so this usually means the model
+  failed quietly. Check the article, and retry it if it does report tests.
 
 The reasons are shown under the article's name on the **Articles** tab, in
 the CLI run summary, in the report's *Articles Needing Review* section, and

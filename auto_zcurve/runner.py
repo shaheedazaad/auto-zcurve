@@ -22,7 +22,14 @@ from .artifacts import (
 )
 from .config import RunSettings, load_app_settings, load_run_settings, save_run_settings
 from .console import CliConsole
-from .llm import EXTRACTED_STATUSES, STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
+from .llm import (
+    EXTRACTED_STATUSES,
+    STATUS_ERROR,
+    STATUS_NEEDS_REVIEW,
+    STATUS_OK,
+    ExtractionResult,
+    flag_empty_extraction,
+)
 from .models import ModelOption, resolve_input_mode, resolve_max_output_tokens, validate_model_option
 from .paths import DEFAULT_SCHEMA
 from .providers import extract_document, normalize_provider
@@ -283,6 +290,7 @@ def _process_one(
             max_output_tokens=model_option.max_output_tokens,
         )
         _raise_if_cancelled(cancellation_event)
+        flag_empty_extraction(result)
     except RunCancelled:
         raise
     except Exception as exc:
