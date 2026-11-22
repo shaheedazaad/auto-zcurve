@@ -125,6 +125,31 @@ class RemainingRouteTests(unittest.TestCase):
         self.assertEqual(response.content, b'png fixture')
         self.assertEqual(response.headers['content-type'], 'image/png')
 
+    def test_several_responses_are_deleted_at_once(self):
+        from auto_zcurve.artifacts import load_extractions, save_extractions
+        save_extractions(self.project.path, [{'source_name': name, 'status': 'ok'} for name in ['a.pdf', 'b.xml', 'c.pdf']])
+        response = self.client.post(self.base + '/responses/delete', data={'source_name': ['a.pdf', 'b.xml', 'missing.pdf']})
+        self.assertEqual(response.json(), {'deleted': True, 'source_names': ['a.pdf', 'b.xml']})
+        self.assertEqual([item['source_name'] for item in load_extractions(self.project.path)], ['c.pdf'])
+        response = self.client.post(self.base + '/responses/delete', data={'source_name': ['a.pdf', 'b.xml']})
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('None of those sources', response.text)
+        response = self.client.post(self.base + '/responses/delete', data={'source_name': ['c.pdf', '../x.pdf']})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(load_extractions(self.project.path)), 1)
+
+    def test_retry_passes_only_the_chosen_sources(self):
+        router = create_extractor({'name': 'Local', 'provider': 'openai_compatible', 'model': 'q', 'base_url': 'http://h/v1'})
+        with patch.object(self.runtime, 'start_job', return_value=NS(status='queued')) as start:
+            response = self.client.post(self.base + '/retry', data={'extractor_id': router.id, 'source_name': ['a.pdf', 'b.xml', 'a.pdf']})
+            self.assertEqual(response.status_code, 202, response.text)
+            self.assertEqual(start.call_args.args[4], ['a.pdf', 'b.xml'])
+            self.client.post(self.base + '/retry', data={'extractor_id': router.id})
+            self.assertIsNone(start.call_args.args[4])
+            response = self.client.post(self.base + '/retry', data={'source_name': ['notes.txt']})
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(start.call_count, 2)
+
     def test_minimal_zip_and_folder_open_failure(self):
         (self.project.path / 'extraction_schema.yml').unlink()
         shutil.rmtree(self.project.path / 'output')

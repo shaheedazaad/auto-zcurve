@@ -102,7 +102,10 @@
       const retry = article.retry_error ? ` · Last retry failed: ${article.retry_error}` : "";
       return `<small class="article-message u-warning">Needs review: ${escapeHtml(reasons + retry)}</small>${parserWarning}`;
     }
-    return parserWarning;
+    const failedRetry = article.retry_error
+      ? `<small class="article-message u-warning">Last retry failed: ${escapeHtml(article.retry_error)}</small>`
+      : "";
+    return failedRetry + parserWarning;
   };
   const articleRowState = (status) => ({ ok: "ok", error: "error", needs_review: "needs-review" })[status] || "ready";
   const articleFileIcon = '<span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>';
@@ -726,14 +729,50 @@
   let currentArticles = [];
   let articleSortKey = "name";
   let articleSortDirection = 1;
+  let articleStatusFilter = "";
+  let canRunExtractor = false;
+  const selectedArticles = new Set();
+  const articleFilter = document.querySelector("[data-article-filter]");
+  const articleStatusKey = (status) => (["ok", "error", "needs_review"].includes(status) ? status : "ready");
+  const filteredArticles = () => currentArticles.filter((article) =>
+    !articleStatusFilter || articleStatusKey(article.status) === articleStatusFilter);
+
+  const renderSelection = () => {
+    const matching = filteredArticles();
+    const selectedMatching = matching.filter((article) => selectedArticles.has(article.name)).length;
+    const selectAll = document.querySelector(".js-select-all-articles");
+    if (selectAll) {
+      selectAll.checked = matching.length > 0 && selectedMatching === matching.length;
+      selectAll.indeterminate = selectedMatching > 0 && selectedMatching < matching.length;
+      selectAll.disabled = !matching.length;
+    }
+    document.querySelectorAll(".js-select-article").forEach((box) => { box.checked = selectedArticles.has(box.value); });
+    const bar = document.querySelector("[data-article-selection]");
+    if (!bar) return;
+    const selected = currentArticles.filter((article) => selectedArticles.has(article.name));
+    bar.hidden = !selected.length;
+    bar.querySelector("[data-selection-count]").textContent = `${selected.length} selected`;
+    bar.querySelector(".js-retry-selected").disabled = isRunning || !canRunExtractor || !selected.length;
+    bar.querySelector(".js-delete-selected").disabled = isRunning || !selected.some((article) => article.status !== "ready");
+  };
 
   const renderArticlePage = () => {
     const tbody = document.querySelector("[data-article-body]");
     if (!tbody) return;
-    const totalPages = Math.max(1, Math.ceil(currentArticles.length / pageSize));
+    if (articleFilter) {
+      [...articleFilter.options].forEach((option) => {
+        option.dataset.label ||= option.textContent;
+        const count = option.value
+          ? currentArticles.filter((article) => articleStatusKey(article.status) === option.value).length
+          : currentArticles.length;
+        option.textContent = `${option.dataset.label} (${count})`;
+      });
+    }
+    const matching = filteredArticles();
+    const totalPages = Math.max(1, Math.ceil(matching.length / pageSize));
     articlePage = Math.min(articlePage, totalPages);
     const start = (articlePage - 1) * pageSize;
-    const sortedArticles = [...currentArticles].sort((left, right) => {
+    const sortedArticles = [...matching].sort((left, right) => {
       const a = left[articleSortKey] ?? "";
       const b = right[articleSortKey] ?? "";
       const result = typeof a === "number" || typeof b === "number"
@@ -743,10 +782,14 @@
     });
     const visibleArticles = sortedArticles.slice(start, start + pageSize);
     if (!visibleArticles.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="table-empty-cell">No articles yet. Add PDF or XML files from the Sources tab to begin.</td></tr>';
+      const empty = currentArticles.length
+        ? "No articles have this status."
+        : "No articles yet. Add PDF or XML files from the Sources tab to begin.";
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="6" class="table-empty-cell">${empty}</td></tr>`;
     } else {
       tbody.innerHTML = visibleArticles.map((article) => `
         <tr class="article-row article-row-${articleRowState(article.status)}">
+          <td class="select-cell"><input class="input js-select-article" type="checkbox" value="${escapeHtml(article.name)}" aria-label="Select ${escapeHtml(article.name)}"></td>
           <td>${articleFileIcon}<span><strong class="article-name" title="${escapeHtml(article.name)}">${escapeHtml(article.name)}</strong>${articleMessage(article)}</span></td>
           <td>${articleStatusBadge(article.status, article.json_repaired)}</td>
           <td>${article.effects || "—"}</td>
@@ -756,11 +799,12 @@
     }
     const pagination = document.querySelector("[data-article-pagination]");
     if (pagination) {
-      pagination.hidden = currentArticles.length <= pageSize;
+      pagination.hidden = matching.length <= pageSize;
       pagination.querySelector("[data-page-status]").textContent = `Page ${articlePage} of ${totalPages}`;
       pagination.querySelector(".js-page-previous").disabled = articlePage <= 1;
       pagination.querySelector(".js-page-next").disabled = articlePage >= totalPages;
     }
+    renderSelection();
   };
 
   let sourcePage = 1;
@@ -801,6 +845,8 @@
 
   const renderArticles = (project) => {
     currentArticles = project.articles;
+    const names = new Set(currentArticles.map((article) => article.name));
+    [...selectedArticles].forEach((name) => { if (!names.has(name)) selectedArticles.delete(name); });
     renderArticlePage();
     renderSourcePage();
     document.querySelector("[data-pdf-count]").textContent = `${project.pdf_count} file${project.pdf_count === 1 ? "" : "s"}`;
@@ -872,8 +918,50 @@
       window.alert(error.message);
     }
   });
+  articleFilter?.addEventListener("change", () => {
+    articleStatusFilter = articleFilter.value;
+    articlePage = 1;
+    renderArticlePage();
+  });
+  document.querySelector("[data-article-body]")?.addEventListener("change", (event) => {
+    const box = event.target.closest(".js-select-article");
+    if (!box) return;
+    if (box.checked) selectedArticles.add(box.value);
+    else selectedArticles.delete(box.value);
+    renderSelection();
+  });
+  document.querySelector(".js-select-all-articles")?.addEventListener("change", (event) => {
+    filteredArticles().forEach((article) => {
+      if (event.target.checked) selectedArticles.add(article.name);
+      else selectedArticles.delete(article.name);
+    });
+    renderSelection();
+  });
+  document.querySelector(".js-clear-selection")?.addEventListener("click", () => {
+    selectedArticles.clear();
+    renderSelection();
+  });
+  document.querySelector(".js-delete-selected")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const names = currentArticles
+      .filter((article) => selectedArticles.has(article.name) && article.status !== "ready")
+      .map((article) => article.name);
+    const label = names.length === 1 ? `“${names[0]}”` : `${names.length} articles`;
+    if (!window.confirm(`Delete the saved output for ${label}? The source files will remain and can be rerun.`)) return;
+    button.disabled = true;
+    const data = new FormData();
+    names.forEach((name) => data.append("source_name", name));
+    try {
+      await postForm(`/${token}/projects/${projectId}/responses/delete`, data);
+      selectedArticles.clear();
+      await refreshProject();
+    } catch (error) {
+      window.alert(error.message);
+    }
+    renderSelection();
+  });
   document.querySelector(".js-page-next")?.addEventListener("click", () => {
-    const totalPages = Math.max(1, Math.ceil(currentArticles.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(filteredArticles().length / pageSize));
     if (articlePage < totalPages) articlePage += 1;
     renderArticlePage();
   });
@@ -999,6 +1087,7 @@
     if (articleRefreshTimer) window.clearInterval(articleRefreshTimer);
     articleRefreshTimer = running ? window.setInterval(() => refreshProject(), 2500) : undefined;
     if (!running) syncRunReadiness();
+    renderSelection();
   };
 
   const showConnectionLost = (closed) => {
@@ -1059,17 +1148,20 @@
   const editExtractorLink = document.querySelector("[data-edit-extractor-link]");
   const projectSettingsMessage = document.querySelector(".project-settings-message");
 
-  const start = async (action) => {
+  const start = async (action, sources = []) => {
     runMessage.textContent = "";
     const data = new FormData();
     if (["run", "retry"].includes(action) && extractorSelect?.value) data.set("extractor_id", extractorSelect.value);
+    sources.forEach((name) => data.append("source_name", name));
     try {
       await postForm(`${base}/${action}`, data);
       setRunning(true);
       watchEvents();
+      return true;
     } catch (error) {
       runMessage.textContent = error.message;
       setMessageState(runMessage, "form-message run-message error-text");
+      return false;
     }
   };
 
@@ -1084,6 +1176,8 @@
     if (runActions) runActions.hidden = !canRun;
     runButton.disabled = isRunning || runButton.dataset.hasPdfs !== "true" || !canRun;
     retryButton.disabled = isRunning || retryButton.dataset.hasFailures !== "true" || !canRun;
+    canRunExtractor = canRun;
+    renderSelection();
   };
 
   extractorSelect?.addEventListener("change", async () => {
@@ -1115,6 +1209,18 @@
   syncRunReadiness();
   runButton?.addEventListener("click", () => start("run"));
   retryButton?.addEventListener("click", () => start("retry"));
+  document.querySelector(".js-retry-selected")?.addEventListener("click", async () => {
+    const names = currentArticles.filter((article) => selectedArticles.has(article.name)).map((article) => article.name);
+    const label = names.length === 1 ? `“${names[0]}”` : `${names.length} selected articles`;
+    if (!window.confirm(`Re-extract ${label} with the chosen extractor? A done article keeps its current result if the new attempt fails.`)) return;
+    if (await start("retry", names)) {
+      selectedArticles.clear();
+      renderSelection();
+      document.querySelector('[data-tab-target="run-analysis"]')?.click();
+    } else {
+      window.alert(runMessage.textContent);
+    }
+  });
   regenerateButton?.addEventListener("click", () => start("regenerate-report"));
   cancelButton?.addEventListener("click", async () => {
     try {

@@ -302,17 +302,31 @@
         <h2 class="icon-heading">{{ workflow_icon("identify") }}Extraction results</h2>
         {{ docs_link("results/#when-an-article-fails", "Reviewing results") }}
       </div>
-      <div class="cluster" aria-label="Article statuses">
-        <span class="badge" data-variant="outline">Ready</span>
-        <span class="badge" data-variant="success">Done</span>
-        <span class="badge" data-variant="destructive">Failed</span>
+      <div class="section-head-actions">
+        <label class="u-visually-hidden" for="article-status-filter">Show articles by status</label>
+        <select class="select" id="article-status-filter" data-article-filter>
+          <option value="">All statuses</option>
+          <option value="ready">Ready</option>
+          <option value="ok">Done</option>
+          <option value="needs_review">Needs review</option>
+          <option value="error">Failed</option>
+        </select>
       </div>
     </div>
     <div class="panel">
+      <div class="selection-bar" data-article-selection hidden>
+        <span class="u-sm" data-selection-count aria-live="polite">0 selected</span>
+        <div class="cluster">
+          <button class="btn js-retry-selected" data-size="sm" type="button" title="Re-extract the selected articles with the chosen extractor">Retry selected</button>
+          <button class="btn js-delete-selected" data-variant="outline" data-size="sm" type="button">Delete output</button>
+          <button class="btn js-clear-selection" data-variant="ghost" data-size="sm" type="button">Clear selection</button>
+        </div>
+      </div>
       <div class="table-container">
         <table class="table">
           <thead>
             <tr>
+              <th class="select-cell"><input class="input js-select-all-articles" type="checkbox" aria-label="Select all articles shown"></th>
               <th><button class="table-sort js-sort-articles" type="button" data-sort-key="name">Article <span aria-hidden="true">↕</span></button></th>
               <th><button class="table-sort js-sort-articles" type="button" data-sort-key="status">Status <span aria-hidden="true">↕</span></button></th>
               <th><button class="table-sort js-sort-articles" type="button" data-sort-key="effects">Effects <span aria-hidden="true">↕</span></button></th>
@@ -323,6 +337,7 @@
           <tbody data-article-body>
             {% for article in project.articles[:10] %}
             <tr class="article-row article-row-{{ article.status | replace('_', '-') }}">
+              <td class="select-cell"><input class="input js-select-article" type="checkbox" value="{{ article.name }}" aria-label="Select {{ article.name }}"></td>
               <td>
                 <span class="file-icon article-file-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v12a2 2 0 0 1 -2 2h-5"/><path d="M3 15h6v4a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M6 15v6"/></svg></span>
                 <span>
@@ -330,7 +345,7 @@
                   {% if article.error %}<small class="article-message u-error">{{ article.error }}</small>
                   {% elif article.status == "needs_review" %}<small class="article-message u-warning">Needs review: {{ article.review_reasons | join("; ") if article.review_reasons else "no reason was recorded" }}{% if article.retry_error %} · Last retry failed: {{ article.retry_error }}{% endif %}</small>
                   {% if article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
-                  {% elif article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}
+                  {% else %}{% if article.retry_error %}<small class="article-message u-warning">Last retry failed: {{ article.retry_error }}</small>{% endif %}{% if article.warning %}<small class="article-message u-warning">{{ article.warning }}</small>{% endif %}{% endif %}
                 </span>
               </td>
               <td>
@@ -349,7 +364,7 @@
               </td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5" class="table-empty-cell">No extraction results yet. Add articles on the Sources tab, then start a run from Run analysis.</td></tr>
+            <tr class="empty-row"><td colspan="6" class="table-empty-cell">No extraction results yet. Add articles on the Sources tab, then start a run from Run analysis.</td></tr>
             {% endfor %}
           </tbody>
         </table>
