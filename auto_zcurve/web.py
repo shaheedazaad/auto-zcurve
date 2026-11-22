@@ -828,7 +828,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         return {"renamed": True, "name": renamed.name}
 
     @app.post(f"/{token}/projects/{{project_id}}/responses/delete")
-    async def delete_response_route(project_id: str, source_name: list[str] = Form(...)):
+    async def delete_response_route(
+        project_id: str,
+        source_name: Optional[str] = Form(None),
+        source_names: Optional[str] = Form(None),
+    ):
         try:
             project = runtime.project(project_id)
         except ProjectError as exc:
@@ -836,7 +840,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         job = runtime.jobs.get(project_id)
         if job and job.status in {"queued", "running"}:
             raise HTTPException(status_code=409, detail="Cancel the active run before deleting a response.")
-        names = _source_names(source_name)
+        names = _source_names(source_name, source_names)
         if names is None:
             raise HTTPException(status_code=400, detail="Choose the sources whose responses to delete.")
         deleted = [name for name in names if delete_extraction(project.path, name)]
@@ -969,8 +973,21 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         save_selected_extractor_id(project.path, extractor.id)
         return {"saved": True, "extractor": _extractor_view(runtime, extractor)}
 
-    def _source_names(values: list[str]) -> list[str] | None:
-        """Distinct top-level source names from a form, or None when any is invalid."""
+    def _source_names(single: str | None, encoded: str | None) -> list[str] | None:
+        """Distinct top-level source names from a form, or None when any is invalid.
+
+        A selection arrives as one JSON array field (`source_names`), not one
+        field per article, so it stays within the form parser's field limit.
+        """
+        values = [single] if single is not None else []
+        if encoded is not None:
+            try:
+                parsed = json.loads(encoded)
+            except ValueError:
+                return None
+            if not isinstance(parsed, list) or not all(isinstance(value, str) for value in parsed):
+                return None
+            values.extend(parsed)
         names = list(dict.fromkeys(value.strip() for value in values))
         if not names or any(
             not name or Path(name).name != name or not is_source_name(name) for name in names
@@ -1001,12 +1018,12 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
     async def start_retry(
         project_id: str,
         extractor_id: Optional[str] = Form(None),
-        source_name: Optional[list[str]] = Form(None),
+        source_names: Optional[str] = Form(None),
     ):
         """Retry failed and needs-review articles, or exactly the chosen ones."""
         sources = None
-        if source_name:
-            sources = _source_names(source_name)
+        if source_names is not None:
+            sources = _source_names(None, source_names)
             if sources is None:
                 raise HTTPException(status_code=400, detail="Choose the sources to retry.")
         try:

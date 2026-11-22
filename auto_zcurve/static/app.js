@@ -950,7 +950,7 @@
     if (!window.confirm(`Delete the saved output for ${label}? The source files will remain and can be rerun.`)) return;
     button.disabled = true;
     const data = new FormData();
-    names.forEach((name) => data.append("source_name", name));
+    data.set("source_names", JSON.stringify(names));
     try {
       await postForm(`/${token}/projects/${projectId}/responses/delete`, data);
       selectedArticles.clear();
@@ -1152,7 +1152,7 @@
     runMessage.textContent = "";
     const data = new FormData();
     if (["run", "retry"].includes(action) && extractorSelect?.value) data.set("extractor_id", extractorSelect.value);
-    sources.forEach((name) => data.append("source_name", name));
+    if (sources.length) data.set("source_names", JSON.stringify(sources));
     try {
       await postForm(`${base}/${action}`, data);
       setRunning(true);

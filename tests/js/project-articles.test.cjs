@@ -240,7 +240,7 @@ test('deleting selected output posts every chosen article with output, then refr
     assert.equal(posts.length, Number(confirm));
     if (!confirm) continue;
     assert.equal(posts[0][0], '/token/projects/project/responses/delete');
-    assert.deepEqual(posts[0][1].body.getAll('source_name'), picks.filter(name => name !== 'Paper 01.pdf'));
+    assert.deepEqual(JSON.parse(posts[0][1].body.get('source_names')), picks.filter(name => name !== 'Paper 01.pdf'));
     if (ok) { assert.equal(h.calls.at(-1)[0], '/token/api/projects/project'); assert.equal(h.document.querySelector('[data-article-selection]').hidden, true); }
     else { assert.deepEqual(h.alerts, ['Cannot delete']); assert.equal(h.document.querySelector('.js-delete-selected').disabled, false); }
   }
@@ -258,7 +258,7 @@ test('retrying selected articles sends them with the extractor and opens the run
     assert.equal(posts.length, Number(confirm));
     if (!confirm) continue;
     assert.equal(posts[0][0], '/token/projects/project/retry');
-    assert.deepEqual(posts[0][1].body.getAll('source_name'), picks);
+    assert.deepEqual(JSON.parse(posts[0][1].body.get('source_names')), picks);
     assert.equal(posts[0][1].body.get('extractor_id'), 'lab');
     assert.equal(tabOpened, ok);
     if (ok) {
