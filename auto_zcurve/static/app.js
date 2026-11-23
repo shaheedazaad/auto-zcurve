@@ -49,10 +49,16 @@
     window.confirm(`${options.title || "Clear current results?"}\n\n${message}`)
   );
 
+  // The server's error message, or the fallback when it has none to show:
+  // FastAPI's request validation errors put a list of objects in `detail`.
+  const errorDetail = (payload, fallback) => (
+    typeof payload?.detail === "string" && payload.detail ? payload.detail : fallback
+  );
+
   const postForm = async (url, body) => {
     const response = await fetch(url, { method: "POST", body });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || "The request could not be completed.");
+    if (!response.ok) throw new Error(errorDetail(payload, "The request could not be completed."));
     return payload;
   };
 
@@ -260,7 +266,7 @@
           }
           const payload = await response.json().catch(() => ({}));
           if (request !== modelRequest) return;
-          if (!response.ok) throw new Error(payload.detail || "Models could not be loaded.");
+          if (!response.ok) throw new Error(errorDetail(payload, "Models could not be loaded."));
           modelOptions.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
           modelHint.textContent = payload.length
             ? `${payload.length} model${payload.length === 1 ? "" : "s"} available. Start typing to filter.`
@@ -284,7 +290,7 @@
           const response = await fetch(`/${token}/api/models/openrouter/endpoints?${query}`, { cache: "no-store" });
           const payload = await response.json().catch(() => ({}));
           if (request !== endpointRequest) return;
-          if (!response.ok) throw new Error(payload.detail || "Providers could not be loaded.");
+          if (!response.ok) throw new Error(errorDetail(payload, "Providers could not be loaded."));
           endpointList.innerHTML = payload.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.name)}</option>`).join("");
           endpointStatus.textContent = payload.length
             ? `${payload.length} provider${payload.length === 1 ? " serves" : "s serve"} this model with structured output. Leave empty to let OpenRouter choose.`
@@ -369,7 +375,7 @@
         try {
           const response = await fetch(`/${token}/api/extractors/${encodeURIComponent(form.dataset.extractorId)}/projects`, { cache: "no-store" });
           const payload = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(payload.detail || "The projects using this extractor could not be listed.");
+          if (!response.ok) throw new Error(errorDetail(payload, "The projects using this extractor could not be listed."));
           using = payload.projects || [];
         } catch (error) {
           reportList(error.message, "error-text");

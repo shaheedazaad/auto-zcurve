@@ -256,6 +256,15 @@ test('deleting selected output posts every chosen article with output, then refr
   }
 });
 
+test('a validation error shows a readable message, not [object Object]', async t => {
+  const detail = [{ type: 'missing', loc: ['body', 'source_name'], msg: 'Field required', input: null }];
+  const h = projectMount(selectionHtml, { project, fetch: async (url, request) => request?.method === 'POST' ? { ok: false, json: async () => ({ detail }) } : undefined });
+  t.after(h.close); await flush();
+  await tick(h, 'Paper 00.pdf'); await tick(h, 'Paper 02.pdf');
+  await h.click('.js-delete-selected');
+  assert.deepEqual(h.alerts, ['The request could not be completed.']);
+});
+
 test('retrying selected articles sends them with the extractor and opens the run tab', async t => {
   for (const [confirm, ok, picks] of [[false, true, ['Paper 01.pdf']], [true, true, ['Paper 01.pdf', 'Paper 03.pdf']], [true, true, ['Paper 04.pdf']], [true, false, ['Paper 04.pdf']]]) {
     let tabOpened = false;
