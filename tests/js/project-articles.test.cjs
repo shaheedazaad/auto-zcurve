@@ -69,6 +69,16 @@ test('PDF uploads handle drops, selection, empty inputs, plural messages, and fa
   }
 });
 
+test('PDF uploads list duplicates that were skipped', async t => {
+  const html = '<form class="js-upload" action="/upload"><input type="file" multiple></form><p class="upload-message"></p>';
+  const h = projectMount(html, { fetch: async (url, request) => request?.method === 'POST' ? { ok: true, json: async () => ({ saved: ['new.pdf'], skipped: [{ name: 'a.pdf', existing: 'a.pdf' }, { name: 'copy.pdf', existing: 'b.pdf' }] }) } : undefined });
+  t.after(h.close); await flush();
+  const input = h.document.querySelector('.js-upload input');
+  Object.defineProperty(input, 'files', { value: [new h.window.File(['pdf'], 'new.pdf')] }); input.dispatchEvent(new h.window.Event('change'));
+  await flush();
+  assert.equal(h.document.querySelector('.upload-message').textContent, 'Added 1 file. Skipped 2 already in this project: a.pdf, copy.pdf.');
+});
+
 test('JSON output highlights keys and strings and article names cannot inject attributes', async t => {
   const name = 'Paper " autofocus onfocus="alert(1).pdf';
   const h = projectMount('', { project: { ...project, articles: [{ name, status: 'ok', effects: 1, raw_response: '{"title":"result", "valid":true}' }] } });

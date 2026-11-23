@@ -76,7 +76,7 @@ from .projects import (
     read_project_schema,
     rename_project,
     reset_project_analysis,
-    save_upload,
+    save_uploads,
     update_project_instructions,
     update_project_schema,
 )
@@ -873,17 +873,12 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if len(files) > 100:
             raise HTTPException(status_code=413, detail="Upload at most 100 files at a time.")
-        saved = []
         try:
-            for upload in files:
-                saved.append(
-                    save_upload(
-                        project,
-                        upload.filename or "",
-                        upload.file,
-                        max_bytes=load_app_settings().max_upload_size_mb * 1024 * 1024,
-                    ).name
-                )
+            result = save_uploads(
+                project,
+                [(upload.filename or "", upload.file) for upload in files],
+                max_bytes=load_app_settings().max_upload_size_mb * 1024 * 1024,
+            )
         except UploadTooLarge as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc
         except ProjectError as exc:
@@ -891,7 +886,7 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         finally:
             for upload in files:
                 await upload.close()
-        return {"saved": saved}
+        return {"saved": result.saved, "skipped": result.skipped}
 
     @app.post(f"/{token}/projects/{{project_id}}/instructions")
     async def save_instructions(
