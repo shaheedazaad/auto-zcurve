@@ -58,6 +58,24 @@ check a handful of rows against the original PDFs, especially for articles
 with unusual formatting (tables spanning pages, statistics reported in
 figures rather than text, non-standard notation).
 
+## Which tests enter the z-curve
+
+New projects extract all reported statistical tests, including those in tables,
+figures, captions, and available appendices. Every test stays in
+`disclosure_table.csv`, with `eligible` and `eligibility_explanation` columns.
+Only explicitly eligible tests with usable statistics enter the z-curve.
+The default eligibility criteria select title/abstract claims and exclude
+follow-up tests when an omnibus test is reported, plus secondary analyses.
+Change these criteria in the project's extraction instructions as needed.
+
+Existing projects retain their saved schemas, instructions, and results. When
+an older schema has no eligibility field, its extracted effects are treated as
+eligible under its original extraction criteria; regenerated disclosure tables
+label this legacy assumption. A schema that defines eligibility requires an
+explicit true value for inclusion. To collect previously omitted tests in an
+old project, update its schema and instructions to the new defaults and rerun
+extraction (the app's existing reset confirmation applies).
+
 ## Extraction statuses
 
 Each article on the **Articles** tab has one of these statuses:

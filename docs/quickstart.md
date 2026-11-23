@@ -31,6 +31,9 @@ can be PDFs or publisher XML files (`.xml`), and one project can mix both.
 
 ![The Sources tab, showing the drag-and-drop area for PDFs](assets/screenshots/project-sources.png)
 
+If two files share a name, the second gets a numbered suffix rather than
+replacing the first.
+
 Once added, each article is listed as **Ready** on the **Articles** tab.
 Nothing is sent anywhere yet — this just registers the files in your project.
 

@@ -11,6 +11,22 @@ that's how statistics get extracted from it. See
 [Getting an API key](api-key.md#what-gets-sent-to-the-provider) for exactly
 what that involves.
 
+## How is the app protected on my computer?
+
+The browser app is local software, not a hosted service. To stop other
+websites or computers from reaching it, it uses:
+
+- a random token in every app link, generated each time you start it;
+- a fixed `127.0.0.1` address, so other computers on your network can't
+  connect;
+- checks that reject requests from other websites;
+- limits on uploaded file sizes, checks that a PDF really is a PDF, and
+  cleaned-up filenames that can't escape the project folder;
+- results downloads that never include API keys or your source PDFs.
+
+Anyone who can use your operating-system account can still read your project
+files, as with any other documents on your computer.
+
 ## Does this cost money?
 
 auto-zcurve itself is free. Hosted providers may charge for requests; check
