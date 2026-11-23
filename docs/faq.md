@@ -73,7 +73,12 @@ example HTTP 400 or 401), auto-zcurve tries once more with a different PDF
 parser (Mistral OCR) before marking the article as failed. The same happens
 when the first parser returns no text from the PDF, which would otherwise
 leave the model with nothing to read; if Mistral OCR also finds no text, the
-article is marked as failed rather than returned with no effects.
+article is marked as failed rather than returned with no effects. It also
+tries Mistral OCR when the first parser returns text for some pages but not
+for more than half of them, which would leave the model with little more than
+the abstract. If Mistral OCR is no better, the result is kept but marked as
+needs review with a reason such as "PDF parser returned no text for 11 of 12
+pages".
 
 Try **Retry** after fixing the underlying article, schema or model choice.
 If several unrelated articles fail with the same error, it's more likely a

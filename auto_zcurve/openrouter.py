@@ -295,15 +295,16 @@ _PARSED_FILE_TAG = re.compile(r"^</?file\b[^>]*>$")
 _PARSED_PAGE_HEADING = re.compile(r"^#{1,6}\s*Page\s+\d+$", re.IGNORECASE)
 
 
-def _parsed_pdf_text(response: dict[str, Any]) -> str | None:
-    """The page text OpenRouter's file-parser plugin extracted, or None when the
-    response carries no parser annotation to judge.
+# A parsed page with fewer non-whitespace characters than this counts as blank.
+MIN_PARSED_PAGE_CHARS = 20
 
-    The parser can succeed yet return only the PDF's metadata and empty
-    `### Page N` headings. The model then sees no paper and correctly reports
-    nothing, so the blank parse must be caught here, not from the extraction.
+
+def _parsed_lines(response: object) -> list[str] | None:
+    """The non-empty lines of the PDF text OpenRouter's file-parser plugin
+    extracted, page headings included, or None when the response carries no
+    parser annotation to judge (such as a model that read the PDF natively).
     """
-    choices = response.get("choices")
+    choices = response.get("choices") if isinstance(response, dict) else None
     choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
     message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
     parts: list[str] = []
@@ -322,12 +323,40 @@ def _parsed_pdf_text(response: dict[str, Any]) -> str | None:
     text = "\n".join(parts)
     # Text before the page contents is the PDF's own metadata, not the paper.
     _, contents_heading, contents = text.partition("## Contents")
-    lines = (contents if contents_heading else text).splitlines()
-    return "\n".join(
-        line.strip()
-        for line in lines
-        if line.strip() and not _PARSED_FILE_TAG.match(line.strip()) and not _PARSED_PAGE_HEADING.match(line.strip())
-    )
+    lines = (line.strip() for line in (contents if contents_heading else text).splitlines())
+    return [line for line in lines if line and not _PARSED_FILE_TAG.match(line)]
+
+
+def _parsed_pdf_text(response: dict[str, Any]) -> str | None:
+    """The page text OpenRouter's file-parser plugin extracted, or None when the
+    response carries no parser annotation to judge.
+
+    The parser can succeed yet return only the PDF's metadata and empty
+    `### Page N` headings. The model then sees no paper and correctly reports
+    nothing, so the blank parse must be caught here, not from the extraction.
+    """
+    lines = _parsed_lines(response)
+    if lines is None:
+        return None
+    return "\n".join(line for line in lines if not _PARSED_PAGE_HEADING.match(line))
+
+
+def parsed_page_coverage(response: object) -> tuple[int, int] | None:
+    """Return (blank pages, total pages) of the parser plugin's PDF text.
+
+    The parser can also return text for the first page only, so the model
+    sees little more than the abstract. None when there is no parser
+    annotation or it has no page headings.
+    """
+    pages: list[int] = []
+    for line in _parsed_lines(response) or []:
+        if _PARSED_PAGE_HEADING.match(line):
+            pages.append(0)
+        elif pages:
+            pages[-1] += len("".join(line.split()))
+    if not pages:
+        return None
+    return sum(chars < MIN_PARSED_PAGE_CHARS for chars in pages), len(pages)
 
 
 def _usage(payload: dict[str, Any]) -> dict[str, int | None]:
@@ -396,6 +425,19 @@ def _empty_response_error(payload: dict[str, Any]) -> str:
         "OpenRouter returned no final text "
         f"(finish reason: {finish_reason}, completion tokens: {usage.get('completion_tokens', 'unknown')}{suffix})."
     )
+
+
+def mostly_blank_parse(coverage: tuple[int, int] | None) -> bool:
+    """True when the parser produced no text for more than half of a multi-page PDF."""
+    if coverage is None:
+        return False
+    blank, total = coverage
+    return total > 1 and blank * 2 > total
+
+
+def blank_parse_review_reason(coverage: tuple[int, int]) -> str:
+    blank, total = coverage
+    return f"PDF parser returned no text for {blank} of {total} pages"
 
 
 def choice_finish_reason(choice: object) -> str | None:
@@ -512,7 +554,8 @@ def extract_document(
     last_error: RuntimeError | ValueError | None = None
     def should_retry(attempt: int, retryable: bool = True) -> bool:
         # The first Cloudflare parser failure gets one guaranteed Mistral OCR
-        # attempt, including non-retryable HTTP/parser errors.
+        # attempt, including non-retryable HTTP/parser errors and a parse that
+        # lost most of the article's pages.
         return attempt < MAX_COMPLETION_ATTEMPTS and (
             retryable or (input_mode == "cloudflare_pdf" and attempt == 1)
         )
@@ -564,6 +607,15 @@ def extract_document(
                 time.sleep(retry_delay(attempt))
                 continue
             raise last_error
+        if (
+            input_mode == "cloudflare_pdf"
+            and mostly_blank_parse(parsed_page_coverage(response))
+            and should_retry(attempt, retryable=False)
+        ):
+            # Some text, but most pages are blank: the model would see little
+            # more than the abstract. Try the other parser; if it is no better,
+            # the result is kept and flagged for review below.
+            continue
 
         choices = response.get("choices")
         raw_text = (
@@ -611,6 +663,9 @@ def extract_document(
     review_reasons = extraction_review_reasons(
         repaired_text, [choice_finish_reason(choices[0])], NORMAL_FINISH_REASONS
     )
+    coverage = parsed_page_coverage(response)
+    if mostly_blank_parse(coverage):
+        review_reasons = (*review_reasons, blank_parse_review_reason(coverage))
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
