@@ -198,7 +198,7 @@ def _log_result(
 
 
 def _save_result(project_dir: Path, result: ExtractionResult, *, retry: bool) -> None:
-    """Save an extraction, keeping a needs-review source's data when its retry fails.
+    """Save an extraction, keeping a source's extracted data when its retry fails.
 
     The failed attempt is noted on the kept record (and in the run log) so the
     user can see the retry did not succeed; any later result replaces it.
@@ -588,8 +588,12 @@ def retry_project(
     api_key: str,
     cancellation_event: threading.Event | None = None,
     rerun_all_after_change: bool | None = None,
+    any_status: bool = False,
 ) -> RunSummary | None:
     """Re-extract failed and needs-review sources.
+
+    With `any_status`, every source in `selected_sources` is re-extracted
+    whatever its status, so a done or not-yet-run article can be redone too.
 
     When the extractor's settings differ from the project's last run, by
     default they are not recorded as the project's settings, so the next run
@@ -604,10 +608,13 @@ def retry_project(
     latest = latest_by_source(load_extractions(project_dir))
     # Retry re-extracts failed sources and those whose extraction needs review.
     failures = [name for name, record in latest.items() if record.get("status") != STATUS_OK]
-    if selected_sources:
+    if selected_sources and any_status:
+        wanted = set(selected_sources)
+        failures = [path.name for path in discover_sources(project_dir, recursive=False) if path.name in wanted]
+    elif selected_sources:
         failures = [name for name in failures if name in set(selected_sources)]
     if not failures:
-        console.success("No failed or needs-review articles to retry.")
+        console.success("No failed or needs-review articles to retry." if not any_status else "None of the selected articles exist any more.")
         existing_report = project_dir / "output" / "report.html"
         return summarize(project_dir, existing_report if existing_report.exists() else None)
 
@@ -633,9 +640,10 @@ def retry_project(
     run_id = str(uuid.uuid4())
     workers = max(1, min(settings.parallel_requests, len(paths)))
     worker_label = "worker" if workers == 1 else "workers"
+    retrying = "selected articles" if any_status else "failed and needs-review articles"
     with console.progress(
         len(paths),
-        f"Retrying failed and needs-review articles with {workers} parallel {worker_label}",
+        f"Retrying {retrying} with {workers} parallel {worker_label}",
     ) as progress:
         _process_paths(
             paths=paths,

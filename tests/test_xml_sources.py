@@ -336,7 +336,7 @@ class ProjectAndWebTests(unittest.TestCase):
             ("files", ("a.pdf", b"%PDF-a", "application/pdf")),
             ("files", ("b.xml", ELSEVIER_XML.encode(), "application/xml")),
         ])
-        self.assertEqual(response.json(), {"saved": ["a.pdf", "b.xml"]})
+        self.assertEqual(response.json(), {"saved": ["a.pdf", "b.xml"], "skipped": []})
         snapshot = project_snapshot(self.project)
         self.assertEqual([(a["name"], a["source_format"]) for a in snapshot["articles"]], [("a.pdf", "pdf"), ("b.xml", "xml")])
         self.assertEqual(snapshot["pdf_count"], 2)

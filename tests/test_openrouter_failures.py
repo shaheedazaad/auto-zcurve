@@ -131,21 +131,50 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
             self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
             self.assertEqual(result.model_used, 'actual/model')
 
-    def parsed(self, page_texts):
-        """A successful response carrying the parser's Markdown with one heading per page."""
-        pages = ''.join(f'### Page {n}\n\n{text}\n\n' for n, text in enumerate(page_texts, 1))
-        response = self.success()
-        response['choices'][0]['message']['annotations'] = [{'type': 'file', 'file': {'content': [
-            {'type': 'text', 'text': '<file name="study.pdf">'},
-            {'type': 'text', 'text': '# document.pdf\n## Metadata\n- Title=Study\n\n## Contents\n' + pages},
-            {'type': 'text', 'text': '</file>'},
-        ]}}]
+    def parsed(self, response, pages):
+        """Attach OpenRouter's file-parser annotation, as the parser returned it, to a response."""
+        text = '# document.pdf\n## Metadata\n- Title=External Behavior Monitoring\n\n\n## Contents\n' + ''.join(
+            f'### Page {number}\n\n{body}\n\n' for number, body in enumerate(pages, 1)
+        )
+        content = [{'type': 'text', 'text': '<file name="study.pdf">'}, {'type': 'text', 'text': text}, {'type': 'text', 'text': '</file>'}]
+        response['choices'][0]['message']['annotations'] = [{'type': 'file', 'file': {'name': 'study.pdf', 'content': content}}]
         return response
+
+    def test_blank_cloudflare_parse_is_retried_with_mistral_ocr(self):
+        engines = []
+        blank = self.parsed(self.success(), ['', '', ''])
+        blank['choices'][0]['message']['content'] = '{"effects":[]}'
+        def request(*args, **kwargs):
+            engines.append(kwargs['payload']['plugins'][0]['pdf']['engine'])
+            return blank if len(engines) == 1 else self.parsed(self.success(), ['Abstract. ' * 40])
+        with patch.object(p, '_request_json', side_effect=request):
+            result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
+        self.assertEqual(result.data, {'effects': [{'claim': 'finding'}]})
+        self.assertEqual(len(result.provider_responses), 2)
+        self.assertEqual(result.total_tokens, 14)
+
+    def test_pdf_that_no_parser_can_read_fails_instead_of_returning_no_effects(self):
+        blank = self.parsed(self.success(), ['', ''])
+        with patch.object(p, '_request_json', return_value=blank) as request, self.assertRaisesRegex(RuntimeError, 'no text') as caught:
+            p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(caught.exception.provider_responses), 2)
+
+    def test_parsed_text_check_needs_a_parser_annotation(self):
+        self.assertIsNone(p._parsed_pdf_text(self.success()))
+        other_annotations = self.success()
+        other_annotations['choices'][0]['message']['annotations'] = [{'type': 'url_citation'}, {'type': 'file', 'file': {}}]
+        self.assertIsNone(p._parsed_pdf_text(other_annotations))
+        self.assertEqual(p._parsed_pdf_text(self.parsed(self.success(), ['', ''])), '')
+        self.assertEqual(p._parsed_pdf_text(self.parsed(self.success(), ['Real text'])), 'Real text')
+        with patch.object(p, '_request_json', return_value=self.parsed(self.success(), ['Short but real.'])):
+            self.assertEqual(p.extract_document(**self.kwargs, input_mode='cloudflare_pdf').data, {'effects': [{'claim': 'finding'}]})
 
     def test_mostly_blank_parse_is_retried_with_the_fallback_parser(self):
         text = 'Results showed F(1, 27) = 29.31, p < .001.'
-        blank = self.parsed([text] + [''] * 11)
-        full = self.parsed([text] * 12)
+        blank = self.parsed(self.success(), [text] + [''] * 11)
+        full = self.parsed(self.success(), [text] * 12)
         engines = []
         def request(*args, **kwargs):
             engines.append(kwargs['payload']['plugins'][0]['pdf']['engine'])
@@ -160,7 +189,7 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
         self.sleep.assert_not_called()
 
     def test_blank_parse_from_both_parsers_is_flagged_for_review(self):
-        blank = self.parsed(['Abstract text that is long enough to count.'] + [''] * 11)
+        blank = self.parsed(self.success(), ['Abstract text that is long enough to count.'] + [''] * 11)
         with patch.object(p, '_request_json', return_value=blank) as request:
             result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
         self.assertEqual(request.call_count, 2)
@@ -169,8 +198,8 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
 
     def test_good_or_short_parses_are_not_retried(self):
         text = 'Results showed F(1, 27) = 29.31, p < .001.'
-        for pages in ([text] * 12, [text, text, ''], ['']):
-            with self.subTest(pages=len(pages)), patch.object(p, '_request_json', return_value=self.parsed(pages)) as request:
+        for pages in ([text] * 12, [text, text, ''], ['Short.']):
+            with self.subTest(pages=len(pages)), patch.object(p, '_request_json', return_value=self.parsed(self.success(), pages)) as request:
                 result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
             self.assertEqual(request.call_count, 1)
             self.assertEqual(result.review_reasons, ())
@@ -178,7 +207,11 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
     def test_page_coverage_ignores_responses_without_a_parsed_document(self):
         for response in [{}, self.success(), {'choices': [{'message': {'annotations': [{'type': 'url'}, 'x']}}]}, {'choices': ['x']}]:
             self.assertIsNone(p.parsed_page_coverage(response))
-        self.assertEqual(p.parsed_page_coverage(self.parsed(['', 'enough text on this page to count'])), (1, 2))
+        self.assertEqual(p.parsed_page_coverage(self.parsed(self.success(), ['', 'enough text on this page to count'])), (1, 2))
+        no_contents = self.success()
+        no_contents['choices'][0]['message']['annotations'] = [{'type': 'file', 'file': {'content': [
+            {'type': 'text', 'text': 'Preamble before any page\n### Page 1\n\n### Page 2\nenough text on this page to count'}]}}]
+        self.assertEqual(p.parsed_page_coverage(no_contents), (1, 2))
 
     def test_response_failures_retry_and_preserve_all_attempts(self):
         cases = [({'error': {'code': 503, 'message': 'busy'}}, 'generation failed'), ({'choices': [{'finish_reason': 'length'}], 'usage': {'completion_tokens': 10, 'completion_tokens_details': {'reasoning_tokens': 9}}}, 'reasoning tokens: 9'), ({'choices': [{'message': {'content': 'bad json'}}]}, 'invalid JSON'), ({'choices': [{'message': {'content': '{"effects":[{}]}'}}]}, 'Missing required field')]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -27,7 +28,7 @@ from .config import (
 from .llm import STATUS_ERROR, STATUS_NEEDS_REVIEW, STATUS_OK, record_review_reasons
 from .paths import DEFAULT_INSTRUCTIONS, DEFAULT_SCHEMA
 from .schema import build_response_schema, parse_extraction_schema
-from .sources import SourceError, check_xml_file, discover_sources, source_format
+from .sources import SourceError, check_xml_file, discover_sources, file_sha256, source_format
 from .spreadsheet import SPREADSHEET_SAFE_FILES
 
 
@@ -57,6 +58,21 @@ class ProjectError(ValueError):
 
 class UploadTooLarge(ProjectError):
     pass
+
+
+class DuplicateUpload(ProjectError):
+    """An upload whose content is already a source in the project."""
+
+    def __init__(self, name: str, existing: str) -> None:
+        super().__init__(f"{name} is already in this project as {existing}.")
+        self.name = name
+        self.existing = existing
+
+
+@dataclass
+class UploadResult:
+    saved: list[str]
+    skipped: list[dict[str, str]]
 
 
 class AnalysisResetRequired(ProjectError):
@@ -215,17 +231,35 @@ def unique_destination(sources_dir: Path, filename: str) -> Path:
         counter += 1
 
 
+def source_hashes(project: ManagedProject) -> dict[str, str]:
+    """Map the SHA-256 of each top-level source in a project to its filename."""
+    hashes: dict[str, str] = {}
+    for path in discover_sources(project.path, recursive=False):
+        hashes.setdefault(file_sha256(path), path.name)
+    return hashes
+
+
 def save_upload(
     project: ManagedProject,
     filename: str,
     stream: BinaryIO,
     *,
     max_bytes: int = DEFAULTS["max_upload_size_mb"] * 1024 * 1024,
+    known_hashes: dict[str, str] | None = None,
 ) -> Path:
+    """Save one upload into the project's sources folder.
+
+    Raises DuplicateUpload, saving nothing, when a source with the same content
+    is already in the project. known_hashes (from source_hashes) avoids hashing
+    every source again for each file in a batch; it is updated with the new file.
+    """
     safe_name = safe_upload_name(filename)
+    if known_hashes is None:
+        known_hashes = source_hashes(project)
     destination = unique_destination(project.path / "sources", safe_name)
     partial = destination.with_name(destination.name + ".uploading")
     written = 0
+    digest = hashlib.sha256()
     try:
         with partial.open("xb") as handle:
             while True:
@@ -237,13 +271,41 @@ def save_upload(
                     raise UploadTooLarge(
                         f"{safe_name} exceeds the {max_bytes // (1024 * 1024)} MB upload limit."
                     )
+                digest.update(chunk)
                 handle.write(chunk)
         _check_upload_content(partial, safe_name, written)
+        existing = known_hashes.get(digest.hexdigest())
+        if existing is not None:
+            raise DuplicateUpload(safe_name, existing)
         partial.replace(destination)
     except Exception:
         partial.unlink(missing_ok=True)
         raise
+    known_hashes[digest.hexdigest()] = destination.name
     return destination
+
+
+def save_uploads(
+    project: ManagedProject,
+    uploads: list[tuple[str, BinaryIO]],
+    *,
+    max_bytes: int = DEFAULTS["max_upload_size_mb"] * 1024 * 1024,
+) -> UploadResult:
+    """Save a batch of uploads, skipping any whose content is already a source.
+
+    Duplicates within the batch are skipped too. Other errors stop the batch;
+    files saved before the error are kept.
+    """
+    known_hashes = source_hashes(project)
+    result = UploadResult(saved=[], skipped=[])
+    for filename, stream in uploads:
+        try:
+            saved = save_upload(project, filename, stream, max_bytes=max_bytes, known_hashes=known_hashes)
+        except DuplicateUpload as exc:
+            result.skipped.append({"name": exc.name, "existing": exc.existing})
+        else:
+            result.saved.append(saved.name)
+    return result
 
 
 def _check_upload_content(path: Path, name: str, size: int) -> None:

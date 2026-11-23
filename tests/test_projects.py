@@ -17,7 +17,9 @@ from auto_zcurve.projects import (
     read_project_instructions,
     read_project_schema,
     safe_upload_name,
+    DuplicateUpload,
     save_upload,
+    save_uploads,
     update_project_instructions,
     update_project_schema,
 )
@@ -92,6 +94,33 @@ class ManagedProjectTests(unittest.TestCase):
             self.assertEqual(first.name, "paper.pdf")
             self.assertEqual(second.name, "paper (2).pdf")
             self.assertEqual(second.read_bytes(), b"%PDF-two")
+
+    def test_uploads_with_content_already_in_the_project_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = create_project("Duplicates", root=Path(tmp))
+            save_upload(project, "paper.pdf", io.BytesIO(b"%PDF-one"))
+
+            result = save_uploads(
+                project,
+                [
+                    ("renamed copy.pdf", io.BytesIO(b"%PDF-one")),
+                    ("new.pdf", io.BytesIO(b"%PDF-new")),
+                    ("new again.pdf", io.BytesIO(b"%PDF-new")),
+                ],
+            )
+
+            self.assertEqual(result.saved, ["new.pdf"])
+            self.assertEqual(
+                result.skipped,
+                [
+                    {"name": "renamed copy.pdf", "existing": "paper.pdf"},
+                    {"name": "new again.pdf", "existing": "new.pdf"},
+                ],
+            )
+            self.assertEqual(sorted(p.name for p in (project.path / "sources").iterdir()), ["new.pdf", "paper.pdf"])
+            with self.assertRaises(DuplicateUpload):
+                save_upload(project, "paper.pdf", io.BytesIO(b"%PDF-one"))
+            self.assertEqual(sorted(p.name for p in (project.path / "sources").iterdir()), ["new.pdf", "paper.pdf"])
 
     def test_file_size_display_picks_a_readable_unit(self):
         self.assertEqual(file_size_display(512), "512 B")

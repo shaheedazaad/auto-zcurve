@@ -138,6 +138,22 @@ or it genuinely doesn't fit the schema. Failed articles are listed on the
 (and needs-review) articles without reprocessing the ones that already
 succeeded.
 
+## Working with several articles at once
+
+On the **Extraction results** tab, use the status menu above the table to
+show only Ready, Done, Needs review, or Failed articles. Tick the box beside
+each article you want, or the box in the table header to select every article
+that matches the current status filter (on every page). With articles
+selected you can:
+
+- **Retry selected** — re-extract exactly those articles with the extractor
+  chosen on the **Run analysis** tab, whatever their status. If a Done or
+  needs-review article's new attempt fails, it keeps its previous result and
+  shows "Last retry failed" under its name.
+- **Delete output** — delete the saved extraction and provider response for
+  the selected articles. Their source files stay, so they show as Ready and
+  the next run processes them again.
+
 ## Next step
 
 See [FAQ and troubleshooting](faq.md) for common issues.

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .llm import STATUS_NEEDS_REVIEW, ExtractionResult
+from .llm import STATUS_NEEDS_REVIEW, STATUS_OK, ExtractionResult
 from .spreadsheet import large_csv_fields
 
 
@@ -214,15 +214,15 @@ def upsert_extraction(project_dir: Path, result: ExtractionResult) -> list[dict[
 
 
 def record_failed_retry(project_dir: Path, source_name: str, error: str | None) -> dict[str, Any] | None:
-    """Note a failed retry on a needs-review record without discarding its data.
+    """Note a failed retry on a done or needs-review record without discarding its data.
 
-    Returns the updated record, or None when the PDF has no needs-review record
+    Returns the updated record, or None when the PDF has no extracted record
     to keep (the caller should then save the failed result as usual). A later
     retry that returns a result replaces the whole record, clearing these fields.
     """
     records = load_extractions(project_dir)
     for record in records:
-        if record.get("source_name") == source_name and record.get("status") == STATUS_NEEDS_REVIEW:
+        if record.get("source_name") == source_name and record.get("status") in {STATUS_OK, STATUS_NEEDS_REVIEW}:
             record["retry_error"] = error or "Retry failed without an error message."
             record["retry_failed_at"] = utc_now()
             _atomic_json_dump(raw_path(project_dir, source_name), record)

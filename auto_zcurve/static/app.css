@@ -577,6 +577,17 @@
     vertical-align: bottom;
   }
   .article-row td:last-child .cluster { flex-wrap: nowrap; }
+  .select-cell { width: 1%; padding-inline-end: 0; }
+  .selection-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--muted);
+  }
   .source-row-new td { background: var(--success-subtle); }
   .source-table th:nth-child(2), .source-table th:nth-child(3) { white-space: nowrap; }
   .upload-message + .panel { margin-top: var(--sp-4); }

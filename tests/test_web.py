@@ -158,6 +158,13 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(uploaded.status_code, 200)
         self.assertEqual(uploaded.json()["saved"], ["same.pdf", "same (2).pdf"])
+        self.assertEqual(uploaded.json()["skipped"], [])
+        again = self.client.post(
+            f"/{TOKEN}/projects/{project_id}/uploads",
+            files=[("files", ("other name.pdf", b"%PDF-first", "application/pdf"))],
+            headers=ORIGIN,
+        )
+        self.assertEqual(again.json(), {"saved": [], "skipped": [{"name": "other name.pdf", "existing": "same.pdf"}]})
 
         status = self.client.get(f"/{TOKEN}/api/projects/{project_id}").json()
         self.assertEqual(status["pdf_count"], 2)
