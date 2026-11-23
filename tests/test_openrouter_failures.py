@@ -131,6 +131,46 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
             self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
             self.assertEqual(result.model_used, 'actual/model')
 
+    def parsed(self, response, pages):
+        """Attach OpenRouter's file-parser annotation, as the parser returned it, to a response."""
+        text = '# document.pdf\n## Metadata\n- Title=External Behavior Monitoring\n\n\n## Contents\n' + ''.join(
+            f'### Page {number}\n\n{body}\n\n' for number, body in enumerate(pages, 1)
+        )
+        content = [{'type': 'text', 'text': '<file name="study.pdf">'}, {'type': 'text', 'text': text}, {'type': 'text', 'text': '</file>'}]
+        response['choices'][0]['message']['annotations'] = [{'type': 'file', 'file': {'name': 'study.pdf', 'content': content}}]
+        return response
+
+    def test_blank_cloudflare_parse_is_retried_with_mistral_ocr(self):
+        engines = []
+        blank = self.parsed(self.success(), ['', '', ''])
+        blank['choices'][0]['message']['content'] = '{"effects":[]}'
+        def request(*args, **kwargs):
+            engines.append(kwargs['payload']['plugins'][0]['pdf']['engine'])
+            return blank if len(engines) == 1 else self.parsed(self.success(), ['Abstract. ' * 40])
+        with patch.object(p, '_request_json', side_effect=request):
+            result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
+        self.assertEqual(result.data, {'effects': [{'claim': 'finding'}]})
+        self.assertEqual(len(result.provider_responses), 2)
+        self.assertEqual(result.total_tokens, 14)
+
+    def test_pdf_that_no_parser_can_read_fails_instead_of_returning_no_effects(self):
+        blank = self.parsed(self.success(), ['', ''])
+        with patch.object(p, '_request_json', return_value=blank) as request, self.assertRaisesRegex(RuntimeError, 'no text') as caught:
+            p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(caught.exception.provider_responses), 2)
+
+    def test_parsed_text_check_needs_a_parser_annotation(self):
+        self.assertIsNone(p._parsed_pdf_text(self.success()))
+        other_annotations = self.success()
+        other_annotations['choices'][0]['message']['annotations'] = [{'type': 'url_citation'}, {'type': 'file', 'file': {}}]
+        self.assertIsNone(p._parsed_pdf_text(other_annotations))
+        self.assertEqual(p._parsed_pdf_text(self.parsed(self.success(), ['', ''])), '')
+        self.assertEqual(p._parsed_pdf_text(self.parsed(self.success(), ['Real text'])), 'Real text')
+        with patch.object(p, '_request_json', return_value=self.parsed(self.success(), ['Short but real.'])):
+            self.assertEqual(p.extract_document(**self.kwargs, input_mode='cloudflare_pdf').data, {'effects': [{'claim': 'finding'}]})
+
     def test_response_failures_retry_and_preserve_all_attempts(self):
         cases = [({'error': {'code': 503, 'message': 'busy'}}, 'generation failed'), ({'choices': [{'finish_reason': 'length'}], 'usage': {'completion_tokens': 10, 'completion_tokens_details': {'reasoning_tokens': 9}}}, 'reasoning tokens: 9'), ({'choices': [{'message': {'content': 'bad json'}}]}, 'invalid JSON'), ({'choices': [{'message': {'content': '{"effects":[{}]}'}}]}, 'Missing required field')]
         for response, message in cases:

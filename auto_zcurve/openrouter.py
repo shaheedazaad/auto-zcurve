@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import re
 import socket
 import time
 import urllib.error
@@ -290,6 +291,45 @@ def _message_text(message: object) -> str:
     return ""
 
 
+_PARSED_FILE_TAG = re.compile(r"^</?file\b[^>]*>$")
+_PARSED_PAGE_HEADING = re.compile(r"^#{1,6}\s*Page\s+\d+$", re.IGNORECASE)
+
+
+def _parsed_pdf_text(response: dict[str, Any]) -> str | None:
+    """The page text OpenRouter's file-parser plugin extracted, or None when the
+    response carries no parser annotation to judge.
+
+    The parser can succeed yet return only the PDF's metadata and empty
+    `### Page N` headings. The model then sees no paper and correctly reports
+    nothing, so the blank parse must be caught here, not from the extraction.
+    """
+    choices = response.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    parts: list[str] = []
+    found = False
+    for annotation in message.get("annotations") or []:
+        file = annotation.get("file") if isinstance(annotation, dict) and annotation.get("type") == "file" else None
+        content = file.get("content") if isinstance(file, dict) else None
+        if not isinstance(content, list):
+            continue
+        found = True
+        parts.extend(
+            str(part.get("text") or "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
+    if not found:
+        return None
+    text = "\n".join(parts)
+    # Text before the page contents is the PDF's own metadata, not the paper.
+    _, contents_heading, contents = text.partition("## Contents")
+    lines = (contents if contents_heading else text).splitlines()
+    return "\n".join(
+        line.strip()
+        for line in lines
+        if line.strip() and not _PARSED_FILE_TAG.match(line.strip()) and not _PARSED_PAGE_HEADING.match(line.strip())
+    )
+
+
 def _usage(payload: dict[str, Any]) -> dict[str, int | None]:
     usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
 
@@ -507,6 +547,20 @@ def extract_document(
             last_error = RuntimeError(message)
             last_error.provider_responses = provider_responses
             if should_retry(attempt, retryable):
+                time.sleep(retry_delay(attempt))
+                continue
+            raise last_error
+
+        if input_mode == "cloudflare_pdf" and _parsed_pdf_text(response) == "":
+            engine = payload["plugins"][0]["pdf"]["engine"]
+            last_error = RuntimeError(
+                f"OpenRouter's PDF parser ({engine}) returned no text for this PDF, "
+                "so the model could not read it."
+            )
+            last_error.provider_responses = provider_responses
+            # Not retryable in itself, but the first blank parse still gets the
+            # guaranteed attempt with the other parser.
+            if should_retry(attempt, retryable=False):
                 time.sleep(retry_delay(attempt))
                 continue
             raise last_error

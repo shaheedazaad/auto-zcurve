@@ -277,7 +277,14 @@ class WebRuntime:
         except Exception:
             return
 
-    def start_job(self, project: ManagedProject, action: str, settings: RunSettings, api_key: str | None = None) -> Job:
+    def start_job(
+        self,
+        project: ManagedProject,
+        action: str,
+        settings: RunSettings,
+        api_key: str | None = None,
+        sources: list[str] | None = None,
+    ) -> Job:
         with self._jobs_lock:
             existing = self.jobs.get(project.project_id)
             if existing and existing.status in {"queued", "running"}:
@@ -286,14 +293,22 @@ class WebRuntime:
             self.jobs[project.project_id] = job
         thread = threading.Thread(
             target=self._run_job,
-            args=(job, project, action, settings, api_key),
+            args=(job, project, action, settings, api_key, sources),
             daemon=True,
             name=f"auto-zcurve-{project.project_id}",
         )
         thread.start()
         return job
 
-    def _run_job(self, job: Job, project: ManagedProject, action: str, settings: RunSettings, api_key: str | None) -> None:
+    def _run_job(
+        self,
+        job: Job,
+        project: ManagedProject,
+        action: str,
+        settings: RunSettings,
+        api_key: str | None,
+        sources: list[str] | None = None,
+    ) -> None:
         job.status = "running"
         label = "Report regeneration" if action == "report" else action.title()
         job.emit("status", status="running", message=f"{label} started")
@@ -311,12 +326,13 @@ class WebRuntime:
                 summary = retry_project(
                     project_dir=project.path,
                     settings=settings,
-                    selected_sources=None,
+                    selected_sources=sources,
                     assume_yes=True,
                     skip_report=False,
                     console=console,
                     api_key=api_key or "",
                     cancellation_event=job.cancel_event,
+                    any_status=bool(sources),
                 )
             else:
                 summary = run_project(
@@ -812,7 +828,11 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         return {"renamed": True, "name": renamed.name}
 
     @app.post(f"/{token}/projects/{{project_id}}/responses/delete")
-    async def delete_response_route(project_id: str, source_name: str = Form(...)):
+    async def delete_response_route(
+        project_id: str,
+        source_name: Optional[str] = Form(None),
+        source_names: Optional[str] = Form(None),
+    ):
         try:
             project = runtime.project(project_id)
         except ProjectError as exc:
@@ -820,12 +840,16 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         job = runtime.jobs.get(project_id)
         if job and job.status in {"queued", "running"}:
             raise HTTPException(status_code=409, detail="Cancel the active run before deleting a response.")
-        source_name = source_name.strip()
-        if not source_name or Path(source_name).name != source_name or not is_source_name(source_name):
-            raise HTTPException(status_code=400, detail="Choose one source's response to delete.")
-        if not delete_extraction(project.path, source_name):
-            raise HTTPException(status_code=404, detail="That source does not have a saved extraction response.")
-        return {"deleted": True, "source_name": source_name}
+        names = _source_names(source_name, source_names)
+        if names is None:
+            raise HTTPException(status_code=400, detail="Choose the sources whose responses to delete.")
+        deleted = [name for name in names if delete_extraction(project.path, name)]
+        if not deleted:
+            detail = "That source does not have" if len(names) == 1 else "None of those sources have"
+            raise HTTPException(status_code=404, detail=f"{detail} a saved extraction response.")
+        if len(names) == 1:
+            return {"deleted": True, "source_name": deleted[0]}
+        return {"deleted": True, "source_names": deleted}
 
     @app.get(f"/{token}/api/projects/{{project_id}}")
     async def project_status(project_id: str):
@@ -949,6 +973,28 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         save_selected_extractor_id(project.path, extractor.id)
         return {"saved": True, "extractor": _extractor_view(runtime, extractor)}
 
+    def _source_names(single: str | None, encoded: str | None) -> list[str] | None:
+        """Distinct top-level source names from a form, or None when any is invalid.
+
+        A selection arrives as one JSON array field (`source_names`), not one
+        field per article, so it stays within the form parser's field limit.
+        """
+        values = [single] if single is not None else []
+        if encoded is not None:
+            try:
+                parsed = json.loads(encoded)
+            except ValueError:
+                return None
+            if not isinstance(parsed, list) or not all(isinstance(value, str) for value in parsed):
+                return None
+            values.extend(parsed)
+        names = list(dict.fromkeys(value.strip() for value in values))
+        if not names or any(
+            not name or Path(name).name != name or not is_source_name(name) for name in names
+        ):
+            return None
+        return names
+
     async def _prepare_run(project: ManagedProject, extractor_id: str | None) -> tuple[RunSettings, str | None]:
         """The settings and key for a run or retry with the chosen extractor."""
         chosen = None
@@ -969,11 +1015,21 @@ def create_app(*, token: str | None = None, projects_root: Path | None = None) -
         return JSONResponse({"status": job.status}, status_code=202)
 
     @app.post(f"/{token}/projects/{{project_id}}/retry")
-    async def start_retry(project_id: str, extractor_id: Optional[str] = Form(None)):
+    async def start_retry(
+        project_id: str,
+        extractor_id: Optional[str] = Form(None),
+        source_names: Optional[str] = Form(None),
+    ):
+        """Retry failed and needs-review articles, or exactly the chosen ones."""
+        sources = None
+        if source_names is not None:
+            sources = _source_names(None, source_names)
+            if sources is None:
+                raise HTTPException(status_code=400, detail="Choose the sources to retry.")
         try:
             project = runtime.project(project_id)
             settings, key = await _prepare_run(project, extractor_id)
-            job = runtime.start_job(project, "retry", settings, key)
+            job = runtime.start_job(project, "retry", settings, key, sources)
         except (ProjectError, RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return JSONResponse({"status": job.status}, status_code=202)

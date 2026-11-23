@@ -92,6 +92,11 @@ class WebRuntimeTests(unittest.TestCase):
                     self.assertEqual(operation.call_args.kwargs['api_key'], 'secret')
                 self.assertEqual(job.status, 'complete')
                 self.assertEqual(job.summary['report_path'] if job.summary else None, str(summary.report_path) if result else None)
+            if action == 'retry':
+                job = w.Job(self.project.project_id, action)
+                with patch.object(w, 'run_preflight'), patch.object(w, function, return_value=summary) as operation:
+                    self.runtime._run_job(job, self.project, action, self.settings, 'secret', ['a.pdf'])
+                self.assertEqual((operation.call_args.kwargs['selected_sources'], operation.call_args.kwargs['any_status']), (['a.pdf'], True))
             for cancellation in [True, False]:
                 job = w.Job(self.project.project_id, action)
                 def cancel(**kwargs):

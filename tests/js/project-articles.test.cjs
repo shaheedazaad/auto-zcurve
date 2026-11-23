@@ -172,3 +172,109 @@ test('header article, processed, and needs-review counts follow live project dat
   live = snapshot(3, 2, 0, 1); await h.sources[1].emit('status', { status: 'cancelled', message: 'Cancelled' });
   assert.equal(text('[data-processed-count]'), '2 processed');
 });
+
+const selectionHtml = `<select data-article-filter><option value="">All statuses</option><option value="ready">Ready</option><option value="ok">Done</option><option value="needs_review">Needs review</option><option value="error">Failed</option></select>
+<input class="js-select-all-articles" type="checkbox">
+<div data-article-selection hidden><span data-selection-count></span><button class="js-retry-selected">Retry selected</button><button class="js-delete-selected">Delete output</button><button class="js-clear-selection">Clear</button></div>
+<button data-tab-target="run-analysis">Run analysis</button>`;
+const tick = async (h, name, checked = true) => {
+  const box = h.document.querySelector(`.js-select-article[value="${name}"]`);
+  box.checked = checked; box.dispatchEvent(new h.window.Event('change', { bubbles: true })); await flush();
+};
+
+test('the status filter narrows the table, counts each status, and paginates the matches', async t => {
+  const h = projectMount(selectionHtml, { project }); t.after(h.close); await flush();
+  const rows = () => [...h.document.querySelectorAll('.article-name')].map(node => node.textContent);
+  const options = [...h.document.querySelectorAll('[data-article-filter] option')].map(option => option.textContent);
+  assert.deepEqual(options, ['All statuses (12)', 'Ready (1)', 'Done (10)', 'Needs review (0)', 'Failed (1)']);
+  h.input('[data-article-filter]', 'error', 'change'); await flush();
+  assert.deepEqual(rows(), ['Paper 00.pdf']);
+  assert.equal(h.document.querySelector('[data-article-pagination]').hidden, true);
+  h.input('[data-article-filter]', 'needs_review', 'change'); await flush();
+  assert.equal(h.document.querySelector('.table-empty-cell').textContent, 'No articles have this status.');
+  assert.equal(h.document.querySelector('.js-select-all-articles').disabled, true);
+  h.input('[data-article-filter]', 'ok', 'change'); await flush();
+  assert.equal(rows().length, 10);
+  assert.equal(h.document.querySelector('[data-article-pagination]').hidden, true);
+  assert.equal(h.document.querySelector('.js-page-next').disabled, true);
+  h.input('[data-article-filter]', '', 'change'); await flush();
+  await h.click('.js-page-next'); assert.equal(rows().length, 2);
+});
+
+test('selections survive paging, select-all follows the filter, and clearing hides the bar', async t => {
+  const h = projectMount(selectionHtml, { project }); t.after(h.close); await flush();
+  const bar = h.document.querySelector('[data-article-selection]');
+  const selectAll = h.document.querySelector('.js-select-all-articles');
+  assert.equal(bar.hidden, true);
+  await tick(h, 'Paper 01.pdf');
+  assert.equal(bar.hidden, false);
+  assert.equal(h.document.querySelector('[data-selection-count]').textContent, '1 selected');
+  assert.equal(selectAll.indeterminate, true);
+  assert.equal(h.document.querySelector('.js-delete-selected').disabled, true); // only a Ready article is selected
+  assert.equal(h.document.querySelector('.js-retry-selected').disabled, false);
+  await h.click('.js-page-next'); await h.click('.js-page-previous');
+  assert.equal(h.document.querySelector('.js-select-article[value="Paper 01.pdf"]').checked, true);
+  await tick(h, 'Paper 01.pdf', false); assert.equal(bar.hidden, true);
+  h.input('[data-article-filter]', 'ok', 'change'); await flush();
+  selectAll.checked = true; selectAll.dispatchEvent(new h.window.Event('change')); await flush();
+  assert.equal(h.document.querySelector('[data-selection-count]').textContent, '10 selected');
+  assert.equal(selectAll.checked, true);
+  assert.equal(h.document.querySelector('.js-delete-selected').disabled, false);
+  h.document.querySelector('[data-article-body]').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  selectAll.checked = false; selectAll.dispatchEvent(new h.window.Event('change')); await flush();
+  assert.equal(bar.hidden, true);
+  await tick(h, 'Paper 02.pdf'); await h.click('.js-clear-selection');
+  assert.equal(bar.hidden, true);
+  h.select('nokey'); await flush();
+  await tick(h, 'Paper 02.pdf');
+  assert.equal(h.document.querySelector('.js-retry-selected').disabled, true);
+});
+
+test('deleting selected output posts every chosen article with output, then refreshes', async t => {
+  for (const [confirm, ok, picks] of [[false, true, ['Paper 00.pdf']], [true, true, ['Paper 00.pdf', 'Paper 01.pdf', 'Paper 02.pdf']], [true, true, ['Paper 03.pdf']], [true, false, ['Paper 00.pdf']]]) {
+    const h = projectMount(selectionHtml, { project, confirm, fetch: async (url, request) => request?.method === 'POST' ? { ok, json: async () => ({ detail: 'Cannot delete' }) } : undefined });
+    t.after(h.close); await flush();
+    for (const name of picks) await tick(h, name);
+    await h.click('.js-delete-selected');
+    const posts = h.calls.filter(([, request]) => request?.method === 'POST');
+    assert.equal(posts.length, Number(confirm));
+    if (!confirm) continue;
+    assert.equal(posts[0][0], '/token/projects/project/responses/delete');
+    assert.deepEqual(JSON.parse(posts[0][1].body.get('source_names')), picks.filter(name => name !== 'Paper 01.pdf'));
+    if (ok) { assert.equal(h.calls.at(-1)[0], '/token/api/projects/project'); assert.equal(h.document.querySelector('[data-article-selection]').hidden, true); }
+    else { assert.deepEqual(h.alerts, ['Cannot delete']); assert.equal(h.document.querySelector('.js-delete-selected').disabled, false); }
+  }
+});
+
+test('retrying selected articles sends them with the extractor and opens the run tab', async t => {
+  for (const [confirm, ok, picks] of [[false, true, ['Paper 01.pdf']], [true, true, ['Paper 01.pdf', 'Paper 03.pdf']], [true, true, ['Paper 04.pdf']], [true, false, ['Paper 04.pdf']]]) {
+    let tabOpened = false;
+    const h = projectMount(selectionHtml, { project, confirm, fetch: async (url, request) => request?.method === 'POST' ? { ok, json: async () => ({ detail: 'Already running' }) } : undefined });
+    t.after(h.close); await flush();
+    h.document.querySelector('[data-tab-target="run-analysis"]').addEventListener('click', () => { tabOpened = true; });
+    for (const name of picks) await tick(h, name);
+    await h.click('.js-retry-selected');
+    const posts = h.calls.filter(([, request]) => request?.method === 'POST');
+    assert.equal(posts.length, Number(confirm));
+    if (!confirm) continue;
+    assert.equal(posts[0][0], '/token/projects/project/retry');
+    assert.deepEqual(JSON.parse(posts[0][1].body.get('source_names')), picks);
+    assert.equal(posts[0][1].body.get('extractor_id'), 'lab');
+    assert.equal(tabOpened, ok);
+    if (ok) {
+      assert.equal(h.sources.length, 1);
+      assert.equal(h.document.querySelector('[data-article-selection]').hidden, true);
+    } else assert.deepEqual(h.alerts, ['Already running']);
+  }
+});
+
+test('selections of articles that disappear are dropped, and done rows show a failed retry', async t => {
+  let live = project;
+  const h = projectMount(selectionHtml, { project, fetch: async url => url.includes('/api/projects/') ? { ok: true, json: async () => live } : undefined });
+  t.after(h.close); await flush();
+  await tick(h, 'Paper 03.pdf');
+  live = { ...project, articles: [{ name: 'Paper 04.pdf', status: 'ok', retry_error: 'quota <exceeded>', warning: 'Parser note' }] };
+  await h.click('.js-regenerate-report'); await h.intervals[0](); await flush();
+  assert.equal(h.document.querySelector('[data-article-selection]').hidden, true);
+  assert.deepEqual([...h.document.querySelectorAll('.article-message')].map(node => node.textContent), ['Last retry failed: quota <exceeded>', 'Parser note']);
+});

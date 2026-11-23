@@ -181,6 +181,23 @@ class ArtifactAndRunnerTests(unittest.TestCase):
             r.retry_project(project_dir=self.project, settings=self.settings, selected_sources=None, assume_yes=True, skip_report=True, console=self.console, api_key="key")
             self.assertEqual(sorted(path.name for path in process.call_args.kwargs["paths"]), ["failed.pdf", "review.pdf"])
 
+    def test_selected_retry_with_any_status_reprocesses_exactly_the_chosen_articles(self):
+        self.saved_states()
+        with patch.object(r, "validate_model_option", return_value=self.option), patch.object(r, "load_run_settings", return_value=None), patch.object(r, "_process_paths") as process:
+            r.retry_project(project_dir=self.project, settings=self.settings, selected_sources=["ok.pdf", "new.pdf", "gone.pdf"], assume_yes=True, skip_report=True, console=self.console, api_key="key", any_status=True)
+            self.assertEqual(sorted(path.name for path in process.call_args.kwargs["paths"]), ["new.pdf", "ok.pdf"])
+            process.reset_mock()
+            r.retry_project(project_dir=self.project, settings=self.settings, selected_sources=["gone.pdf"], assume_yes=True, skip_report=True, console=self.console, api_key="key", any_status=True)
+            process.assert_not_called()
+
+    def test_failed_retry_of_a_done_article_keeps_its_result(self):
+        self.saved_states()
+        upsert_extraction(self.project, ExtractionResult(self.project / "sources/ok.pdf", "ok.pdf", "ok", data={"effects": [{"claim": "kept"}]}))
+        with patch.object(r, "extract_document", side_effect=RuntimeError("quota exceeded")):
+            r._process_one(project_dir=self.project, source_path=self.project / "sources/ok.pdf", settings=self.settings, api_key="key", retry=True, run_id="run", model_option=self.option)
+        record = {item["source_name"]: item for item in load_extractions(self.project)}["ok.pdf"]
+        self.assertEqual((record["status"], record["data"], record["retry_error"]), ("ok", {"effects": [{"claim": "kept"}]}, "quota exceeded"))
+
     def retry_review(self, extract):
         self.saved_states()
         upsert_extraction(self.project, ExtractionResult(self.project / "sources/review.pdf", "review.pdf", "needs_review", data={"effects": [{"claim": "kept"}]}, raw_response="{", review_reasons=("JSON was repaired",)))
