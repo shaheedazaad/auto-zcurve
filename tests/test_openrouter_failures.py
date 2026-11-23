@@ -131,6 +131,55 @@ class OpenRouterExtractionFailureTests(unittest.TestCase):
             self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
             self.assertEqual(result.model_used, 'actual/model')
 
+    def parsed(self, page_texts):
+        """A successful response carrying the parser's Markdown with one heading per page."""
+        pages = ''.join(f'### Page {n}\n\n{text}\n\n' for n, text in enumerate(page_texts, 1))
+        response = self.success()
+        response['choices'][0]['message']['annotations'] = [{'type': 'file', 'file': {'content': [
+            {'type': 'text', 'text': '<file name="study.pdf">'},
+            {'type': 'text', 'text': '# document.pdf\n## Metadata\n- Title=Study\n\n## Contents\n' + pages},
+            {'type': 'text', 'text': '</file>'},
+        ]}}]
+        return response
+
+    def test_mostly_blank_parse_is_retried_with_the_fallback_parser(self):
+        text = 'Results showed F(1, 27) = 29.31, p < .001.'
+        blank = self.parsed([text] + [''] * 11)
+        full = self.parsed([text] * 12)
+        engines = []
+        def request(*args, **kwargs):
+            engines.append(kwargs['payload']['plugins'][0]['pdf']['engine'])
+            return blank if len(engines) == 1 else full
+        with patch.object(p, '_request_json', side_effect=request):
+            result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(engines, ['cloudflare-ai', 'mistral-ocr'])
+        self.assertEqual(result.status, 'ok')
+        self.assertEqual(result.review_reasons, ())
+        self.assertEqual([item['attempt'] for item in result.provider_responses], [1, 2])
+        self.assertEqual(result.total_tokens, 14)
+        self.sleep.assert_not_called()
+
+    def test_blank_parse_from_both_parsers_is_flagged_for_review(self):
+        blank = self.parsed(['Abstract text that is long enough to count.'] + [''] * 11)
+        with patch.object(p, '_request_json', return_value=blank) as request:
+            result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(result.status, 'needs_review')
+        self.assertEqual(result.review_reasons, ('PDF parser returned no text for 11 of 12 pages',))
+
+    def test_good_or_short_parses_are_not_retried(self):
+        text = 'Results showed F(1, 27) = 29.31, p < .001.'
+        for pages in ([text] * 12, [text, text, ''], ['']):
+            with self.subTest(pages=len(pages)), patch.object(p, '_request_json', return_value=self.parsed(pages)) as request:
+                result = p.extract_document(**self.kwargs, input_mode='cloudflare_pdf')
+            self.assertEqual(request.call_count, 1)
+            self.assertEqual(result.review_reasons, ())
+
+    def test_page_coverage_ignores_responses_without_a_parsed_document(self):
+        for response in [{}, self.success(), {'choices': [{'message': {'annotations': [{'type': 'url'}, 'x']}}]}, {'choices': ['x']}]:
+            self.assertIsNone(p.parsed_page_coverage(response))
+        self.assertEqual(p.parsed_page_coverage(self.parsed(['', 'enough text on this page to count'])), (1, 2))
+
     def test_response_failures_retry_and_preserve_all_attempts(self):
         cases = [({'error': {'code': 503, 'message': 'busy'}}, 'generation failed'), ({'choices': [{'finish_reason': 'length'}], 'usage': {'completion_tokens': 10, 'completion_tokens_details': {'reasoning_tokens': 9}}}, 'reasoning tokens: 9'), ({'choices': [{'message': {'content': 'bad json'}}]}, 'invalid JSON'), ({'choices': [{'message': {'content': '{"effects":[{}]}'}}]}, 'Missing required field')]
         for response, message in cases:

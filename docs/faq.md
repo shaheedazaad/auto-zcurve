@@ -70,7 +70,12 @@ straight away. The exception is an OpenRouter model that reads PDFs through
 OpenRouter's parser (one without native PDF input): if the first attempt
 fails for any reason, including an invalid key or a rejected request (for
 example HTTP 400 or 401), auto-zcurve tries once more with a different PDF
-parser (Mistral OCR) before marking the article as failed.
+parser (Mistral OCR) before marking the article as failed. It does the same
+when the first parser returns no text for more than half of the article's
+pages, which would otherwise leave the model with little more than the
+abstract. If Mistral OCR also returns mostly empty pages, the article is
+marked as needs review with a reason such as "PDF parser returned no text for
+11 of 12 pages".
 
 Try **Retry** after fixing the underlying article, schema or model choice.
 If several unrelated articles fail with the same error, it's more likely a

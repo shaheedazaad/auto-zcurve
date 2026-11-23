@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import re
 import socket
 import time
 import urllib.error
@@ -32,6 +33,10 @@ MAX_COMPLETION_ATTEMPTS = MAX_PROVIDER_ATTEMPTS
 OPENROUTER_PDF_ENGINES = ("cloudflare-ai", "mistral-ocr")
 # OpenAI-style finish reasons; anything else (length, content_filter, ...) needs review.
 NORMAL_FINISH_REASONS = ("stop",)
+# The file-parser plugin returns the parsed document as Markdown with one
+# "### Page N" heading per page. A page with less text than this is blank.
+_PARSED_PAGE_RE = re.compile(r"^### Page \d+[ \t]*$", re.MULTILINE)
+MIN_PARSED_PAGE_CHARS = 20
 
 
 class _OpenRouterRequestError(RuntimeError):
@@ -358,6 +363,48 @@ def _empty_response_error(payload: dict[str, Any]) -> str:
     )
 
 
+def parsed_page_coverage(response: object) -> tuple[int, int] | None:
+    """Return (blank pages, total pages) from the PDF text the parser plugin produced.
+
+    OpenRouter returns the parsed document in the message's file annotations.
+    None when the response has no parsed document with page headings, such as
+    a model that read the PDF natively.
+    """
+    choices = response.get("choices") if isinstance(response, dict) else None
+    message = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+    annotations = message.get("annotations") if isinstance(message, dict) else None
+    if not isinstance(annotations, list):
+        return None
+    text = ""
+    for annotation in annotations:
+        file = annotation.get("file") if isinstance(annotation, dict) and annotation.get("type") == "file" else None
+        content = file.get("content") if isinstance(file, dict) else None
+        if isinstance(content, list):
+            text += "\n".join(
+                str(part.get("text") or "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+            )
+    pages = _PARSED_PAGE_RE.split(text)[1:]
+    if not pages:
+        return None
+    # Drop the closing </file> tag that follows the last page.
+    pages = [page.replace("</file>", "") for page in pages]
+    blank = sum(len("".join(page.split())) < MIN_PARSED_PAGE_CHARS for page in pages)
+    return blank, len(pages)
+
+
+def mostly_blank_parse(coverage: tuple[int, int] | None) -> bool:
+    """True when the parser produced no text for more than half of a multi-page PDF."""
+    if coverage is None:
+        return False
+    blank, total = coverage
+    return total > 1 and blank * 2 > total
+
+
+def blank_parse_review_reason(coverage: tuple[int, int]) -> str:
+    blank, total = coverage
+    return f"PDF parser returned no text for {blank} of {total} pages"
+
+
 def choice_finish_reason(choice: object) -> str | None:
     """Return an OpenAI-style choice's finish reason, or None when it is absent."""
     value = choice.get("finish_reason") if isinstance(choice, dict) else None
@@ -472,7 +519,8 @@ def extract_document(
     last_error: RuntimeError | ValueError | None = None
     def should_retry(attempt: int, retryable: bool = True) -> bool:
         # The first Cloudflare parser failure gets one guaranteed Mistral OCR
-        # attempt, including non-retryable HTTP/parser errors.
+        # attempt, including non-retryable HTTP/parser errors and a parse that
+        # lost most of the article's pages.
         return attempt < MAX_COMPLETION_ATTEMPTS and (
             retryable or (input_mode == "cloudflare_pdf" and attempt == 1)
         )
@@ -517,6 +565,10 @@ def extract_document(
             if isinstance(choices, list) and choices and isinstance(choices[0], dict)
             else ""
         )
+        if mostly_blank_parse(parsed_page_coverage(response)) and should_retry(attempt, retryable=False):
+            # The parser lost most of the article's text, so the extraction
+            # cannot be trusted. Retry with the next parser.
+            continue
         if not raw_text.strip():
             last_error = RuntimeError(_empty_response_error(response))
             last_error.provider_responses = provider_responses
@@ -557,6 +609,9 @@ def extract_document(
     review_reasons = extraction_review_reasons(
         repaired_text, [choice_finish_reason(choices[0])], NORMAL_FINISH_REASONS
     )
+    coverage = parsed_page_coverage(response)
+    if mostly_blank_parse(coverage):
+        review_reasons = (*review_reasons, blank_parse_review_reason(coverage))
     return ExtractionResult(
         source_path=source_path,
         source_name=source_name,
