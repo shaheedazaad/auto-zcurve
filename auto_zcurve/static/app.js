@@ -907,7 +907,9 @@
     uploadMessage.textContent = `Adding ${files.length} file${files.length === 1 ? "" : "s"}…`;
     try {
       const result = await postForm(upload.action, data);
-      uploadMessage.textContent = `Added ${result.saved.length} file${result.saved.length === 1 ? "" : "s"}.`;
+      const skipped = result.skipped || [];
+      uploadMessage.textContent = `Added ${result.saved.length} file${result.saved.length === 1 ? "" : "s"}.`
+        + (skipped.length ? ` Skipped ${skipped.length} already in this project: ${skipped.map((item) => item.name).join(", ")}.` : "");
       setMessageState(uploadMessage, "upload-message form-message success-text");
       fileInput.value = "";
       recentUploads = new Set(result.saved);

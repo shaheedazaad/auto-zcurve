@@ -32,7 +32,9 @@ can be PDFs or publisher XML files (`.xml`), and one project can mix both.
 ![The Sources tab, showing the drag-and-drop area for PDFs](assets/screenshots/project-sources.png)
 
 If two files share a name, the second gets a numbered suffix rather than
-replacing the first.
+replacing the first. A file whose contents are identical to an article already
+in the project is skipped, even under a different name, and the message after
+adding lists any files that were skipped.
 
 Once added, each article is listed as **Ready** on the **Articles** tab.
 Nothing is sent anywhere yet — this just registers the files in your project.

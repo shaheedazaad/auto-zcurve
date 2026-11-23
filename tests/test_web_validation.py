@@ -136,7 +136,7 @@ class WebValidationTests(unittest.TestCase):
     def test_upload_count_and_size_limits(self):
         response = self.client.post(self.base + '/uploads', files=[('files', ('a.pdf', b'%PDF'))] * 101)
         self.assertEqual(response.status_code, 413)
-        with patch.object(w, 'save_upload', side_effect=w.UploadTooLarge('too large')):
+        with patch.object(w, 'save_uploads', side_effect=w.UploadTooLarge('too large')):
             response = self.client.post(self.base + '/uploads', files={'files': ('a.pdf', b'%PDF')})
         self.assertEqual(response.status_code, 413)
 
